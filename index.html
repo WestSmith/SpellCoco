@@ -1,0 +1,2775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>SpellCoco</title>
+
+    <!--
+    ================================================================
+    SPELLCRAFT v26 — PLAYER HISTORY + ROUND PIPS
+    ================================================================
+
+    CHANGELOG v25 → v26:
+    - ADD: Player history modal. Tapping either player card opens a
+      modal showing every word they've played, organised by round,
+      with per-word score, word/long-word multiplier info, and gems.
+      A running total row at the bottom shows words played + total pts.
+      A subtle "▸ history" cue on the player name communicates the
+      card is tappable. Modal closes with ✕ Close button.
+    - ADD: Round progress pips. Below the round text, five dots show
+      completed (blue), current (pulsing gradient, slightly larger),
+      and upcoming (outlined dim) rounds at a glance.
+    - ADD: Round indicator text enlarged significantly
+      (clamp 0.78rem → 1rem–1.2rem) for accessibility.
+
+    CHANGELOG v24 → v25:
+    - FIX: Round indicator removed from header entirely. It now lives
+      as its own slim row (.round-indicator-row) between the header
+      and the player bar. Styled as shimmer gradient text (✦ ROUND 1/5 ✦)
+      matching the logo treatment — no box, no border, no crowding.
+      Header is now cleanly: logo (left) + sound controls + timer (right).
+
+    CHANGELOG v23 → v24:
+    - FIX: Header horizontal overflow / scroll. Root cause: badge +
+      mute + slider + timer in header-right was wider than the
+      available space on mobile. Fixed three ways:
+      (1) Round badge is now compact — smaller font, less padding,
+          white-space:nowrap so it never wraps to two lines.
+      (2) Volume slider is hidden on mobile (≤839px). Mute button
+          still present; slider only appears on desktop where there
+          is room for it.
+      (3) body gets explicit overflow-x:hidden and header gets
+          overflow:hidden as hard stops against any future bleed.
+    - FIX: header-right gap reduced 12px → 8px and gets min-width:0
+      so flex children can compress rather than overflow.
+
+    CHANGELOG v22 → v23:
+    - ADD: Turn switch overlay. After each turn ends (mid-round),
+      showRoundOverlay() fires with "Name's Turn" as title and
+      "Round N of 5" as subtitle. Reuses existing infrastructure.
+      Does not fire at round boundaries (endRound already covers
+      the transition there).
+    - FIX: Header crowding. Round badge moved from standalone
+      centre position into header-right, so header is always
+      logo (left) + [badge · sound · timer] (right).
+    - FIX: Gems toast now fires with a 600ms delay so it lands
+      cleanly after the submit feedback settles.
+    - POLISH: Full sidebar padding audit. Tightened header,
+      player cards, word area, controls, dict checker, lw-ref,
+      and reduced side-panel gaps. No elements removed or
+      collapsed — just spacing dialled back to reduce scrolling.
+
+    CHANGELOG v21 → v22:
+    - FIX: Redundant gem scramble on last turn of round 1. Previously
+      randomizeGems() fired even when the turn was about to call
+      endRound() → upgradeMultipliersForNewRound() → replenishGems(),
+      which immediately overwrote the scramble. Now the check gates on
+      turnIndex < players.length-1, so scramble only fires between
+      turns within round 1, never on the closing turn.
+    - ADD: In-game Long Word Bonus reference. A collapsible <details>
+      element appears in the side panel once the game starts, populated
+      from the exact tiers configured at setup. Tap to expand; each
+      tier renders as a compact gold chip. A blue "Stacking" chip
+      appears when stacking mode is active. Mobile-friendly — no
+      layout impact when collapsed.
+
+    CHANGELOG v20 → v21:
+    - ADD: Coco Attack enable/disable toggle on the start screen.
+      When disabled, the coco zone is hidden for the entire game.
+      CONFIG.cocoAttackEnabled drives the in-game visibility.
+    - ADD: Round 1 Gem Chaos. After each player submits their word
+      in round 1 (and only round 1), gem positions are randomized
+      via Fisher-Yates before the next player sees the board.
+      A toast "💎 Gems shifted!" confirms the scramble.
+      Normal gem replenishment still runs first so the count is
+      correct, then positions are shuffled. From round 2 onward
+      gems behave exactly as before.
+
+    CHANGELOG v19 → v20 (grid-only):
+    - FIX: Tile letters now use Fredoka (v17's display face) as
+      primary, Atkinson Hyperlegible as fallback. Atkinson remains
+      the font for every other surface — player cards, word display,
+      buttons, modals, dict checker — because Keith likes it there.
+      Fredoka's chunkier strokes just read bigger on the tiles.
+    - FIX: Tile NUMBERS were 0.42em / 700 / 70% opacity in v19 —
+      restored to 0.62em / 900 / 100% opacity with a subtle dark
+      pill behind them (matches v17). The v17 number treatment was
+      what worked for Keith.
+    - FIX: Removed the -0.02em letter-spacing that was squeezing
+      the tile letters. They breathe now.
+    - FIX: Letter font-size nudged up to clamp(1.9rem,7.3vmin,3.2rem)
+      to account for Fredoka's slightly smaller x-height vs Atkinson.
+    - ADD: White-highlight text-shadow on tile letters — matches v17
+      and adds a subtle letterpress pop.
+    - Swap modal tiles also switched to Fredoka so the swap picker
+      matches the main grid.
+
+    EVERYTHING ELSE IS IDENTICAL TO v19:
+    - Bi flag palette, flag-gradient border on grid frame
+    - Starfield + aurora nebulae + pride-colored particles
+    - Tricolor rail on active player card
+    - Shimmering logo / valid word / winner banner
+    - Reduced-motion support
+    - All game logic, settings, abilities, recap
+
+    FROM v19 (unchanged):
+    ================================================================
+
+    Bi flag palette drives the visual grammar of the game.
+    Atkinson Hyperlegible typography + AAA contrast preserved from v18.
+    Gameplay, scoring, settings, abilities are 100% unchanged.
+
+    COLOR GRAMMAR:
+      Pink   → active / casting / gems (the "now" of a spell)
+      Purple → the bridge, secondary accent, the bi middle
+      Blue   → the path / the trail / the "already walked"
+      Gold   → rare & triumphant (×3W, scores, crown)
+      Each spell traces a literal pink-tipped, blue-tailed streak —
+      the flag drawn letter by letter across the grid.
+
+    MULTIPLIER PALETTE:
+      ×2L = blue,   ×3L = purple,   ×2W = pink,   ×3W = gold
+      (three flag stripes + gold reserved for the rarest mult)
+    ================================================================
+
+    CHANGELOG v18 → v19:
+    - CHANGE: Palette is now the bisexual pride flag — pink (#ff3d92),
+      purple (#b469e0), blue (#4d80ff) — all brightened against dark
+      cosmos bg to pass WCAG AAA contrast at 7:1+.
+    - RESTORED: Starfield atmosphere (callback to the original
+      Discord Spellcast). Now multi-colored: white, pink, purple,
+      blue stars; bi-colored drifting shimmer particles; three
+      aurora nebulae in the flag colors that slowly breathe.
+    - CHANGE: Selected tile → hot pink with white letter, pink glow.
+      Path tiles → blue with white letter. Default → cream with
+      deep cosmos ink. A word-in-progress now visually reads as
+      the bi flag painted across the grid.
+    - CHANGE: Grid frame has a real pink→purple→blue gradient
+      border with a slow 6s breathing glow (respects
+      prefers-reduced-motion).
+    - CHANGE: Active player card gets a literal 3-block flag rail
+      across the top — hard-edged pink | purple | blue stripes.
+    - CHANGE: Logo, valid word display, round overlay, celebration
+      banner, and winner banner all sweep an animated pink→purple→
+      blue gradient via background-clip:text + background-position
+      animation.
+    - CHANGE: Multipliers realigned to the flag: ×2L blue, ×3L
+      purple, ×2W pink, ×3W gold (gold = rarest).
+    - CHANGE: Gems are now bi-purple crystals (they were a pink-
+      magenta before). Gem indicators on selected/path tiles flip
+      to gold so they stay visible on the hot-pink / blue tile.
+    - CHANGE: Submit button becomes pink→purple gradient; Start
+      Game button becomes the full flag gradient.
+    - ADD: Reduced-motion media query that freezes background
+      atmosphere, logo shimmer, and frame pulse for anyone who
+      needs it.
+    - UNCHANGED: All JS gameplay (mechanics, settings, abilities,
+      shuffle logic, Coco Attack, scoring, recap, dictionary,
+      custom word lists). Identical to v17/v18.
+    ================================================================
+
+    GAMEPLAY SPEC (from v17, unchanged):
+
+    PLAYERS: Always Keith & Shawn. Random first player.
+    BOARD: Generated once. Only used tiles replaced between turns.
+           Carries over between rounds; multipliers upgraded.
+    MULTIPLIERS: ×2L, ×3L, ×2W, ×3W. Letter types can't coexist;
+           nor can word types. Round 1 has a letter mult; Round 2+
+           adds a word mult. Shuffle detaches and reassigns.
+    GEMS: Board always holds exactly boardGemCount (default 9).
+           Max 10 held per player. Replenished after submit / shuffle.
+    SCORING: ×2L/×3L multiply letter value; ×2W/×3W multiply word
+           total. Long word bonus is tiered (Original / Keith / Custom).
+    ================================================================
+    -->
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400;1,700&family=Fredoka:wght@600;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root{
+            /* Canvas — deep cosmos */
+            --bg-void:#07051c;
+            --bg-cosmos:#0f0b2d;
+            --bg-panel:#1a1549;
+            --bg-panel-hi:#231d62;
+            --bg-elevated:#2f2878;
+            --bg-input:#08061f;
+            --bg-border:#2a2470;
+
+            /* Ink */
+            --ink:#ffffff;
+            --ink-soft:#e4dff8;
+            --ink-dim:#a8a2d6;
+            --ink-faint:#6e68a5;
+
+            /* Bi flag — pink */
+            --pink:#ff3d92;
+            --pink-hi:#ff70b3;
+            --pink-deep:#b8146b;
+            --pink-shadow:#7d0c48;
+            --pink-glow:rgba(255,61,146,0.45);
+
+            /* Bi flag — purple */
+            --purple:#b469e0;
+            --purple-hi:#ce92ee;
+            --purple-deep:#7d3eb8;
+            --purple-shadow:#4d2577;
+            --purple-glow:rgba(180,105,224,0.45);
+
+            /* Bi flag — blue */
+            --blue:#4d80ff;
+            --blue-hi:#85a5ff;
+            --blue-deep:#2a4fbf;
+            --blue-shadow:#162d77;
+            --blue-glow:rgba(77,128,255,0.45);
+
+            /* Accents */
+            --gold:#ffd447;
+            --gold-hi:#ffe175;
+            --gold-deep:#a87d20;
+            --gold-glow:rgba(255,212,71,0.4);
+            --red:#ff5c5c;
+            --red-deep:#a82020;
+
+            /* Tile — cream paper glowing on the cosmos */
+            --tile-face:#f5ede4;
+            --tile-face-alt:#e2d6c5;
+            --tile-ink:#0f0b2d;
+            --tile-shadow:#4d2577;
+
+            /* Selected — hot pink, white letter */
+            --tile-sel-face:#ff3d92;
+            --tile-sel-face-alt:#d92878;
+            --tile-sel-ink:#ffffff;
+            --tile-sel-shadow:#7d0c48;
+
+            /* Path — blue, white letter */
+            --tile-path-face:#4d80ff;
+            --tile-path-face-alt:#2e5ed9;
+            --tile-path-ink:#ffffff;
+            --tile-path-shadow:#162d77;
+
+            /* Multipliers aligned to the flag */
+            --mult-DL:var(--blue);
+            --mult-TL:var(--purple);
+            --mult-2W:var(--pink);
+            --mult-3W:var(--gold);
+
+            /* Coco — real cat, keep her orange */
+            --coco:#ff8e3c;
+            --coco-deep:#a5591d;
+            --coco-glow:rgba(255,142,60,0.4);
+
+            /* Bi flag gradient — the soul of the theme */
+            --flag-gradient:linear-gradient(90deg,var(--pink) 0%,var(--purple) 50%,var(--blue) 100%);
+            --flag-gradient-shimmer:linear-gradient(90deg,var(--pink) 0%,var(--purple) 25%,var(--blue) 50%,var(--purple) 75%,var(--pink) 100%);
+        }
+
+        *{box-sizing:border-box;margin:0;padding:0}
+
+        body{
+            font-family:'Atkinson Hyperlegible',system-ui,sans-serif;
+            background:var(--bg-cosmos);
+            color:var(--ink);
+            height:100vh;height:100dvh;
+            overflow:hidden;overflow-x:hidden;position:relative;
+            font-weight:400;
+            letter-spacing:0.01em;
+        }
+
+        /* Cosmos gradient base layer — deep indigo darkening at top & bottom */
+        body::before{
+            content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+            background:
+                radial-gradient(ellipse at 50% 0%, rgba(77,128,255,0.08) 0%, transparent 40%),
+                radial-gradient(ellipse at 50% 100%, rgba(255,61,146,0.06) 0%, transparent 40%),
+                linear-gradient(180deg,var(--bg-void) 0%,var(--bg-cosmos) 50%,var(--bg-void) 100%);
+        }
+
+        /* Starfield — callback to original Spellcast, now multi-colored */
+        #starfield{
+            position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden;
+        }
+        .star{
+            position:absolute;border-radius:50%;
+            animation:twinkle var(--dur) ease-in-out infinite alternate;
+        }
+        @keyframes twinkle{
+            0%{opacity:var(--o1)}
+            100%{opacity:var(--o2)}
+        }
+
+        /* Aurora nebulae — three pride-colored drifting blurs */
+        .nebula{
+            position:fixed;
+            border-radius:50%;
+            pointer-events:none;z-index:0;
+            filter:blur(90px);
+            animation:nebulaDrift 28s ease-in-out infinite alternate;
+        }
+        .nebula-1{
+            top:-12%;left:-8%;
+            width:50vw;height:50vw;
+            background:radial-gradient(ellipse,rgba(255,61,146,0.18),transparent 70%);
+        }
+        .nebula-2{
+            bottom:-15%;right:-5%;
+            width:45vw;height:45vw;
+            background:radial-gradient(ellipse,rgba(77,128,255,0.16),transparent 70%);
+            animation-delay:-9s;animation-duration:32s;
+        }
+        .nebula-3{
+            top:28%;right:18%;
+            width:30vw;height:30vw;
+            background:radial-gradient(ellipse,rgba(180,105,224,0.14),transparent 70%);
+            animation-delay:-14s;animation-duration:26s;
+        }
+        @keyframes nebulaDrift{
+            0%{transform:translate(0,0) scale(1)}
+            100%{transform:translate(3vw,-2vh) scale(1.15)}
+        }
+
+        /* Shimmer particles — bi-colored dust drifting upward */
+        .particle{
+            position:fixed;
+            border-radius:50%;
+            pointer-events:none;z-index:0;
+            animation:floatUp var(--dur) linear infinite;
+            opacity:0;
+        }
+        @keyframes floatUp{
+            0%{opacity:0;transform:translateY(100vh) scale(0)}
+            10%{opacity:var(--o)}
+            90%{opacity:var(--o)}
+            100%{opacity:0;transform:translateY(-10vh) scale(1)}
+        }
+
+        /* Layout */
+        #app{
+            position:relative;z-index:1;
+            display:flex;flex-direction:column;
+            height:100%;padding:8px;
+            max-width:1240px;margin:0 auto;gap:8px;
+        }
+        @media(min-width:840px){
+            #app{flex-direction:row;align-items:flex-start;padding:20px 24px;gap:22px}
+            .side-panel{
+                width:clamp(360px,40%,440px);
+                display:flex;flex-direction:column;gap:8px;
+                max-height:calc(100vh - 40px);
+                overflow-y:auto;padding-right:6px;flex-shrink:0;
+                scrollbar-width:thin;
+                scrollbar-color:var(--purple) transparent;
+            }
+            .side-panel::-webkit-scrollbar{width:6px}
+            .side-panel::-webkit-scrollbar-thumb{
+                background:linear-gradient(180deg,var(--pink),var(--purple),var(--blue));
+                border-radius:3px;
+            }
+            .grid-panel{flex:1;display:flex;justify-content:center;align-items:flex-start}
+        }
+        @media(max-width:839px){
+            .side-panel{display:contents}
+            .grid-panel{flex:1;min-height:0;display:flex;justify-content:center;align-items:center}
+            header{order:1}.round-indicator-row{order:2}.player-bar{order:3}.word-area{order:4}
+            .grid-panel{order:5}.controls-area{order:6}
+            .coco-attack-zone{order:7}.dict-checker{order:8}.lw-ref{order:9}
+        }
+
+        /* Header — with bi-flag accent line */
+        header{
+            display:flex;justify-content:space-between;align-items:center;
+            padding:10px 16px;
+            background:var(--bg-panel);
+            border:2px solid var(--bg-border);
+            border-radius:14px;flex-shrink:0;
+            position:relative;overflow:hidden;
+            box-shadow:0 4px 0 var(--bg-void), 0 0 22px rgba(180,105,224,0.1);
+        }
+        header::before{
+            content:'';position:absolute;
+            left:18px;right:18px;top:0;height:3px;
+            background:linear-gradient(90deg,
+                transparent 0%,
+                var(--pink) 15%,
+                var(--purple) 50%,
+                var(--blue) 85%,
+                transparent 100%);
+            border-radius:0 0 3px 3px;
+        }
+
+        .logo{
+            font-family:'Atkinson Hyperlegible',sans-serif;
+            font-size:clamp(1.5rem,3.4vw,2rem);
+            font-weight:700;
+            letter-spacing:0.02em;
+            line-height:1;
+            background:var(--flag-gradient-shimmer);
+            background-size:200% auto;
+            -webkit-background-clip:text;
+            background-clip:text;
+            -webkit-text-fill-color:transparent;
+            color:transparent;
+            animation:shimmer 5s ease-in-out infinite;
+        }
+        @keyframes shimmer{
+            0%,100%{background-position:0% 50%}
+            50%{background-position:100% 50%}
+        }
+        .logo small{
+            display:block;
+            font-size:0.42em;
+            font-weight:700;
+            color:var(--ink-dim);
+            -webkit-text-fill-color:var(--ink-dim);
+            letter-spacing:0.4em;
+            margin-top:5px;
+            text-transform:uppercase;
+            background:none;
+            -webkit-background-clip:border-box;
+            background-clip:border-box;
+        }
+
+        .round-indicator-row{
+            text-align:center;
+            flex-shrink:0;
+            display:flex;flex-direction:column;align-items:center;gap:6px;
+            padding:2px 0;
+        }
+        #round-indicator{
+            font-size:clamp(1rem,2.4vw,1.2rem);
+            font-weight:700;
+            letter-spacing:0.18em;
+            text-transform:uppercase;
+            background:var(--flag-gradient-shimmer);
+            background-size:200% auto;
+            -webkit-background-clip:text;
+            background-clip:text;
+            -webkit-text-fill-color:transparent;
+            color:transparent;
+            animation:shimmer 6s ease-in-out infinite;
+        }
+        .round-pips{display:flex;gap:8px;align-items:center}
+        .round-pip{
+            width:10px;height:10px;border-radius:50%;
+            transition:all 0.3s;
+            flex-shrink:0;
+        }
+        .round-pip.done{
+            background:var(--blue);
+            box-shadow:0 0 6px var(--blue-glow);
+            opacity:0.7;
+        }
+        .round-pip.current{
+            width:14px;height:14px;
+            background:var(--flag-gradient);
+            box-shadow:0 0 10px var(--purple-glow), 0 0 20px var(--pink-glow);
+            animation:gemPulse 1.5s ease-in-out infinite alternate;
+        }
+        .round-pip.future{
+            background:var(--bg-elevated);
+            border:2px solid var(--ink-dim);
+            opacity:0.8;
+        }
+        .header-right{display:flex;align-items:center;gap:8px;min-width:0}
+        @media(max-width:839px){
+            .volume-slider{display:none}
+        }
+
+        #timer-display{
+            font-family:'Atkinson Hyperlegible',sans-serif;
+            font-size:clamp(1.3rem,3.2vw,1.65rem);
+            font-weight:700;
+            min-width:2.5ch;text-align:center;
+            color:var(--ink);
+        }
+
+        .sound-controls{display:flex;align-items:center;gap:8px}
+        .btn-icon{
+            background:none;border:none;cursor:pointer;
+            font-size:1.3rem;padding:6px;
+            color:var(--ink-dim);
+            transition:color 0.2s;
+            line-height:1;
+        }
+        .btn-icon:hover{color:var(--pink-hi)}
+        .btn-icon.active{color:var(--pink-hi)}
+        .volume-slider{
+            width:72px;height:6px;
+            -webkit-appearance:none;appearance:none;
+            background:var(--bg-elevated);
+            border-radius:3px;outline:none;
+            border:1px solid var(--purple-deep);
+        }
+        .volume-slider::-webkit-slider-thumb{
+            -webkit-appearance:none;appearance:none;
+            width:18px;height:18px;border-radius:50%;
+            background:var(--pink);cursor:pointer;
+            border:2px solid var(--bg-panel);
+            box-shadow:0 0 8px var(--pink-glow);
+        }
+        .volume-slider::-moz-range-thumb{
+            width:18px;height:18px;border-radius:50%;
+            background:var(--pink);cursor:pointer;
+            border:2px solid var(--bg-panel);
+        }
+
+        /* Player bar — active card gets a literal 3-block flag rail */
+        .player-bar{display:flex;gap:10px;flex-shrink:0}
+        .player-card{
+            background:var(--bg-panel);
+            padding:9px 14px;
+            border-radius:12px;flex:1;
+            border:2px solid var(--bg-border);
+            opacity:0.55;
+            transition:all 0.25s;
+            position:relative;
+            box-shadow:0 3px 0 var(--bg-void);
+        }
+        .player-card.active{
+            border-color:var(--purple);
+            opacity:1;
+            box-shadow:0 3px 0 var(--purple-shadow), 0 0 0 1px var(--purple) inset, 0 0 26px var(--purple-glow);
+        }
+        /* The flag rail — hard-edged pink | purple | blue tricolor */
+        .player-card.active::before{
+            content:'';position:absolute;
+            top:-2px;left:16px;right:16px;height:5px;
+            background:linear-gradient(90deg,
+                var(--pink) 0%, var(--pink) 33.33%,
+                var(--purple) 33.33%, var(--purple) 66.66%,
+                var(--blue) 66.66%, var(--blue) 100%);
+            border-radius:0 0 4px 4px;
+            box-shadow:0 1px 8px rgba(180,105,224,0.5);
+        }
+        .player-name{
+            font-size:clamp(0.95rem,2.1vw,1.1rem);
+            font-weight:700;
+            letter-spacing:0.04em;
+            color:var(--ink);
+        }
+        .player-score{
+            font-family:'Atkinson Hyperlegible',sans-serif;
+            font-size:clamp(1.75rem,4.2vw,2.1rem);
+            font-weight:700;
+            color:var(--gold);
+            line-height:1;margin:2px 0 1px;
+            letter-spacing:-0.02em;
+            text-shadow:0 0 12px var(--gold-glow);
+        }
+        .player-card.active .player-score{color:var(--gold-hi)}
+        .player-gems{
+            font-size:clamp(0.92rem,1.9vw,1rem);
+            color:var(--purple-hi);
+            font-weight:700;
+            display:inline-block;
+            padding:2px 10px;
+            border-radius:20px;
+            margin-top:2px;
+            background:rgba(180,105,224,0.12);
+            border:1px solid var(--purple-deep);
+        }
+        .player-lastword{
+            font-size:clamp(0.85rem,1.7vw,0.92rem);
+            color:var(--ink-soft);
+            margin-top:3px;
+            font-style:italic;
+            font-weight:400;
+        }
+
+        /* Word display — valid words shimmer the flag gradient */
+        .word-area{
+            background:var(--bg-panel);
+            border:2px solid var(--bg-border);
+            border-radius:14px;
+            padding:10px 16px;
+            text-align:center;
+            min-height:56px;
+            display:flex;flex-direction:column;
+            justify-content:center;align-items:center;
+            flex-shrink:0;position:relative;overflow:hidden;
+            box-shadow:inset 0 2px 8px rgba(0,0,0,0.5), 0 3px 0 var(--bg-void);
+        }
+        #word-display{
+            font-family:'Atkinson Hyperlegible',sans-serif;
+            font-size:clamp(1.7rem,4.6vw,2.2rem);
+            font-weight:700;
+            letter-spacing:0.18em;
+            min-height:1.2em;
+            transition:color 0.2s;
+            color:var(--ink);
+        }
+        #word-display.valid{
+            background:var(--flag-gradient-shimmer);
+            background-size:200% auto;
+            -webkit-background-clip:text;
+            background-clip:text;
+            -webkit-text-fill-color:transparent;
+            color:transparent;
+            animation:shimmer 3s ease-in-out infinite;
+            filter:drop-shadow(0 0 12px rgba(180,105,224,0.4));
+        }
+        #word-display.invalid{color:var(--red);opacity:0.9}
+        #word-display.empty{
+            color:var(--ink-dim);
+            font-size:clamp(1rem,2.4vw,1.15rem);
+            letter-spacing:0.04em;
+            font-weight:400;font-style:italic;
+        }
+        #score-preview{
+            font-size:clamp(0.95rem,2vw,1.05rem);
+            font-weight:700;
+            min-height:1em;margin-top:3px;
+        }
+        .celebration-banner{
+            position:absolute;inset:0;
+            display:flex;justify-content:center;align-items:center;
+            background:var(--flag-gradient);
+            z-index:5;pointer-events:none;
+            animation:bannerSlam 0.35s cubic-bezier(0.175,0.885,0.32,1.275),bannerFade 0.35s ease 1.4s forwards;
+        }
+        .celebration-banner span{
+            font-family:'Atkinson Hyperlegible',sans-serif;
+            font-size:clamp(1.5rem,4.2vw,2.1rem);
+            font-weight:700;
+            color:var(--ink);
+            letter-spacing:0.04em;
+            text-shadow:0 2px 0 rgba(0,0,0,0.3), 0 0 20px rgba(255,255,255,0.4);
+        }
+        @keyframes bannerSlam{0%{transform:scaleY(0);opacity:0}100%{transform:scaleY(1);opacity:1}}
+        @keyframes bannerFade{to{opacity:0}}
+
+        /* Grid & Tiles */
+        .grid-frame{
+            position:relative;
+            padding:clamp(10px,1.6vw,16px);
+            border-radius:clamp(16px,2.4vw,24px);
+            width:100%;
+            max-width:min(560px,88vmin);
+            aspect-ratio:1/1;
+            /* Real gradient border via dual background-clip */
+            border:3px solid transparent;
+            background:
+                linear-gradient(var(--bg-panel),var(--bg-panel)) padding-box,
+                var(--flag-gradient) border-box;
+            box-shadow:
+                0 0 42px rgba(180,105,224,0.22),
+                inset 0 2px 14px rgba(0,0,0,0.5),
+                0 6px 0 var(--bg-void);
+            animation:framePulse 6s ease-in-out infinite;
+        }
+        @keyframes framePulse{
+            0%,100%{box-shadow:0 0 38px rgba(255,61,146,0.2), 0 0 70px rgba(77,128,255,0.08), inset 0 2px 14px rgba(0,0,0,0.5), 0 6px 0 var(--bg-void);}
+            50%{box-shadow:0 0 58px rgba(180,105,224,0.3), 0 0 100px rgba(77,128,255,0.14), inset 0 2px 14px rgba(0,0,0,0.5), 0 6px 0 var(--bg-void);}
+        }
+        /* Corner flag accents — tiny 3-stripe decorations */
+        .grid-frame::before,.grid-frame::after{
+            content:'';position:absolute;
+            width:18px;height:6px;
+            background:linear-gradient(90deg,
+                var(--pink) 0%, var(--pink) 33.33%,
+                var(--purple) 33.33%, var(--purple) 66.66%,
+                var(--blue) 66.66%, var(--blue) 100%);
+            border-radius:2px;
+            box-shadow:0 0 8px rgba(180,105,224,0.5);
+        }
+        .grid-frame::before{top:-9px;left:14px}
+        .grid-frame::after{bottom:-9px;right:14px}
+        .grid{
+            display:grid;
+            grid-template-columns:repeat(5,1fr);
+            gap:clamp(5px,1vw,9px);
+            width:100%;height:100%;
+        }
+
+        .tile{
+            background:linear-gradient(175deg,var(--tile-face) 0%,var(--tile-face-alt) 100%);
+            color:var(--tile-ink);
+            border-radius:12%;
+            position:relative;cursor:pointer;
+            display:flex;justify-content:center;align-items:center;
+            font-family:'Fredoka','Atkinson Hyperlegible',sans-serif;
+            font-size:clamp(1.9rem,7.3vmin,3.2rem);
+            font-weight:700;
+            box-shadow:
+                0 clamp(4px,0.9vmin,7px) 0 var(--tile-shadow),
+                0 clamp(5px,1.2vmin,10px) clamp(10px,2.2vmin,18px) rgba(0,0,0,0.5),
+                inset 0 2px 0 rgba(255,255,255,0.55),
+                inset 0 -1px 0 rgba(77,37,119,0.15);
+            transition:transform 0.1s,background 0.15s,box-shadow 0.15s;
+            user-select:none;
+            -webkit-tap-highlight-color:transparent;
+            touch-action:none;
+            text-shadow:0 1px 0 rgba(255,255,255,0.45);
+        }
+        .tile:active:not(.selected):not(.path-tile){
+            transform:translateY(4px);
+            box-shadow:0 1px 0 var(--tile-shadow), inset 0 1px 0 rgba(255,255,255,0.3);
+        }
+        /* Selected — hot pink, the "cast" moment */
+        .tile.selected{
+            background:linear-gradient(175deg,var(--tile-sel-face) 0%,var(--tile-sel-face-alt) 100%);
+            color:var(--tile-sel-ink);
+            box-shadow:
+                0 clamp(4px,0.9vmin,7px) 0 var(--tile-sel-shadow),
+                0 0 clamp(22px,4.5vmin,38px) var(--pink-glow),
+                0 0 0 2px rgba(255,255,255,0.35) inset,
+                inset 0 2px 0 rgba(255,255,255,0.25);
+            text-shadow:0 1px 3px rgba(0,0,0,0.3);
+        }
+        /* Path — blue, the trail behind */
+        .tile.path-tile{
+            background:linear-gradient(175deg,var(--tile-path-face) 0%,var(--tile-path-face-alt) 100%);
+            color:var(--tile-path-ink);
+            box-shadow:
+                0 clamp(4px,0.9vmin,7px) 0 var(--tile-path-shadow),
+                0 0 clamp(14px,3vmin,22px) var(--blue-glow),
+                0 0 0 1px rgba(255,255,255,0.25) inset,
+                inset 0 2px 0 rgba(255,255,255,0.2);
+            text-shadow:0 1px 3px rgba(0,0,0,0.3);
+        }
+        .tile-value{
+            position:absolute;
+            bottom:clamp(2px,5%,6px);
+            right:clamp(3px,6%,7px);
+            font-size:0.62em;
+            font-weight:900;
+            line-height:1;
+            color:var(--tile-ink);
+            font-family:'Fredoka','Atkinson Hyperlegible',sans-serif;
+            background:rgba(0,0,0,0.09);
+            padding:1px 5px;
+            border-radius:5px;
+        }
+        .tile.selected .tile-value,.tile.path-tile .tile-value{
+            color:var(--ink);
+            background:rgba(0,0,0,0.24);
+        }
+
+        /* Multiplier badge — flag-aligned colors */
+        .tile-multiplier{
+            position:absolute;
+            top:clamp(-4px,-6%,-8px);
+            left:clamp(-4px,-6%,-8px);
+            font-size:clamp(0.72rem,2.6vmin,0.95rem);
+            font-weight:700;
+            padding:clamp(3px,0.7vmin,5px) clamp(7px,1.5vmin,11px);
+            border-radius:clamp(5px,0.9vmin,8px);
+            color:var(--ink);
+            z-index:2;white-space:nowrap;
+            line-height:1.1;
+            letter-spacing:0.03em;
+            text-shadow:0 1px 2px rgba(0,0,0,0.6);
+            box-shadow:0 2px 6px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.15) inset;
+        }
+        .mod-DL{background:var(--mult-DL)}
+        .mod-TL{background:var(--mult-TL)}
+        .mod-2W{background:var(--mult-2W)}
+        .mod-3W{
+            background:var(--mult-3W);
+            color:var(--bg-void);
+            text-shadow:0 1px 0 rgba(255,255,255,0.3);
+            box-shadow:0 2px 10px var(--gold-glow), 0 0 0 1px rgba(255,255,255,0.3) inset;
+        }
+
+        /* Gem — bi-purple crystal; flips to gold on selected/path tiles */
+        .tile-gem{
+            position:absolute;
+            top:clamp(3px,4%,6px);
+            right:clamp(3px,4%,7px);
+            width:clamp(16px,3.6vmin,24px);
+            height:clamp(18px,4.2vmin,28px);
+            background:linear-gradient(160deg,var(--purple-hi) 0%,var(--purple-deep) 100%);
+            clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);
+            filter:drop-shadow(0 2px 5px var(--purple-glow));
+            animation:gemPulse 2s ease-in-out infinite alternate;
+        }
+        @keyframes gemPulse{
+            0%{filter:drop-shadow(0 1px 3px rgba(180,105,224,0.5))}
+            100%{filter:drop-shadow(0 2px 8px rgba(180,105,224,1))}
+        }
+        .tile.selected .tile-gem,.tile.path-tile .tile-gem{
+            background:linear-gradient(160deg,var(--gold-hi) 0%,var(--gold) 100%);
+            filter:drop-shadow(0 2px 6px var(--gold-glow));
+            animation:none;
+        }
+        .tile.error-shake{
+            animation:shake 0.4s;
+            outline:3px solid var(--red);
+            outline-offset:-2px;
+        }
+        .tile.new-tile{animation:pop 0.35s cubic-bezier(0.175,0.885,0.32,1.275)}
+
+        /* Controls */
+        .controls-area{flex-shrink:0;display:flex;flex-direction:column;gap:8px}
+        .action-buttons{display:flex;gap:10px;justify-content:center}
+
+        button{
+            padding:10px 18px;
+            border:none;border-radius:10px;
+            cursor:pointer;
+            font-family:'Atkinson Hyperlegible',sans-serif;
+            font-weight:700;
+            font-size:clamp(0.95rem,2.1vw,1.05rem);
+            transition:all 0.15s;
+            letter-spacing:0.03em;
+        }
+        /* Submit — pink → purple gradient */
+        .btn-submit{
+            background:linear-gradient(135deg,var(--pink) 0%,var(--purple) 100%);
+            color:var(--ink);
+            box-shadow:0 4px 0 var(--pink-shadow), 0 5px 16px var(--pink-glow);
+            flex:1;max-width:180px;
+            text-shadow:0 1px 2px rgba(0,0,0,0.35);
+        }
+        .btn-submit:hover{filter:brightness(1.1)}
+        .btn-submit:disabled{
+            background:var(--bg-elevated);
+            color:var(--ink-faint);
+            box-shadow:none;cursor:not-allowed;
+            text-shadow:none;
+        }
+        .btn-submit:active:not(:disabled){transform:translateY(4px);box-shadow:none}
+        .btn-clear{
+            background:var(--bg-elevated);
+            color:var(--ink-soft);
+            border:1px solid var(--bg-border);
+            flex:1;max-width:110px;
+            box-shadow:0 3px 0 var(--bg-void);
+        }
+        .btn-clear:hover{background:var(--bg-panel-hi);color:var(--ink)}
+        .btn-clear:active:not(:disabled){transform:translateY(3px);box-shadow:none}
+        .btn-clear:disabled{opacity:0.4;cursor:not-allowed}
+
+        .ability-bar{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+        .btn-ability{
+            background:var(--bg-panel);
+            color:var(--blue-hi);
+            border:2px solid var(--blue-deep);
+            padding:9px 14px;
+            font-size:clamp(0.9rem,1.85vw,0.98rem);
+            border-radius:8px;
+            font-weight:700;
+            box-shadow:0 3px 0 var(--bg-void);
+        }
+        .btn-ability:hover{
+            background:var(--bg-elevated);
+            color:var(--ink);
+            border-color:var(--blue);
+        }
+        .btn-ability:active:not(:disabled){transform:translateY(3px);box-shadow:none}
+        .btn-ability:disabled{
+            opacity:0.4;cursor:not-allowed;
+            border-color:var(--bg-border);
+            color:var(--ink-faint);
+        }
+        .btn-ability .cost{color:var(--purple-hi);font-weight:700;margin-left:3px}
+        .btn-ability.active-swap{
+            border-color:var(--pink);
+            color:var(--pink-hi);
+            background:rgba(255,61,146,0.12);
+            box-shadow:0 3px 0 var(--pink-shadow), 0 0 20px var(--pink-glow);
+        }
+        .btn-cancel-swap{
+            background:var(--bg-panel);
+            color:var(--red);
+            border:2px solid var(--red-deep);
+            padding:9px 14px;
+            font-size:clamp(0.9rem,1.85vw,0.98rem);
+            border-radius:8px;
+            font-weight:700;
+            box-shadow:0 3px 0 var(--bg-void);
+        }
+        .btn-cancel-swap:hover{background:rgba(255,92,92,0.12)}
+        .btn-cancel-swap:active{transform:translateY(3px);box-shadow:none}
+
+        /* Coco Attack — Coco keeps her warm orange */
+        .coco-attack-zone{
+            background:var(--bg-panel);
+            border:2px solid var(--coco-deep);
+            border-radius:12px;
+            padding:10px 14px;
+            flex-shrink:0;
+            display:flex;align-items:center;gap:12px;
+            box-shadow:0 3px 0 var(--bg-void);
+        }
+        .coco-cat{width:52px;height:52px;flex-shrink:0}
+        .coco-info{flex:1;min-width:0}
+        .coco-title{
+            font-family:'Atkinson Hyperlegible',sans-serif;
+            font-size:clamp(0.95rem,2.1vw,1.08rem);
+            font-weight:700;
+            color:var(--coco);
+            letter-spacing:0.02em;
+        }
+        .coco-desc{
+            font-size:clamp(0.8rem,1.6vw,0.88rem);
+            color:var(--ink-soft);
+            line-height:1.4;
+            margin-top:2px;
+        }
+        .btn-coco{
+            background:linear-gradient(180deg,var(--coco) 0%,var(--coco-deep) 100%);
+            color:var(--ink);
+            font-weight:700;
+            padding:10px 16px;
+            border-radius:8px;
+            box-shadow:0 4px 0 #5a3210, 0 4px 14px var(--coco-glow);
+            font-size:clamp(0.92rem,1.9vw,1rem);
+            white-space:nowrap;flex-shrink:0;
+            text-shadow:0 1px 2px rgba(0,0,0,0.35);
+        }
+        .btn-coco:hover{filter:brightness(1.1)}
+        .btn-coco:disabled{
+            background:var(--bg-elevated);color:var(--ink-faint);
+            box-shadow:none;cursor:not-allowed;text-shadow:none;
+        }
+        .btn-coco:active:not(:disabled){transform:translateY(4px);box-shadow:none}
+        .coco-timer-active{animation:cocoPulse 1s ease-in-out infinite alternate}
+        @keyframes cocoPulse{
+            0%{box-shadow:0 3px 0 var(--bg-void), 0 0 10px var(--coco-glow)}
+            100%{box-shadow:0 3px 0 var(--bg-void), 0 0 28px var(--coco-glow), 0 0 48px rgba(255,142,60,0.25)}
+        }
+        .coco-attack-overlay{
+            position:fixed;inset:0;
+            display:flex;flex-direction:column;
+            justify-content:center;align-items:center;
+            z-index:90;pointer-events:none;
+            animation:fadeIn 0.3s ease,fadeOut 0.4s ease 1.4s forwards;
+            background:rgba(255,142,60,0.12);
+            backdrop-filter:blur(2px);
+        }
+        .coco-attack-overlay .coco-text{
+            font-family:'Atkinson Hyperlegible',sans-serif;
+            font-size:clamp(1.8rem,5.2vw,2.6rem);
+            font-weight:700;
+            color:var(--coco);
+            text-shadow:0 0 24px var(--coco-glow),0 2px 0 rgba(0,0,0,0.4);
+            animation:pop 0.4s cubic-bezier(0.175,0.885,0.32,1.275);
+            letter-spacing:0.04em;
+        }
+        .coco-attack-overlay .coco-big-cat{
+            width:100px;height:100px;margin-bottom:14px;
+            animation:pop 0.4s cubic-bezier(0.175,0.885,0.32,1.275);
+            filter:drop-shadow(0 4px 24px var(--coco-glow));
+        }
+
+        /* Dictionary checker */
+        .dict-checker{
+            background:var(--bg-panel);
+            border:2px solid var(--bg-border);
+            border-radius:12px;
+            padding:8px 12px;flex-shrink:0;
+            box-shadow:0 3px 0 var(--bg-void);
+        }
+        .dict-checker-label{
+            font-size:clamp(0.85rem,1.75vw,0.92rem);
+            color:var(--ink-soft);
+            font-weight:700;
+            text-transform:uppercase;
+            letter-spacing:0.14em;
+            margin-bottom:5px;
+        }
+        .dict-checker-row{display:flex;gap:8px;align-items:center}
+        .dict-checker-input{
+            flex:1;padding:8px 10px;
+            border-radius:8px;
+            border:2px solid var(--bg-border);
+            background:var(--bg-input);
+            color:var(--ink);
+            font-family:'Atkinson Hyperlegible',sans-serif;
+            font-size:clamp(1rem,2.2vw,1.12rem);
+            font-weight:700;
+            letter-spacing:0.08em;
+            text-transform:uppercase;
+        }
+        .dict-checker-input:focus{
+            outline:none;
+            border-color:var(--pink);
+            box-shadow:0 0 0 3px var(--pink-glow);
+        }
+        .dict-checker-input::placeholder{
+            color:var(--ink-dim);
+            text-transform:none;
+            letter-spacing:0;
+            font-weight:400;font-style:italic;
+        }
+        .dict-checker-btn{
+            padding:10px 16px;
+            border-radius:8px;
+            background:var(--bg-elevated);
+            color:var(--purple-hi);
+            border:2px solid var(--purple-deep);
+            font-weight:700;
+            font-size:clamp(0.9rem,1.85vw,0.98rem);
+            cursor:pointer;white-space:nowrap;
+            box-shadow:0 3px 0 var(--bg-void);
+        }
+        .dict-checker-btn:hover{
+            background:var(--bg-panel-hi);
+            color:var(--ink);
+        }
+        .dict-checker-btn:active{transform:translateY(3px);box-shadow:none}
+        .dict-checker-result{
+            font-size:clamp(0.88rem,1.8vw,0.98rem);
+            margin-top:8px;
+            min-height:1.2em;
+            font-weight:700;
+            line-height:1.4;
+        }
+        .dict-result-yes{color:var(--pink-hi)}
+        .dict-result-no{color:var(--red)}
+
+        /* Modals */
+        .modal{
+            position:fixed;inset:0;
+            background:rgba(7,5,28,0.88);
+            display:flex;justify-content:center;align-items:center;
+            z-index:100;backdrop-filter:blur(10px);
+            padding:20px;
+        }
+        .modal-content{
+            background:var(--bg-panel);
+            border:3px solid transparent;
+            background-image:
+                linear-gradient(var(--bg-panel),var(--bg-panel)) padding-box,
+                var(--flag-gradient) border-box;
+            padding:clamp(22px,4.2vw,36px);
+            border-radius:18px;
+            text-align:center;
+            max-width:94%;width:460px;
+            max-height:92vh;overflow-y:auto;
+            box-shadow:0 20px 60px rgba(0,0,0,0.7), 0 0 40px rgba(180,105,224,0.2);
+            position:relative;
+            scrollbar-width:thin;
+            scrollbar-color:var(--purple) transparent;
+        }
+        .modal-content::-webkit-scrollbar{width:6px}
+        .modal-content::-webkit-scrollbar-thumb{
+            background:linear-gradient(180deg,var(--pink),var(--purple),var(--blue));
+            border-radius:3px;
+        }
+        .modal-content h1{
+            font-family:'Atkinson Hyperlegible',sans-serif;
+            background:var(--flag-gradient-shimmer);
+            background-size:200% auto;
+            -webkit-background-clip:text;
+            background-clip:text;
+            -webkit-text-fill-color:transparent;
+            color:transparent;
+            font-size:clamp(1.8rem,5.2vw,2.3rem);
+            margin-bottom:14px;
+            font-weight:700;
+            letter-spacing:0.02em;
+            animation:shimmer 5s ease-in-out infinite;
+        }
+        .modal-content h3{
+            font-family:'Atkinson Hyperlegible',sans-serif;
+            color:var(--ink);
+            font-weight:700;
+            font-size:clamp(1.1rem,2.4vw,1.25rem);
+        }
+        .modal-content p{
+            color:var(--ink-soft);
+            font-size:clamp(0.92rem,1.9vw,1rem);
+            line-height:1.55;
+        }
+
+        .toggle-switch{
+            position:relative;width:54px;height:30px;
+            display:inline-block;cursor:pointer;flex-shrink:0;
+        }
+        .toggle-switch input{opacity:0;width:0;height:0;position:absolute}
+        .toggle-slider{
+            position:absolute;cursor:pointer;inset:0;
+            background:var(--bg-input);
+            border:2px solid var(--bg-border);
+            border-radius:30px;transition:0.3s;
+        }
+        .toggle-slider::before{
+            content:'';position:absolute;
+            height:22px;width:22px;
+            left:2px;bottom:2px;
+            background:var(--ink-soft);
+            border-radius:50%;transition:0.3s;
+        }
+        .toggle-switch input:checked+.toggle-slider{
+            background:var(--pink-deep);
+            border-color:var(--pink);
+        }
+        .toggle-switch input:checked+.toggle-slider::before{
+            transform:translateX(24px);
+            background:var(--pink-hi);
+        }
+
+        .file-upload-wrapper{
+            margin-top:14px;padding:16px;
+            border:2px dashed var(--purple-deep);
+            border-radius:12px;
+            background:rgba(0,0,0,0.35);
+            text-align:left;
+        }
+        .file-upload-wrapper p{color:var(--ink-soft)}
+        .file-upload-wrapper input[type="file"]{
+            color:var(--ink);
+            font-family:'Atkinson Hyperlegible',sans-serif;
+            font-size:0.95rem;
+            font-weight:400;
+        }
+        .file-upload-wrapper input[type="file"]::file-selector-button{
+            background:var(--bg-elevated);
+            color:var(--pink-hi);
+            border:2px solid var(--pink-deep);
+            padding:6px 12px;
+            border-radius:6px;
+            font-family:'Atkinson Hyperlegible',sans-serif;
+            font-weight:700;
+            font-size:0.9rem;
+            cursor:pointer;
+            margin-right:10px;
+        }
+        .file-upload-wrapper input[type="file"]::file-selector-button:hover{
+            background:var(--bg-panel-hi);
+            color:var(--ink);
+        }
+        #dict-status{color:var(--pink-hi);font-weight:700}
+        .trie-loading{color:var(--purple-hi);font-size:0.95rem;margin-top:8px;font-weight:700}
+        .spinner{
+            display:inline-block;width:14px;height:14px;
+            border:2.5px solid rgba(180,105,224,0.3);
+            border-top-color:var(--pink);
+            border-right-color:var(--purple);
+            border-bottom-color:var(--blue);
+            border-radius:50%;
+            animation:spin 0.9s linear infinite;
+            vertical-align:middle;margin-right:7px;
+        }
+        @keyframes spin{to{transform:rotate(360deg)}}
+
+        /* Start button — the full flag gradient */
+        .btn-start{
+            background:var(--flag-gradient-shimmer);
+            background-size:200% auto;
+            color:var(--ink);
+            font-size:clamp(1.1rem,2.6vw,1.25rem);
+            padding:16px 40px;
+            border-radius:12px;
+            box-shadow:0 5px 0 var(--purple-shadow), 0 7px 26px rgba(180,105,224,0.5);
+            margin-top:20px;
+            font-weight:700;
+            letter-spacing:0.04em;
+            text-shadow:0 1px 3px rgba(0,0,0,0.45);
+            animation:shimmer 4s ease-in-out infinite;
+        }
+        .btn-start:hover{filter:brightness(1.12)}
+        .btn-start:active{transform:translateY(5px);box-shadow:none}
+
+        .swap-grid{
+            display:grid;
+            grid-template-columns:repeat(6,1fr);
+            gap:7px;margin-top:14px;
+        }
+        .swap-tile{
+            background:linear-gradient(180deg,var(--tile-face),var(--tile-face-alt));
+            color:var(--tile-ink);
+            padding:11px;
+            border-radius:8px;
+            cursor:pointer;
+            font-weight:700;
+            font-family:'Fredoka','Atkinson Hyperlegible',sans-serif;
+            font-size:1.35rem;
+            box-shadow:0 4px 0 var(--tile-shadow);
+            transition:all 0.12s;
+            border:none;
+            text-shadow:0 1px 0 rgba(255,255,255,0.45);
+        }
+        .swap-tile:hover{
+            transform:translateY(-2px);
+            box-shadow:0 6px 0 var(--tile-shadow),0 0 14px var(--pink-glow);
+            background:linear-gradient(180deg,var(--pink-hi),var(--pink));
+            color:var(--ink);
+        }
+        .swap-tile:active{transform:translateY(3px);box-shadow:0 1px 0 var(--tile-shadow)}
+
+        /* Recap — winner banner gets the full flag gradient */
+        .recap-section{text-align:left;margin:14px 0;max-height:58vh;overflow-y:auto;padding-right:6px}
+        .recap-section::-webkit-scrollbar{width:5px}
+        .recap-section::-webkit-scrollbar-thumb{
+            background:linear-gradient(180deg,var(--pink),var(--purple),var(--blue));
+            border-radius:3px;
+        }
+        .winner-banner{
+            font-family:'Atkinson Hyperlegible',sans-serif;
+            font-size:clamp(1.3rem,3.4vw,1.6rem);
+            font-weight:700;
+            margin:12px 0;
+            letter-spacing:0.02em;
+            background:var(--flag-gradient-shimmer);
+            background-size:200% auto;
+            -webkit-background-clip:text;
+            background-clip:text;
+            -webkit-text-fill-color:transparent;
+            color:transparent;
+            animation:shimmer 3s ease-in-out infinite;
+            filter:drop-shadow(0 0 18px rgba(180,105,224,0.5));
+        }
+        .recap-player{
+            background:var(--bg-input);
+            border:2px solid var(--bg-border);
+            border-radius:12px;
+            padding:14px;margin-bottom:12px;
+        }
+        .recap-player:first-child{
+            background:var(--bg-elevated);
+            border:2px solid transparent;
+            background-image:
+                linear-gradient(var(--bg-elevated),var(--bg-elevated)) padding-box,
+                var(--flag-gradient) border-box;
+            box-shadow:0 0 24px rgba(180,105,224,0.25);
+        }
+        .recap-header{
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            margin-bottom:8px;
+        }
+        .recap-rank{font-weight:700;color:var(--gold);font-size:1.25rem;text-shadow:0 0 8px var(--gold-glow)}
+        .recap-name{font-weight:700;font-size:1.1rem;color:var(--ink)}
+        .recap-total{font-weight:700;color:var(--gold);font-size:1.4rem;text-shadow:0 0 10px var(--gold-glow)}
+        .recap-stats{
+            font-size:0.92rem;
+            color:var(--ink-soft);
+            line-height:1.7;
+        }
+        .recap-stats strong{color:var(--ink)}
+
+        .recap-round{margin-top:10px}
+        .recap-round summary{
+            font-weight:700;
+            font-size:0.98rem;
+            color:var(--purple-hi);
+            cursor:pointer;
+            padding:5px 0;
+            list-style:none;
+        }
+        .recap-round summary::before{content:'▸ ';font-size:0.85em;color:var(--ink-dim)}
+        .recap-round[open] summary::before{content:'▾ '}
+        .recap-round summary::-webkit-details-marker{display:none}
+        .recap-word-row{
+            padding:5px 0 5px 14px;
+            border-left:3px solid;
+            border-image:var(--flag-gradient) 1;
+            margin:4px 0;
+        }
+        .recap-word-main{
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            font-size:0.95rem;
+        }
+        .recap-word-name{font-weight:700;color:var(--ink)}
+        .recap-word-name.best{color:var(--gold-hi);text-shadow:0 0 8px var(--gold-glow)}
+        .recap-word-score{font-weight:700;color:var(--pink-hi);font-size:1rem}
+        .recap-word-meta{
+            font-size:0.85rem;
+            color:var(--ink-dim);
+            margin-top:2px;
+        }
+        .recap-tile-detail{margin:5px 0 3px 10px}
+        .recap-tile-detail summary{
+            font-size:0.82rem;
+            color:var(--ink-soft);
+            cursor:pointer;
+            list-style:none;
+            font-weight:700;
+        }
+        .recap-tile-detail summary::before{content:'⊞ '}
+        .recap-tile-detail[open] summary::before{content:'⊟ '}
+        .recap-tile-detail summary::-webkit-details-marker{display:none}
+        .tile-breakdown{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+        .tile-bd{
+            background:var(--bg-panel);
+            border:1px solid var(--bg-border);
+            border-radius:6px;
+            padding:3px 7px;
+            font-size:0.82rem;
+            font-weight:700;
+            color:var(--ink);
+            display:inline-flex;
+            align-items:center;gap:4px;
+        }
+        .tile-bd .bd-char{color:var(--pink-hi)}
+        .tile-bd .bd-mult{
+            font-size:0.78rem;
+            border-radius:4px;
+            padding:0 4px;
+            font-weight:700;
+        }
+        .tile-bd .bd-mult.m-DL{color:var(--mult-DL)}
+        .tile-bd .bd-mult.m-TL{color:var(--mult-TL)}
+        .tile-bd .bd-mult.m-2W{color:var(--mult-2W)}
+        .tile-bd .bd-mult.m-3W{color:var(--mult-3W)}
+        .tile-bd .bd-gem{color:var(--purple-hi);font-size:0.85rem}
+
+        .hidden{display:none !important}
+
+        /* Start screen settings */
+        .settings-section{margin:14px 0;text-align:left}
+        .settings-section-title{
+            font-size:0.95rem;
+            font-weight:700;
+            color:var(--pink-hi);
+            text-transform:uppercase;
+            letter-spacing:0.15em;
+            margin-bottom:10px;
+            padding-bottom:6px;
+            border-bottom:2px solid;
+            border-image:var(--flag-gradient) 1;
+        }
+        .setting-row{
+            display:flex;align-items:center;
+            justify-content:space-between;
+            padding:9px 0;gap:12px;
+        }
+        .setting-row>span{
+            font-size:clamp(0.95rem,2.1vw,1rem);
+            font-weight:700;
+            color:var(--ink);
+        }
+        .setting-num{
+            width:74px;padding:7px 10px;
+            border-radius:7px;
+            border:2px solid var(--bg-border);
+            background:var(--bg-input);
+            color:var(--pink-hi);
+            font-family:'Atkinson Hyperlegible',sans-serif;
+            font-size:1.05rem;font-weight:700;
+            text-align:center;
+            -moz-appearance:textfield;
+        }
+        .setting-num:focus{outline:none;border-color:var(--pink);box-shadow:0 0 0 3px var(--pink-glow)}
+        .setting-num::-webkit-outer-spin-button,
+        .setting-num::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+
+        .mult-toggles{display:flex;gap:7px;flex-wrap:wrap;margin-top:6px}
+        .mult-toggle{
+            display:flex;align-items:center;gap:7px;
+            padding:8px 12px;
+            border-radius:8px;
+            border:2px solid var(--bg-border);
+            background:var(--bg-input);
+            cursor:pointer;
+            transition:all 0.2s;
+            font-size:0.95rem;font-weight:700;
+            color:var(--ink-soft);
+        }
+        .mult-toggle input{display:none}
+        .mult-toggle.active{
+            border-color:var(--purple);
+            background:rgba(180,105,224,0.12);
+            color:var(--ink);
+        }
+        .mult-toggle .mt-badge{
+            padding:2px 8px;
+            border-radius:4px;
+            color:var(--ink);
+            font-size:0.88rem;
+            font-weight:700;
+            text-shadow:0 1px 1px rgba(0,0,0,0.4);
+        }
+        .mt-DL .mt-badge{background:var(--mult-DL)}
+        .mt-TL .mt-badge{background:var(--mult-TL)}
+        .mt-2W .mt-badge{background:var(--mult-2W)}
+        .mt-3W .mt-badge{background:var(--mult-3W);color:var(--bg-void);text-shadow:0 1px 0 rgba(255,255,255,0.3)}
+
+        .setting-hint{
+            font-size:0.85rem;
+            color:var(--ink-dim);
+            margin-top:5px;
+            font-style:italic;
+            line-height:1.4;
+        }
+
+        /* Long Word Bonus presets */
+        .lw-presets{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+        .lw-preset-btn{
+            flex:1;min-width:110px;
+            padding:11px 12px;
+            border-radius:10px;
+            border:2px solid var(--bg-border);
+            background:var(--bg-input);
+            cursor:pointer;
+            transition:all 0.2s;
+            text-align:left;
+            font-family:'Atkinson Hyperlegible',sans-serif;
+        }
+        .lw-preset-btn:hover{
+            background:var(--bg-panel-hi);
+            border-color:var(--purple-deep);
+        }
+        .lw-preset-btn.active{
+            border-color:var(--pink);
+            background:rgba(255,61,146,0.1);
+            box-shadow:0 0 16px var(--pink-glow);
+        }
+        .lw-preset-name{
+            display:block;
+            font-weight:700;
+            font-size:1rem;
+            color:var(--ink);
+        }
+        .lw-preset-btn.active .lw-preset-name{color:var(--pink-hi)}
+        .lw-preset-desc{
+            display:block;
+            font-size:0.82rem;
+            color:var(--ink-dim);
+            margin-top:3px;
+            line-height:1.4;
+        }
+        .lw-custom-panel{
+            margin-top:10px;padding:12px;
+            background:rgba(0,0,0,0.3);
+            border-radius:10px;
+            border:2px solid var(--pink-deep);
+        }
+        .lw-tier-row{
+            display:flex;align-items:center;
+            gap:9px;margin-bottom:8px;
+        }
+        .lw-tier-row span.lw-tier-label{
+            font-size:0.95rem;font-weight:700;
+            min-width:80px;color:var(--ink);
+        }
+        .lw-tier-num{
+            width:60px;padding:5px 7px;
+            border-radius:6px;
+            border:2px solid var(--bg-border);
+            background:var(--bg-input);
+            color:var(--pink-hi);
+            font-family:'Atkinson Hyperlegible',sans-serif;
+            font-size:0.95rem;font-weight:700;
+            text-align:center;
+            -moz-appearance:textfield;
+        }
+        .lw-tier-num::-webkit-outer-spin-button,
+        .lw-tier-num::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+        .lw-tier-remove{
+            background:none;border:none;
+            color:var(--red);cursor:pointer;
+            font-size:1.15rem;padding:3px 8px;
+            opacity:0.7;transition:opacity 0.2s;
+            font-weight:700;
+        }
+        .lw-tier-remove:hover{opacity:1}
+        .lw-tier-actions{margin-top:6px}
+        .lw-tier-add-btn{
+            background:rgba(77,128,255,0.12);
+            color:var(--blue-hi);
+            border:2px solid var(--blue-deep);
+            padding:7px 14px;
+            border-radius:7px;
+            cursor:pointer;
+            font-weight:700;font-size:0.9rem;
+            font-family:'Atkinson Hyperlegible',sans-serif;
+        }
+        .lw-tier-add-btn:hover{background:rgba(77,128,255,0.2)}
+        .lw-preview{
+            margin-top:8px;
+            font-size:0.88rem;
+            color:var(--ink-soft);
+            line-height:1.6;
+            padding:7px 11px;
+            background:rgba(0,0,0,0.3);
+            border-radius:7px;
+            border-left:3px solid;
+            border-image:var(--flag-gradient) 1;
+        }
+        .lw-preview .lw-pv-tier{color:var(--pink-hi);font-weight:700}
+        .lw-preview .lw-pv-stack{
+            color:var(--blue-hi);
+            font-weight:700;
+            font-size:0.82rem;
+        }
+
+        /* In-game long word bonus reference */
+        .lw-ref{
+            background:var(--bg-panel);
+            border:2px solid var(--bg-border);
+            border-radius:12px;
+            flex-shrink:0;
+            overflow:hidden;
+        }
+        .lw-ref summary{
+            padding:8px 14px;
+            font-size:clamp(0.88rem,1.9vw,0.95rem);
+            font-weight:700;
+            color:var(--gold-hi);
+            cursor:pointer;
+            list-style:none;
+            display:flex;align-items:center;justify-content:space-between;
+            user-select:none;
+            -webkit-tap-highlight-color:transparent;
+        }
+        .lw-ref summary::-webkit-details-marker{display:none}
+        .lw-ref summary::after{
+            content:'▸';
+            font-size:0.82rem;
+            color:var(--ink-dim);
+            transition:transform 0.2s;
+        }
+        .lw-ref[open] summary::after{transform:rotate(90deg)}
+        .lw-ref-tiers{
+            padding:0 14px 8px;
+            display:flex;flex-wrap:wrap;gap:6px;
+        }
+        .lw-ref-chip{
+            padding:4px 10px;
+            border-radius:20px;
+            background:rgba(255,212,71,0.1);
+            border:1px solid var(--gold-deep);
+            font-size:clamp(0.82rem,1.8vw,0.9rem);
+            font-weight:700;
+            color:var(--gold-hi);
+            white-space:nowrap;
+        }
+        .lw-ref-none{
+            font-size:0.88rem;
+            color:var(--ink-dim);
+            font-style:italic;
+        }
+
+        /* Animations & misc */
+        @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
+        @keyframes pop{0%{transform:scale(0.3);opacity:0}100%{transform:scale(1);opacity:1}}
+        @keyframes scoreFloat{0%{opacity:1;transform:translate(-50%,0) scale(1)}100%{opacity:0;transform:translate(-50%,-60px) scale(1.5)}}
+        .score-float{
+            position:fixed;z-index:999;
+            pointer-events:none;
+            font-family:'Atkinson Hyperlegible',sans-serif;
+            font-size:clamp(1.8rem,4.8vw,2.4rem);
+            font-weight:700;
+            color:var(--gold-hi);
+            text-shadow:0 2px 12px var(--gold-glow), 0 2px 0 rgba(0,0,0,0.5);
+            animation:scoreFloat 1.2s ease-out forwards;
+            letter-spacing:0.02em;
+        }
+        .toast{
+            position:fixed;
+            bottom:clamp(90px,15vh,120px);
+            left:50%;
+            transform:translateX(-50%);
+            background:var(--bg-panel);
+            border:2px solid var(--purple);
+            color:var(--ink);
+            padding:11px 22px;
+            border-radius:10px;
+            z-index:999;
+            font-weight:700;
+            pointer-events:none;
+            font-size:clamp(0.95rem,2vw,1.05rem);
+            box-shadow:0 6px 24px rgba(0,0,0,0.6), 0 0 18px var(--purple-glow);
+            animation:toastIn 0.3s ease,toastOut 0.3s ease 1.7s forwards;
+            white-space:nowrap;
+            max-width:92vw;
+            overflow:hidden;
+            text-overflow:ellipsis;
+        }
+        @keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(12px)}}
+        @keyframes toastOut{to{opacity:0;transform:translateX(-50%) translateY(-12px)}}
+
+        .round-overlay{
+            position:fixed;inset:0;
+            background:rgba(7,5,28,0.9);
+            display:flex;flex-direction:column;
+            justify-content:center;align-items:center;
+            z-index:90;
+            backdrop-filter:blur(6px);
+            animation:fadeIn 0.3s ease,fadeOut 0.4s ease 1.2s forwards;
+        }
+        .round-overlay .round-text{
+            font-family:'Atkinson Hyperlegible',sans-serif;
+            font-size:clamp(2.2rem,7vw,3rem);
+            font-weight:700;
+            background:var(--flag-gradient-shimmer);
+            background-size:200% auto;
+            -webkit-background-clip:text;
+            background-clip:text;
+            -webkit-text-fill-color:transparent;
+            color:transparent;
+            animation:pop 0.4s cubic-bezier(0.175,0.885,0.32,1.275), shimmer 3s ease-in-out infinite;
+            letter-spacing:0.04em;
+            filter:drop-shadow(0 0 24px rgba(180,105,224,0.5));
+        }
+        .round-overlay .round-sub{
+            font-size:clamp(0.95rem,2.2vw,1.1rem);
+            color:var(--ink-soft);
+            margin-top:12px;
+            font-weight:700;
+            animation:pop 0.4s cubic-bezier(0.175,0.885,0.32,1.275) 0.1s both;
+            letter-spacing:0.02em;
+        }
+        @keyframes fadeIn{from{opacity:0}}
+        @keyframes fadeOut{to{opacity:0;pointer-events:none}}
+
+        /* Player history modal */
+        .history-round{margin-bottom:14px}
+        .history-round-header{
+            font-size:0.82rem;
+            font-weight:700;
+            letter-spacing:0.14em;
+            text-transform:uppercase;
+            color:var(--purple-hi);
+            padding-bottom:5px;
+            margin-bottom:6px;
+            border-bottom:1px solid var(--bg-border);
+        }
+        .history-word-row{
+            display:flex;justify-content:space-between;align-items:baseline;
+            padding:5px 0;
+            border-bottom:1px solid rgba(255,255,255,0.04);
+        }
+        .history-word{
+            font-size:1.05rem;
+            font-weight:700;
+            color:var(--ink);
+            letter-spacing:0.06em;
+        }
+        .history-meta{
+            font-size:0.82rem;
+            color:var(--ink-dim);
+            margin-top:1px;
+        }
+        .history-score{
+            font-size:1rem;
+            font-weight:700;
+            color:var(--gold-hi);
+            white-space:nowrap;
+            margin-left:12px;
+        }
+        .history-empty{
+            color:var(--ink-dim);
+            font-style:italic;
+            text-align:center;
+            padding:20px 0;
+        }
+        .history-total-row{
+            display:flex;justify-content:space-between;
+            padding:10px 0 4px;
+            margin-top:6px;
+            border-top:2px solid var(--purple-deep);
+            font-weight:700;
+            font-size:1rem;
+        }
+        .history-ability-row{
+            font-size:0.82rem;
+            color:var(--ink-dim);
+            padding:5px 0 2px;
+            font-style:italic;
+        }
+        .player-card{cursor:pointer}
+        .player-card:hover{border-color:var(--purple);opacity:0.85}
+        .player-card.active:hover{opacity:1}
+
+        /* Focus rings for accessibility */
+        button:focus-visible,
+        input:focus-visible,
+        .toggle-switch:focus-within .toggle-slider{
+            outline:3px solid var(--pink);
+            outline-offset:2px;
+        }
+
+        /* Code tag inside modals */
+        code{
+            font-family:'Atkinson Hyperlegible',sans-serif;
+            color:var(--pink-hi);
+            font-weight:700;
+            background:var(--bg-input);
+            padding:1px 6px;
+            border-radius:4px;
+            font-size:0.92em;
+            border:1px solid var(--bg-border);
+        }
+
+        /* REDUCED MOTION — freeze all the fancy stuff for anyone who needs it */
+        @media (prefers-reduced-motion: reduce){
+            .logo, .modal-content h1, .winner-banner, .round-overlay .round-text,
+            #word-display.valid, .btn-start, .grid-frame, .nebula, .star, .particle,
+            .tile-gem, .coco-timer-active{
+                animation:none !important;
+            }
+            .logo, .modal-content h1, .winner-banner, #word-display.valid, .btn-start{
+                background-position:50% 50% !important;
+            }
+            .round-overlay .round-text{
+                animation:pop 0.4s cubic-bezier(0.175,0.885,0.32,1.275) !important;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div id="starfield"></div>
+<div class="nebula nebula-1"></div>
+<div class="nebula nebula-2"></div>
+<div class="nebula nebula-3"></div>
+
+<div id="app">
+    <div class="side-panel">
+        <header>
+            <div><div class="logo">SpellCraft<small>Word Duel</small></div></div>
+            <div class="header-right">
+                <div class="sound-controls">
+                    <button class="btn-icon" id="btn-mute" onclick="toggleMute()" title="Toggle Sound">🔇</button>
+                    <input type="range" class="volume-slider" id="volume-slider" min="0" max="100" value="50" oninput="setVolume(this.value)">
+                </div>
+                <div id="timer-display">--</div>
+            </div>
+        </header>
+        <div class="round-indicator-row">
+            <div id="round-indicator">✦ ROUND 1 / 5 ✦</div>
+            <div class="round-pips" id="round-pips"></div>
+        </div>
+        <div class="player-bar" id="player-list"></div>
+        <div class="word-area" id="word-area">
+            <div id="word-display" class="empty">Tap letters to spell</div>
+            <div id="score-preview"></div>
+        </div>
+        <div class="controls-area">
+            <div class="action-buttons">
+                <button class="btn-clear" id="btn-clear" onclick="game.clearSelection()">Clear</button>
+                <button class="btn-submit" id="btn-submit" onclick="game.submitWord()">Submit</button>
+            </div>
+            <div class="ability-bar">
+                <button class="btn-ability" id="btn-shuffle" onclick="game.useAbility('shuffle')">🔀 Shuffle <span class="cost">1💎</span></button>
+                <button class="btn-ability" id="btn-swap" onclick="game.useAbility('swap')">🔄 Swap <span class="cost">3💎</span></button>
+                <button class="btn-ability" id="btn-time" onclick="game.useAbility('time')">⏱ +15s <span class="cost">1💎</span></button>
+                <button class="btn-cancel-swap hidden" id="btn-cancel-swap" onclick="game.cancelSwap()">✕ Cancel Swap</button>
+            </div>
+        </div>
+
+        <div class="coco-attack-zone" id="coco-zone">
+            <svg class="coco-cat" id="coco-svg-sm" viewBox="0 0 100 100" fill="none">
+                <!-- Head -->
+                <ellipse cx="50" cy="58" rx="32" ry="28" fill="#e88200"/>
+                <!-- Ears -->
+                <polygon points="22,38 18,10 40,30" fill="#e88200" stroke="#cc7000" stroke-width="1"/>
+                <polygon points="78,38 82,10 60,30" fill="#e88200" stroke="#cc7000" stroke-width="1"/>
+                <polygon points="25,34 22,16 37,29" fill="#ffb3b3"/>
+                <polygon points="75,34 78,16 63,29" fill="#ffb3b3"/>
+                <!-- Tabby stripes -->
+                <path d="M40,36 Q50,30 60,36" stroke="#cc7000" stroke-width="2" fill="none"/>
+                <path d="M43,32 Q50,27 57,32" stroke="#cc7000" stroke-width="1.5" fill="none"/>
+                <line x1="50" y1="30" x2="50" y2="42" stroke="#cc7000" stroke-width="1.5"/>
+                <!-- White muzzle -->
+                <ellipse cx="50" cy="67" rx="16" ry="12" fill="white"/>
+                <ellipse cx="50" cy="64" rx="12" ry="8" fill="#fff8f0"/>
+                <!-- Green eyes -->
+                <ellipse cx="38" cy="52" rx="7" ry="7.5" fill="white"/>
+                <ellipse cx="62" cy="52" rx="7" ry="7.5" fill="white"/>
+                <ellipse cx="39" cy="52" rx="4.5" ry="5.5" fill="#4caf50"/>
+                <ellipse cx="63" cy="52" rx="4.5" ry="5.5" fill="#4caf50"/>
+                <ellipse cx="39" cy="51.5" rx="2" ry="4" fill="#1b5e20"/>
+                <ellipse cx="63" cy="51.5" rx="2" ry="4" fill="#1b5e20"/>
+                <circle cx="37" cy="49.5" r="1.5" fill="white"/>
+                <circle cx="61" cy="49.5" r="1.5" fill="white"/>
+                <!-- Nose -->
+                <ellipse cx="50" cy="61" rx="3.5" ry="2.5" fill="#ff8a80"/>
+                <!-- Mouth -->
+                <path d="M47,64 Q50,68 53,64" stroke="#cc7000" stroke-width="1.2" fill="none"/>
+                <!-- Whiskers -->
+                <line x1="8" y1="56" x2="33" y2="59" stroke="#ddd" stroke-width="0.8"/>
+                <line x1="8" y1="63" x2="33" y2="62" stroke="#ddd" stroke-width="0.8"/>
+                <line x1="67" y1="59" x2="92" y2="56" stroke="#ddd" stroke-width="0.8"/>
+                <line x1="67" y1="62" x2="92" y2="63" stroke="#ddd" stroke-width="0.8"/>
+            </svg>
+            <div class="coco-info">
+                <div class="coco-title">🐱 Coco Attack!</div>
+                <div class="coco-desc">Force opponent's timer: 35s</div>
+            </div>
+            <button class="btn-coco" id="btn-coco" onclick="game.cocoAttack()">4💎 GO!</button>
+        </div>
+
+        <div class="dict-checker">
+            <div class="dict-checker-label">📖 Dictionary Check (Free)</div>
+            <div class="dict-checker-row">
+                <input type="text" class="dict-checker-input" id="dict-check-input" placeholder="Type a word..." maxlength="15" onkeydown="if(event.key==='Enter')checkDictWord()">
+                <button class="dict-checker-btn" onclick="checkDictWord()">Check</button>
+            </div>
+            <div class="dict-checker-result" id="dict-check-result"></div>
+        </div>
+
+        <details class="lw-ref hidden" id="lw-ref">
+            <summary>🏆 Long Word Bonus</summary>
+            <div class="lw-ref-tiers" id="lw-ref-tiers"></div>
+        </details>
+    </div>
+
+    <div class="grid-panel">
+        <div class="grid-frame"><div class="grid" id="grid"></div></div>
+    </div>
+</div>
+
+<div id="modal-start" class="modal">
+    <div class="modal-content" style="width:460px;">
+        <h1>✦ SpellCraft ✦</h1>
+        <p style="color:var(--ink-soft);margin-bottom:10px;font-size:1rem;font-weight:700;">Keith vs Shawn</p>
+
+        <div class="setting-row">
+            <span>Sound Effects</span>
+            <label class="toggle-switch"><input type="checkbox" id="sound-toggle"><span class="toggle-slider"></span></label>
+        </div>
+
+        <div class="settings-section">
+            <div class="settings-section-title">⚙ Game Settings</div>
+            <div class="setting-row">
+                <span>Starting Gems</span>
+                <input type="number" class="setting-num" id="cfg-start-gems" value="3" min="0" max="10">
+            </div>
+            <div class="setting-row">
+                <span>Coco Attack</span>
+                <label class="toggle-switch"><input type="checkbox" id="cfg-coco-enabled" checked><span class="toggle-slider"></span></label>
+            </div>
+            <div class="setting-row" id="row-coco-cost">
+                <span>Coco Attack Cost</span>
+                <input type="number" class="setting-num" id="cfg-coco-cost" value="4" min="1" max="10">
+            </div>
+            <div class="setting-row">
+                <span>Min Gems on Board</span>
+                <input type="number" class="setting-num" id="cfg-board-gems" value="9" min="1" max="25">
+            </div>
+            <div class="setting-hint">Max 25 (gems can share tiles with multipliers)</div>
+        </div>
+
+        <div class="settings-section">
+            <div class="settings-section-title">✦ Multiplier Types</div>
+            <div class="mult-toggles" id="mult-toggles">
+                <label class="mult-toggle mt-DL active" data-mult="DL">
+                    <input type="checkbox" checked> <span class="mt-badge">×2L</span> Double Letter
+                </label>
+                <label class="mult-toggle mt-TL active" data-mult="TL">
+                    <input type="checkbox" checked> <span class="mt-badge">×3L</span> Triple Letter
+                </label>
+                <label class="mult-toggle mt-2W active" data-mult="2W">
+                    <input type="checkbox" checked> <span class="mt-badge">×2W</span> Double Word
+                </label>
+                <label class="mult-toggle mt-3W active" data-mult="3W">
+                    <input type="checkbox" checked> <span class="mt-badge">×3W</span> Triple Word
+                </label>
+            </div>
+            <div class="setting-hint">Exclusivity still applies: ×2L & ×3L can't coexist, nor ×2W & ×3W</div>
+        </div>
+
+        <div class="settings-section">
+            <div class="settings-section-title">🏆 Long Word Bonus</div>
+            <div class="lw-presets" id="lw-presets">
+                <button class="lw-preset-btn" data-preset="original" onclick="selectLWPreset('original')">
+                    <span class="lw-preset-name">Original</span>
+                    <span class="lw-preset-desc">Flat +10 for 6+ letters</span>
+                </button>
+                <button class="lw-preset-btn active" data-preset="keith" onclick="selectLWPreset('keith')">
+                    <span class="lw-preset-name">Keith Mode</span>
+                    <span class="lw-preset-desc">Escalating tiers (6→+10 … 12→+50)</span>
+                </button>
+                <button class="lw-preset-btn" data-preset="custom" onclick="selectLWPreset('custom')">
+                    <span class="lw-preset-name">Custom</span>
+                    <span class="lw-preset-desc">Set your own tiers</span>
+                </button>
+            </div>
+
+            <div id="lw-custom-panel" class="lw-custom-panel hidden">
+                <div class="setting-row">
+                    <span>Stacking</span>
+                    <label class="toggle-switch"><input type="checkbox" id="cfg-lw-stack" onchange="updateLWPreview()"><span class="toggle-slider"></span></label>
+                </div>
+                <div class="setting-hint" style="margin-bottom:8px">Off = highest tier only · On = all qualifying tiers added together</div>
+                <div id="lw-tier-list"></div>
+                <div class="lw-tier-actions">
+                    <button class="lw-tier-add-btn" onclick="addCustomTier()">+ Add Tier</button>
+                </div>
+            </div>
+            <div id="lw-preview" class="lw-preview"></div>
+        </div>
+
+        <div class="file-upload-wrapper">
+            <p style="font-weight:700;margin-bottom:8px;color:var(--ink);font-size:1rem;">📖 Dictionary</p>
+            <p style="font-size:0.9rem;margin-bottom:12px;">Default: ~900 words. Upload <code>dictionary.txt</code> for 178k+.</p>
+            <input type="file" id="dict-file" accept=".txt" onchange="loadDictionary(this)">
+            <p id="dict-status" style="margin-top:10px;">Using Built-in List</p>
+            <div id="trie-status" class="hidden trie-loading"><span class="spinner"></span>Building index...</div>
+
+            <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--bg-border);">
+                <p style="font-weight:700;margin-bottom:7px;color:var(--ink);font-size:0.98rem;">📝 Custom Words <span style="font-weight:400;color:var(--ink-dim);font-size:0.85rem;">(optional)</span></p>
+                <p style="font-size:0.85rem;margin-bottom:10px;color:var(--ink-dim);">Words Keith & Shawn think should count. Merged into the dictionary — duplicates are fine.</p>
+                <input type="file" id="custom-words-file" accept=".txt" onchange="loadCustomWords(this)">
+                <p id="custom-status" style="margin-top:7px;font-size:0.9rem;"></p>
+            </div>
+        </div>
+        <button class="btn-start" onclick="startGame()">⚡ Start Game</button>
+    </div>
+</div>
+
+<div id="modal-swap" class="modal hidden">
+    <div class="modal-content">
+        <h3>Choose a Letter</h3>
+        <p style="font-size:0.95rem;color:var(--ink-soft);margin-bottom:8px;">Replace the selected tile</p>
+        <div class="swap-grid" id="swap-options"></div>
+        <button class="btn-clear" style="margin-top:16px;max-width:none;width:100%;" onclick="closeSwapModal()">Cancel</button>
+    </div>
+</div>
+
+<div id="modal-gameover" class="modal hidden">
+    <div class="modal-content" style="width:520px;">
+        <h1>🏆 Game Over!</h1>
+        <div class="winner-banner" id="winner-banner"></div>
+        <div class="recap-section" id="recap-section"></div>
+        <button class="btn-start" onclick="location.reload()">🔄 Play Again</button>
+    </div>
+</div>
+
+<div id="modal-dict-confirm" class="modal hidden">
+    <div class="modal-content" style="width:400px;">
+        <h3 style="margin-bottom:14px;">📖 No Dictionary Loaded</h3>
+        <p style="font-size:0.95rem;margin-bottom:8px;">You haven't uploaded a <code>dictionary.txt</code> file.</p>
+        <p style="font-size:0.95rem;margin-bottom:18px;">The game will use the built-in list (~900 words). Did you forget to load one?</p>
+        <div style="display:flex;gap:10px;justify-content:center;">
+            <button class="btn-clear" style="max-width:none;flex:1;" onclick="closeDictConfirm(false)">Go Back</button>
+            <button class="btn-submit" style="max-width:none;flex:1;" onclick="closeDictConfirm(true)">Play Anyway</button>
+        </div>
+    </div>
+</div>
+
+<div id="modal-shuffle-confirm" class="modal hidden">
+    <div class="modal-content" style="width:400px;">
+        <h3 style="margin-bottom:14px;">🔀 Shuffle Board?</h3>
+        <p style="font-size:0.95rem;margin-bottom:18px;">This will shuffle all tiles and reassign multipliers. Costs <strong style="color:var(--purple-hi);">1💎</strong>.</p>
+        <div style="display:flex;gap:10px;justify-content:center;">
+            <button class="btn-clear" style="max-width:none;flex:1;" onclick="closeShuffleConfirm()">Cancel</button>
+            <button class="btn-submit" style="max-width:none;flex:1;" onclick="confirmShuffle()">🔀 Shuffle</button>
+        </div>
+    </div>
+</div>
+
+<div id="modal-history" class="modal hidden">
+    <div class="modal-content" style="width:420px;max-height:80vh;display:flex;flex-direction:column;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-shrink:0;">
+            <h3 id="history-player-name" style="margin:0;font-size:1.3rem;"></h3>
+            <button class="btn-clear" style="max-width:none;padding:6px 14px;font-size:0.9rem;" onclick="closeHistoryModal()">✕ Close</button>
+        </div>
+        <div id="history-body" style="overflow-y:auto;flex:1;padding-right:4px;scrollbar-width:thin;scrollbar-color:var(--purple) transparent;"></div>
+    </div>
+</div>
+
+<script>
+/*
+ * SPELLCRAFT v21 — GEM CHAOS + COCO TOGGLE
+ * Game logic unchanged from v17/v18/v19. v20's only changes are CSS:
+ * tile letters use Fredoka; tile numbers restored to v17 sizing/weight.
+ * Starfield JS (createAtmosphere) is as v19 — multi-colored stars +
+ * pride-colored drifting particles + three aurora nebulae.
+ */
+let CONFIG = {
+    rounds:5, maxGems:10, startGems:3, timerSeconds:30, bonusTime:15,
+    longWordMode:'keith',
+    longWordTiers:[{len:6,bonus:10},{len:7,bonus:15},{len:8,bonus:20},{len:9,bonus:25},{len:10,bonus:30},{len:11,bonus:40},{len:12,bonus:50}],
+    longWordStack:false,
+    boardGemCount:9,
+    cocoAttackTime:35, cocoAttackCost:4, cocoAttackEnabled:true,
+    costs:{shuffle:1, swap:3, time:1},
+    enabledMults:{DL:true, TL:true, '2W':true, '3W':true}
+};
+
+function fisherYates(arr){for(let i=arr.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]]}return arr}
+
+const LW_PRESETS = {
+    original: {
+        tiers: [{len:6,bonus:10}],
+        stack: false,
+        label: 'Original',
+        desc: 'Flat +10 for 6+ letters'
+    },
+    keith: {
+        tiers: [
+            {len:6,bonus:10},{len:7,bonus:15},{len:8,bonus:20},
+            {len:9,bonus:25},{len:10,bonus:30},{len:11,bonus:40},{len:12,bonus:50}
+        ],
+        stack: false,
+        label: 'Keith Mode',
+        desc: 'Escalating bonuses for longer words'
+    }
+};
+
+function calcLongWordBonus(wordLen) {
+    const tiers = CONFIG.longWordTiers.filter(t => wordLen >= t.len).sort((a,b) => a.len - b.len);
+    if (tiers.length === 0) return 0;
+    if (CONFIG.longWordStack) {
+        return tiers.reduce((sum, t) => sum + t.bonus, 0);
+    } else {
+        return tiers[tiers.length - 1].bonus;
+    }
+}
+
+const LETTERS = {
+    'A':{val:1,count:9},'B':{val:4,count:2},'C':{val:5,count:2},'D':{val:3,count:4},
+    'E':{val:1,count:12},'F':{val:5,count:2},'G':{val:3,count:3},'H':{val:4,count:2},
+    'I':{val:1,count:9},'J':{val:7,count:1},'K':{val:6,count:1},'L':{val:3,count:4},
+    'M':{val:4,count:2},'N':{val:2,count:6},'O':{val:1,count:8},'P':{val:4,count:2},
+    'Q':{val:8,count:1},'R':{val:2,count:6},'S':{val:2,count:4},'T':{val:2,count:6},
+    'U':{val:4,count:4},'V':{val:5,count:2},'W':{val:5,count:2},'X':{val:7,count:1},
+    'Y':{val:4,count:2},'Z':{val:8,count:1}
+};
+const LETTER_BAG=[];for(let[c,d]of Object.entries(LETTERS))for(let i=0;i<d.count;i++)LETTER_BAG.push(c);
+
+/*
+ * ATMOSPHERE — v19: multi-colored starfield + bi-flag drift particles.
+ * Stars are mostly white with pink / purple / blue minorities;
+ * particles are exclusively in the pride colors. Each star has a
+ * tiny matching-color box-shadow for a true "glow" feel at small
+ * sizes. Density scales with viewport area, same as v17.
+ */
+function createAtmosphere(){
+    const sf = document.getElementById('starfield');
+    if (!sf) return;
+    const n = Math.min(110, Math.floor(window.innerWidth*window.innerHeight/6500));
+    // Weighted: mostly white for readability, minority colored
+    const starColors = [
+        '#ffffff','#ffffff','#ffffff','#ffffff','#ffffff',
+        '#ffffff','#ffffff','#ffffff','#ffffff',  // 9 white
+        '#ffd0e8',                                 // 1 soft pink
+        '#ffa5cf',                                 // 1 pink
+        '#d4a5f0',                                 // 1 soft purple
+        '#a5c1ff',                                 // 1 soft blue
+        '#7ea0ff',                                 // 1 blue
+    ];
+    for (let i = 0; i < n; i++) {
+        const s = document.createElement('div');
+        s.className = 'star';
+        const z = Math.random()*2.8 + 0.6;
+        const color = starColors[Math.floor(Math.random()*starColors.length)];
+        s.style.cssText = `
+            width:${z}px;height:${z}px;
+            left:${Math.random()*100}%;top:${Math.random()*100}%;
+            background:${color};
+            box-shadow:0 0 ${(z*1.6).toFixed(1)}px ${color};
+            --dur:${(Math.random()*3.5+2).toFixed(1)}s;
+            --o1:${(Math.random()*0.15+0.05).toFixed(2)};
+            --o2:${(Math.random()*0.55+0.4).toFixed(2)};
+            animation-delay:${(Math.random()*5).toFixed(1)}s;
+        `;
+        sf.appendChild(s);
+    }
+    // Pride-colored drift particles
+    const palette = ['255,61,146', '180,105,224', '77,128,255'];
+    for (let i = 0; i < 14; i++) {
+        const p = document.createElement('div');
+        p.className = 'particle';
+        const z = Math.random()*4 + 2.5;
+        const h = palette[Math.floor(Math.random()*palette.length)];
+        p.style.cssText = `
+            width:${z}px;height:${z}px;
+            left:${Math.random()*100}%;
+            background:rgba(${h},0.9);
+            box-shadow:0 0 ${(z*2).toFixed(1)}px rgba(${h},0.65);
+            --dur:${(Math.random()*15+12).toFixed(0)}s;
+            --o:${(Math.random()*0.35+0.15).toFixed(2)};
+            animation-delay:${(Math.random()*20).toFixed(0)}s;
+        `;
+        sf.appendChild(p);
+    }
+}
+createAtmosphere();
+
+// Sound
+let audioCtx=null,soundEnabled=false,soundVolume=0.5;
+function initAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==='suspended')audioCtx.resume()}
+function playTone(f,dur,type='sine',vol=1){if(!soundEnabled||!audioCtx)return;const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type=type;o.frequency.setValueAtTime(f,audioCtx.currentTime);g.gain.setValueAtTime(vol*soundVolume*0.3,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+dur);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+dur)}
+const SFX={tileSelect(){playTone(880,0.08,'sine',0.6)},tileDeselect(){playTone(440,0.06,'sine',0.3)},submit(){playTone(523,0.12,'sine',0.7);setTimeout(()=>playTone(659,0.12,'sine',0.7),80);setTimeout(()=>playTone(784,0.15,'sine',0.8),160)},longWord(){playTone(523,0.1,'sine',0.8);setTimeout(()=>playTone(659,0.1,'sine',0.8),100);setTimeout(()=>playTone(784,0.1,'sine',0.8),200);setTimeout(()=>playTone(1047,0.25,'sine',1),300)},invalid(){playTone(200,0.2,'square',0.4)},shuffle(){for(let i=0;i<5;i++)setTimeout(()=>playTone(300+Math.random()*400,0.05,'sine',0.3),i*40)},swap(){playTone(600,0.15,'triangle',0.5)},timerWarn(){playTone(440,0.1,'square',0.5)},gameOver(){[523,659,784,1047].forEach((f,i)=>setTimeout(()=>playTone(f,0.3,'sine',0.6),i*200))},cocoAttack(){playTone(330,0.15,'sawtooth',0.6);setTimeout(()=>playTone(440,0.15,'sawtooth',0.7),120);setTimeout(()=>playTone(550,0.2,'sawtooth',0.8),240)}};
+function toggleMute(){soundEnabled=!soundEnabled;initAudio();document.getElementById('btn-mute').innerText=soundEnabled?'🔊':'🔇';document.getElementById('btn-mute').classList.toggle('active',soundEnabled)}
+function setVolume(v){soundVolume=v/100}
+
+// Trie
+class TrieNode{constructor(){this.children={};this.isEnd=false}}
+class Trie{constructor(){this.root=new TrieNode}insert(w){let n=this.root;for(const c of w){if(!n.children[c])n.children[c]=new TrieNode;n=n.children[c]}n.isEnd=true}hasWord(w){let n=this.root;for(const c of w){if(!n.children[c])return false;n=n.children[c]}return n.isEnd}}
+let trie=new Trie,trieBuilt=false;
+function buildTrie(ws){trie=new Trie;for(const w of ws)if(w.length>=2)trie.insert(w);trieBuilt=true}
+
+// Dictionary
+const BUILT_IN_WORDS=["THE","AND","FOR","ARE","BUT","NOT","YOU","ALL","ANY","CAN","HAD","HAS","HIM","HER","ITS","ONE","TWO","SIX","TEN","NEW","WHO","MAY","NOW","OUT","SEE","USE","WAY","GET","OUR","MAN","MEN","SAY","SHE","TOO","WON","DID","EYE","EAR","LET","RUN","SET","PUT","RED","OLD","BIG","EAT","BOY","CAT","DOG","BED","CAR","BUS","KEY","SKY","TOP","JOY","FUN","ACE","ADD","AID","AIM","APE","ARC","ARK","AWE","ATE","OAT","OWL","OWN","ORE","ODD","GAME","PLAY","TIME","WORD","LIST","GRID","TILE","HELP","CODE","FILE","SAVE","OPEN","EXIT","QUIT","WIN","MAP","TEST","DATA","USER","PATH","LINK","TEXT","FONT","SIZE","TYPE","MODE","VIEW","EDIT","COPY","CUT","PASTE","ZIP","ZOO","FIND","TOOL","MENU","ICON","ITEM","NAME","DATE","RANK","RATE","ROLE","TEAM","SIDE","TURN","MOVE","STEP","RAW","ROW","STOP","WAIT","LOAD","READ","SENT","MAIL","POST","BLOG","CHAT","TALK","CALL","CARD","DEAL","HAND","FACE","AGE","AGO","HEAD","FOOT","BODY","ARM","LEG","NOSE","MOUTH","LIP","NAIL","HAIR","SKIN","BONE","RIB","HIP","MIND","SOUL","LOVE","HATE","FEAR","HOPE","WISH","NEED","WANT","LIKE","LIVE","LIFE","DEAD","DIE","WAR","BORN","GROW","YEAR","HOUR","DAY","WEEK","PAST","PLAN","GOAL","IDEA","WORK","JOB","PAY","REST","STAY","HOME","LAND","SEA","AIR","FIRE","WIND","RAIN","SNOW","COLD","HEAT","WARM","COOL","DARK","ICE","SUN","BLUE","PINK","GRAY","GOLD","WOOD","IRON","ROCK","SAND","DUST","DIRT","MUD","GRASS","TREE","LEAF","ROSE","TAN","LILY","BIRD","FISH","LION","BEAR","WOLF","FOX","DEER","COW","PIG","DUCK","HEN","ANT","BEE","SPELL","CAST","MAGIC","WITCH","WIZARD","POWER","LEVEL","SKILL","QUEST","LOOT","ORC","ELF","BOSS","RAID","GUILD","PARTY","SOLO","TANK","HEAL","MANA","ITEM","BAG","POT","PAN","GEAR","DROP","ROLL","LOSE","DRAW","SCORE","HIGH","LOW","BEST","GOOD","BAD","SAD","EVIL","HERO","KING","QUEEN","PRINCE","LORD","LADY","KNIGHT","SWORD","SHIELD","BOW","ARROW","AXE","PEN","INK","ART","CLUB","SPEAR","KNIFE","BLADE","EDGE","POINT","HIT","MISS","BLOCK","DODGE","STUN","SLOW","ROOT","CHARM","HEX","CURSE","POISON","BURN","SHOCK","FREEZE","BLAST","ICY","HOT","BOLT","WAVE","BEAM","RAY","AURA","BUFF","SONG","DANCE","BARD","MONK","DRUID","MAGE","ROGUE","GOD","WARRIOR","HUNTER","DEMON","ANGEL","GHOST","SPIRIT","DRAGON","GIANT","DWARF","GNOME","TROLL","GOBLIN","CHEST","DOOR","TRAP","LOCK","ROOM","FLOOR","WALL","ROOF","ROPE","TIE","KNOT","BRIDGE","GATE","FENCE","YARD","GARDEN","PARK","CITY","TOWN","VILLAGE","FARM","FIELD","FOREST","ZOO","PET","DESERT","SWAMP","CAVE","MINE","RUIN","TOMB","GRAVE","TEMPLE","CHURCH","SHRINE","KINGDOM","EMPIRE","NATION","STATE","LAW","TAX","AREA","ZONE","WORLD","PLANET","STAR","MOON","SPACE","GALAXY","COMET","ORBIT","MATH","LOGIC","FACT","TRUTH","LIE","MYTH","LEGEND","TALE","STORY","BOOK","PAGE","LETTER","NOTE","PAPER","SCROLL","TOME","MEMO","DIARY","LOG","RECORD","NEWS","WEB","VIDEO","IMAGE","PHOTO","AUDIO","SOUND","MUSIC","TUNE","TONE","PITCH","BEAT","SPEED","RATE","PACE","FAST","QUICK","SWIFT","RUSH","DASH","WALK","JOG","SPRINT","JUMP","LEAP","HOP","SKIP","CLIMB","SWIM","FLOAT","SINK","DIVE","FALL","SIT","DROP","SLIP","SLIDE","GLIDE","DRIFT","SPIN","TWIST","BEND","FLEX","BREAK","SNAP","CRACK","CRUSH","SMASH","BASH","STRIKE","PUNCH","KICK","BITE","CLAW","SLICE","CHOP","APPLE","ORANGE","BANANA","GRAPE","MELON","BERRY","LEMON","LIME","PEAR","PEACH","PLUM","KIWI","FIG","NUT","PIE","CAKE","BREAD","MEAT","BEEF","PORK","EGG","MILK","CHEESE","WATER","WINE","BEER","TEA","OIL","GAS","ATOM","CELL","VIRUS","GENE","ACID","BASE","SALT","SUGAR","FAT","LEAD","ZINC","TIN","RUBY","OPAL","JADE","ONYX","PEARL","LAVA","ASH","CLAY","SILK","WOOL","FUR","ROBE","CAPE","COAT","SHIRT","PANTS","SHOE","BOOT","HAT","HELM","VEST","BELT","RING","GEM","JEWEL","CROWN","ORB","WAND","STAFF","POTION","RUNE","SIGIL","WARD","GOLEM","WISP","SHADE","FROG","FERN","VINE","SHORE","BEACH","COVE","REEF","CREEK","RIVER","LAKE","POND","POOL","WELL","SPRING","STONE","CLIFF","HILL","EAGLE","HAWK","CROW","DOVE","SWAN","CRANE","ROBIN","STORK","HARE","MOUSE","SNAKE","TOAD","ACORN","EMBER","FLAME","FROST","STORM","CLOUD","MIST","HAZE","DAWN","DUSK","NIGHT","NOON","GLOW","GLEAM","COCO"];
+let DICTIONARY=new Set(BUILT_IN_WORDS);
+let dictFileLoaded=false;
+let customWords=[];
+
+window.addEventListener('DOMContentLoaded',()=>{buildTrie(BUILT_IN_WORDS);fetch('dictionary.txt').then(r=>{if(r.ok)return r.text();throw new Error}).then(t=>{processDictionaryText(t);dictFileLoaded=true}).catch(()=>console.log('Built-in dict'));fetch('custom_words.txt').then(r=>{if(r.ok)return r.text();throw new Error}).then(t=>{const ws=t.split(/\r?\n/).map(w=>w.trim().toUpperCase()).filter(w=>w.length>=2);if(ws.length){customWords=ws;const st=document.getElementById('custom-status');st.innerText='\u2713 '+ws.length+' custom words (auto)';st.style.color='var(--pink-hi)';rebuildWithCustom()}}).catch(()=>{});});
+function loadDictionary(input){const f=input.files[0];if(!f)return;const r=new FileReader;r.onload=e=>{processDictionaryText(e.target.result);dictFileLoaded=true};r.readAsText(f)}
+function processDictionaryText(text){const ws=text.split(/\r?\n/).map(w=>w.trim().toUpperCase()).filter(w=>w.length>=2);DICTIONARY=new Set(ws);document.getElementById('dict-status').innerText=`✓ ${ws.length.toLocaleString()} words!`;document.getElementById('dict-status').style.color='var(--pink-hi)';rebuildWithCustom()}
+
+function loadCustomWords(input){
+    const f=input.files[0];if(!f)return;
+    const r=new FileReader;
+    r.onload=e=>{
+        customWords=e.target.result.split(/\r?\n/).map(w=>w.trim().toUpperCase()).filter(w=>w.length>=2);
+        const stat=document.getElementById('custom-status');
+        stat.innerText=`✓ ${customWords.length} custom word${customWords.length!==1?'s':''}`;
+        stat.style.color='var(--pink-hi)';
+        rebuildWithCustom();
+    };
+    r.readAsText(f);
+}
+
+function rebuildWithCustom(){
+    if(customWords.length>0) customWords.forEach(w=>DICTIONARY.add(w));
+    const st=document.getElementById('trie-status');st.classList.remove('hidden');
+    setTimeout(()=>{
+        buildTrie([...DICTIONARY]);
+        const total=DICTIONARY.size;
+        st.innerHTML='✓ Index ready';st.style.color='var(--pink-hi)';
+        if(game)game.showToast(`📖 ${total.toLocaleString()} words`);
+    },50);
+}
+function isValidWord(w){if(w.length<2)return false;return trieBuilt?trie.hasWord(w.toUpperCase()):DICTIONARY.has(w.toUpperCase())}
+
+function calcBasePoints(word) {
+    let pts = 0;
+    for (const ch of word.toUpperCase()) if (LETTERS[ch]) pts += LETTERS[ch].val;
+    return pts;
+}
+function checkDictWord(){
+    const i=document.getElementById('dict-check-input'),r=document.getElementById('dict-check-result'),w=i.value.trim().toUpperCase();
+    if(!w){r.innerText='';return}
+    if(w.length===1){
+        const letter=LETTERS[w];
+        if(!letter){r.innerHTML=`<span class="dict-result-no">✗ "${w}" — not a valid letter</span>`;return}
+        const valid=isValidWord(w);
+        if(valid){
+            r.innerHTML=`<span class="dict-result-yes">✓ "${w}" = ${letter.val} pt${letter.val!==1?'s':''} (valid word)</span>`;
+        } else {
+            r.innerHTML=`<span style="color:var(--ink);">ℹ "${w}" = ${letter.val} pt${letter.val!==1?'s':''}</span>`;
+        }
+        return;
+    }
+    if(isValidWord(w)){
+        const pts=calcBasePoints(w);
+        const lwb=calcLongWordBonus(w.length);
+        const bonus=lwb>0?` +${lwb} long`:'';
+        r.innerHTML=`<span class="dict-result-yes">✓ "${w}" is valid — ~${pts} pts (base)${bonus}</span>`;
+    } else {
+        const pts=calcBasePoints(w);
+        r.innerHTML=`<span class="dict-result-no">✗ "${w}" not found — would be ~${pts} pts (base)</span>`;
+    }
+}
+function clearDictChecker(){document.getElementById('dict-check-input').value='';document.getElementById('dict-check-result').innerText=''}
+
+// Tile
+class Tile{
+    constructor(id,r,c,char){this.id=id;this.r=r;this.c=c;this.char=char;this.baseValue=LETTERS[char].val;this.multiplier=null;this.hasGem=false;this.isSelected=false;this.isNew=false}
+    static ML={'DL':'×2L','TL':'×3L','2W':'×2W','3W':'×3W'};
+    render(isLast){const el=document.createElement('div');let cls='tile';if(this.isSelected)cls+=isLast?' selected':' path-tile';if(this.isNew)cls+=' new-tile';el.className=cls;el.dataset.id=this.id;let h=`<span>${this.char}</span><span class="tile-value">${this.baseValue}</span>`;if(this.multiplier)h+=`<div class="tile-multiplier mod-${this.multiplier}">${Tile.ML[this.multiplier]}</div>`;if(this.hasGem)h+=`<div class="tile-gem"></div>`;el.innerHTML=h;if(this.isNew)this.isNew=false;return el}
+}
+
+// Game
+class Game{
+    constructor(){
+        const names=Math.random()<0.5?['Keith','Shawn']:['Shawn','Keith'];
+        this.players=names.map((n,i)=>({
+            id:i,name:n,score:0,gems:CONFIG.startGems,lastWord:'',
+            wordsPlayed:[],
+            totalGems:0,
+            abilityLog:{}
+        }));
+        this.timerInterval=null;this.timeLeft=0;this.cocoTimerActive=false;
+        this.round=1;this.turnIndex=0;this.tiles=[];this.selection=[];
+        this.pendingSwap=false;this.isDragging=false;
+        this.generateBoard();this.selection=[];this.updateUI();this.setupTouchDrag();
+        this.showRoundOverlay('Round 1',`${names[0]} goes first!`);
+    }
+    get currentPlayer(){return this.players[this.turnIndex]}
+    get nonActivePlayer(){return this.players[1-this.turnIndex]}
+
+    generateBoard(){
+        this.tiles=[];
+        for(let r=0;r<5;r++)for(let c=0;c<5;c++){
+            const ch=LETTER_BAG[Math.floor(Math.random()*LETTER_BAG.length)];
+            this.tiles.push(new Tile(r*5+c,r,c,ch));
+        }
+        const idx=fisherYates([...Array(25).keys()]);
+        const letterMults=['DL','TL'].filter(m=>CONFIG.enabledMults[m]);
+        if(letterMults.length>0){
+            this.tiles[idx.pop()].multiplier=letterMults[Math.floor(Math.random()*letterMults.length)];
+        }
+        this.replenishGems();
+    }
+
+    refillBoard(ids){
+        ids.forEach(id=>{
+            const r=Math.floor(id/5),c=id%5;
+            const ch=LETTER_BAG[Math.floor(Math.random()*LETTER_BAG.length)];
+            const t=new Tile(id,r,c,ch);t.isNew=true;this.tiles[id]=t;
+        });
+    }
+
+    replenishGems(){
+        const current=this.tiles.filter(t=>t.hasGem).length;
+        const need=CONFIG.boardGemCount-current;
+        if(need<=0)return;
+        const candidates=fisherYates(this.tiles.filter(t=>!t.hasGem));
+        for(let i=0;i<need&&i<candidates.length;i++) candidates[i].hasGem=true;
+    }
+
+    randomizeGems(){
+        // Collect current gem count, strip all gems, re-assign to random tiles
+        const gemCount=this.tiles.filter(t=>t.hasGem).length;
+        this.tiles.forEach(t=>t.hasGem=false);
+        const shuffled=fisherYates([...this.tiles]);
+        for(let i=0;i<gemCount&&i<shuffled.length;i++) shuffled[i].hasGem=true;
+    }
+
+    upgradeMultipliersForNewRound(){
+        const existing=this.tiles.map(t=>t.multiplier).filter(Boolean);
+        const avail=fisherYates(this.tiles.filter(t=>!t.multiplier));
+        let ai=0;
+        const hasWordMult=existing.includes('2W')||existing.includes('3W');
+        const enabledWordMults=['2W','3W'].filter(m=>CONFIG.enabledMults[m]);
+        if(!hasWordMult&&enabledWordMults.length>0&&avail[ai]){
+            if(enabledWordMults.length===2){
+                avail[ai].multiplier=Math.random()<0.7?'2W':'3W';
+            } else {
+                avail[ai].multiplier=enabledWordMults[0];
+            }
+            ai++;
+        }
+        const hasLetterMult=existing.includes('DL')||existing.includes('TL');
+        const enabledLetterMults=['DL','TL'].filter(m=>CONFIG.enabledMults[m]);
+        if(!hasLetterMult&&enabledLetterMults.length>0&&avail[ai]){
+            avail[ai].multiplier=enabledLetterMults[Math.floor(Math.random()*enabledLetterMults.length)];
+            ai++;
+        }
+        this.replenishGems();
+    }
+
+    setupTouchDrag(){
+        const grid=document.getElementById('grid');
+        const gt=(x,y)=>{const el=document.elementFromPoint(x,y);if(!el)return null;const t=el.closest('.tile');return t?parseInt(t.dataset.id):null};
+        grid.addEventListener('pointerdown',e=>{if(this.pendingSwap)return;const id=gt(e.clientX,e.clientY);if(id!==null){this.isDragging=true;this.handleTileClick(id)}e.preventDefault()});
+        grid.addEventListener('pointermove',e=>{if(!this.isDragging||this.pendingSwap)return;const id=gt(e.clientX,e.clientY);if(id!==null&&!this.selection.includes(id)){const l=this.selection[this.selection.length-1];if(l!==undefined&&this.isAdjacent(this.tiles[l],this.tiles[id]))this.selectTile(this.tiles[id])}e.preventDefault()});
+        const end=()=>{this.isDragging=false};
+        grid.addEventListener('pointerup',end);grid.addEventListener('pointercancel',end);grid.addEventListener('pointerleave',end);
+    }
+
+    handleTileClick(id){
+        if(this.pendingSwap){this.openSwapModal(id);return}
+        const tile=this.tiles[id];
+        if(this.selection.includes(id)){
+            const i=this.selection.indexOf(id);
+            if(i===this.selection.length-1){this.selection.pop();tile.isSelected=false}
+            else{this.selection.splice(i+1).forEach(r=>this.tiles[r].isSelected=false)}
+            SFX.tileDeselect();this.updateUI();return;
+        }
+        const last=this.selection.length>0?this.selection[this.selection.length-1]:null;
+        if(last===null)this.selectTile(tile);
+        else if(this.isAdjacent(this.tiles[last],tile))this.selectTile(tile);
+        else{const el=document.querySelector(`.tile[data-id="${id}"]`);if(el){el.classList.add('error-shake');setTimeout(()=>el.classList.remove('error-shake'),400)}SFX.invalid()}
+    }
+    isAdjacent(a,b){return Math.abs(a.r-b.r)<=1&&Math.abs(a.c-b.c)<=1&&(a.r!==b.r||a.c!==b.c)}
+    selectTile(t){t.isSelected=true;this.selection.push(t.id);SFX.tileSelect();this.updateUI()}
+    clearSelection(){this.selection.forEach(id=>this.tiles[id].isSelected=false);this.selection=[];this.updateUI()}
+
+    calculateCurrentScore(){
+        if(!this.selection.length)return{word:'',score:0,gemCount:0,isValid:false,longBonus:0,wordMult:1,tileData:[]};
+        let w='',base=0,wm=1,gems=0;
+        const tileData=[];
+        this.selection.forEach(id=>{
+            const t=this.tiles[id];
+            w+=t.char;
+            let v=t.baseValue;
+            if(t.multiplier==='DL')v*=2;
+            else if(t.multiplier==='TL')v*=3;
+            base+=v;
+            if(t.multiplier==='2W')wm*=2;
+            else if(t.multiplier==='3W')wm*=3;
+            if(t.hasGem)gems++;
+            tileData.push({char:t.char,baseValue:t.baseValue,multiplier:t.multiplier,effectiveValue:v,hasGem:t.hasGem});
+        });
+        let total=base*wm,lb=0;
+        lb=calcLongWordBonus(w.length);
+        total+=lb;
+        return{word:w,score:total,gemCount:gems,isValid:isValidWord(w),longBonus:lb,wordMult:wm,tileData};
+    }
+
+    submitWord(){
+        const r=this.calculateCurrentScore();
+        if(!r.isValid){this.showToast('Not a valid word!');SFX.invalid();return}
+        const p=this.currentPlayer;
+        p.score+=r.score;p.gems=Math.min(CONFIG.maxGems,p.gems+r.gemCount);
+        p.lastWord=r.word;p.totalGems+=r.gemCount;
+        p.wordsPlayed.push({
+            word:r.word, score:r.score, round:this.round,
+            gemCount:r.gemCount, longBonus:r.longBonus, wordMult:r.wordMult,
+            tiles:r.tileData
+        });
+
+        if(r.longBonus>0){this.showCelebration(`LONG WORD! +${r.longBonus}`);SFX.longWord()}else{SFX.submit()}
+        this.showScoreFloat(`+${r.score}`);this.showToast(`${r.word} → +${r.score} pts`);
+
+        const used=[...this.selection];
+        const mults=[];
+        used.forEach(id=>{if(this.tiles[id].multiplier)mults.push(this.tiles[id].multiplier)});
+        this.clearSelection();
+        this.refillBoard(used);
+        if(mults.length>0){
+            const av=fisherYates(this.tiles.filter(t=>!t.multiplier));
+            mults.forEach((m,i)=>{if(av[i])av[i].multiplier=m});
+        }
+        this.replenishGems();
+        this.endTurn();
+    }
+
+    endTurn(){
+        if(this.timerInterval)clearInterval(this.timerInterval);
+        this.cocoTimerActive=false;clearDictChecker();this.pendingSwap=false;
+        // Round 1 only: shuffle gem positions after each turn — but NOT on the
+        // last turn of the round (endRound → upgradeMultipliersForNewRound →
+        // replenishGems would immediately overwrite the scramble anyway).
+        if(this.round===1&&this.turnIndex<this.players.length-1){
+            this.randomizeGems();
+            setTimeout(()=>this.showToast('💎 Gems shifted!'),1900);
+        }
+        this.turnIndex++;
+        if(this.turnIndex>=this.players.length){this.turnIndex=0;this.endRound()}
+        else{
+            this.updateUI();
+            this.showRoundOverlay(`${this.currentPlayer.name}'s Turn`,`Round ${this.round} of ${CONFIG.rounds}`);
+        }
+    }
+
+    endRound(){
+        this.round++;
+        if(this.round>CONFIG.rounds){this.endGame();return}
+        this.turnIndex=0;
+        this.upgradeMultipliersForNewRound();
+        this.updateUI();
+        this.showRoundOverlay(`Round ${this.round}`,`${CONFIG.rounds-this.round+1} remaining`);
+    }
+
+    endGame(){
+        if(this.timerInterval)clearInterval(this.timerInterval);
+        SFX.gameOver();
+        this.players.forEach(p=>{p.gemBonus=p.gems;p.score+=p.gems});
+        this.players.sort((a,b)=>b.score-a.score);
+        const winner=this.players[0];
+        document.getElementById('winner-banner').innerText=`👑 ${winner.name} Wins with ${winner.score} pts!`;
+
+        let html='';
+        this.players.forEach((p,pi)=>{
+            const best=p.wordsPlayed.reduce((b,w)=>w.score>(b?.score||0)?w:b,null);
+            const rounds={};
+            p.wordsPlayed.forEach(w=>{if(!rounds[w.round])rounds[w.round]=[];rounds[w.round].push(w)});
+
+            html+=`<div class="recap-player">
+                <div class="recap-header">
+                    <div><span class="recap-rank">${pi===0?'👑':'#'+(pi+1)}</span> <span class="recap-name">${p.name}</span></div>
+                    <span class="recap-total">${p.score} pts</span>
+                </div>
+                <div class="recap-stats">
+                    Words: <strong>${p.wordsPlayed.length}</strong> ·
+                    Gems earned: <strong>${p.totalGems}</strong> ·
+                    Gem bonus: <strong>+${p.gemBonus}</strong>
+                    ${best?` · Best: <strong>${best.word}</strong> (${best.score})`:''}
+                </div>`;
+
+            for(let rn=1;rn<=CONFIG.rounds;rn++){
+                const words=rounds[rn];
+                if(!words||!words.length)continue;
+                const roundPts=words.reduce((s,w)=>s+w.score,0);
+                const roundGems=words.reduce((s,w)=>s+w.gemCount,0);
+                html+=`<details class="recap-round"${rn===1?' open':''}>
+                    <summary>Round ${rn} — ${roundPts} pts · ${words.length} word${words.length>1?'s':''} · ${roundGems}💎</summary>`;
+                words.forEach(w=>{
+                    const isBest=best&&w===best;
+                    const multLabel=w.wordMult>1?` ×${w.wordMult}W`:'';
+                    const longLabel=w.longBonus>0?` +${w.longBonus} long`:'';
+                    html+=`<div class="recap-word-row">
+                        <div class="recap-word-main">
+                            <span class="recap-word-name${isBest?' best':['']}"">${isBest?'⭐ ':''}${w.word}</span>
+                            <span class="recap-word-score">+${w.score}</span>
+                        </div>
+                        <div class="recap-word-meta">${w.gemCount}💎${multLabel}${longLabel}</div>
+                        <details class="recap-tile-detail">
+                            <summary>Tile breakdown</summary>
+                            <div class="tile-breakdown">`;
+                    w.tiles.forEach(td=>{
+                        let multBadge='';
+                        if(td.multiplier){
+                            const cls='m-'+td.multiplier;
+                            multBadge=`<span class="bd-mult ${cls}">${Tile.ML[td.multiplier]}</span>`;
+                        }
+                        html+=`<div class="tile-bd">
+                            <span class="bd-char">${td.char}</span>
+                            ${td.baseValue}${multBadge}→${td.effectiveValue}
+                            ${td.hasGem?'<span class="bd-gem">💎</span>':''}
+                        </div>`;
+                    });
+                    html+=`</div></details></div>`;
+                });
+                html+=`</details>`;
+            }
+            html+=`</div>`;
+        });
+
+        document.getElementById('recap-section').innerHTML=html;
+        document.getElementById('modal-gameover').classList.remove('hidden');
+    }
+
+    logAbility(player,type,gemCost){
+        const r=this.round;
+        if(!player.abilityLog[r])player.abilityLog[r]={shuffles:0,swaps:0,cocos:0,times:0,gemsSpent:0};
+        player.abilityLog[r].gemsSpent+=gemCost;
+        if(type==='shuffle')player.abilityLog[r].shuffles++;
+        if(type==='swap')player.abilityLog[r].swaps++;
+        if(type==='coco')player.abilityLog[r].cocos++;
+        if(type==='time')player.abilityLog[r].times++;
+    }
+
+    useAbility(type){
+        const p=this.currentPlayer,cost=CONFIG.costs[type];
+        if(p.gems<cost){this.showToast('Not enough gems!');SFX.invalid();return}
+        if(type==='shuffle'){document.getElementById('modal-shuffle-confirm').classList.remove('hidden');return}
+        else if(type==='swap'){this.pendingSwap=true;this.showToast('Tap a tile to swap (or cancel)')}
+        else if(type==='time'){if(!this.cocoTimerActive)return;p.gems-=cost;this.logAbility(p,'time',cost);this.timeLeft+=CONFIG.bonusTime;this.updateTimerDisplay();this.showToast('+15 seconds!')}
+        this.updateUI();
+    }
+    cancelSwap(){this.pendingSwap=false;this.showToast('Swap cancelled');this.updateUI()}
+    shuffleBoard(){
+        const mults=[];
+        this.tiles.forEach(t=>{
+            if(t.multiplier){mults.push(t.multiplier);t.multiplier=null}
+            t.hasGem=false;
+        });
+        for(let i=this.tiles.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[this.tiles[i],this.tiles[j]]=[this.tiles[j],this.tiles[i]]}
+        this.tiles.forEach((t,i)=>{t.id=i;t.r=Math.floor(i/5);t.c=i%5});
+        const shuffled=fisherYates([...Array(25).keys()]);
+        let si=0;
+        mults.forEach(m=>{if(si<shuffled.length)this.tiles[shuffled[si++]].multiplier=m});
+        this.replenishGems();
+    }
+    openSwapModal(tileId){this.swapTargetId=tileId;const g=document.getElementById('swap-options');g.innerHTML='';for(let ch of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'){const d=document.createElement('div');d.className='swap-tile';d.innerText=ch;d.onclick=()=>this.performSwap(ch);g.appendChild(d)}document.getElementById('modal-swap').classList.remove('hidden')}
+    performSwap(ch){const p=this.currentPlayer;if(p.gems<CONFIG.costs.swap){this.showToast('Not enough gems!');SFX.invalid();this.pendingSwap=false;document.getElementById('modal-swap').classList.add('hidden');this.updateUI();return}p.gems-=CONFIG.costs.swap;this.logAbility(p,'swap',CONFIG.costs.swap);const t=this.tiles[this.swapTargetId];t.char=ch;t.baseValue=LETTERS[ch].val;document.getElementById('modal-swap').classList.add('hidden');this.pendingSwap=false;this.showToast(`Swapped to ${ch}!`);SFX.swap();this.updateUI()}
+
+    cocoAttack(){
+        const attacker=this.nonActivePlayer;
+        if(attacker.gems<CONFIG.cocoAttackCost){this.showToast(`${attacker.name} needs ${CONFIG.cocoAttackCost} gems!`);SFX.invalid();return}
+        if(this.cocoTimerActive){this.showToast('Timer already active!');return}
+        attacker.gems-=CONFIG.cocoAttackCost;this.logAbility(attacker,'coco',CONFIG.cocoAttackCost);this.cocoTimerActive=true;this.timeLeft=CONFIG.cocoAttackTime;
+        SFX.cocoAttack();this.showCocoOverlay();
+        this.showToast(`🐱 Coco Attack! ${this.currentPlayer.name} has ${CONFIG.cocoAttackTime}s!`);
+        this.updateTimerDisplay();
+        if(this.timerInterval)clearInterval(this.timerInterval);
+        this.timerInterval=setInterval(()=>{this.timeLeft--;this.updateTimerDisplay();if(this.timeLeft<=5&&this.timeLeft>0)SFX.timerWarn();if(this.timeLeft<=0){clearInterval(this.timerInterval);this.cocoTimerActive=false;this.clearSelection();this.showToast("🐱 Coco says time's up!");setTimeout(()=>this.endTurn(),800)}},1000);
+        this.updateUI();
+    }
+
+    showPlayerHistory(playerIndex){
+        const p=this.players[playerIndex];
+        document.getElementById('history-player-name').innerText=`${p.name} · ${p.score} pts`;
+        const body=document.getElementById('history-body');
+        if(p.wordsPlayed.length===0){
+            body.innerHTML='<p class="history-empty">No words played yet.</p>';
+        } else {
+            let html='';
+            for(let r=1;r<=this.round;r++){
+                const words=p.wordsPlayed.filter(w=>w.round===r);
+                const log=p.abilityLog[r]||{};
+                if(!words.length&&!log.gemsSpent)continue;
+                const roundPts=words.reduce((s,w)=>s+w.score,0);
+                const roundGems=words.reduce((s,w)=>s+w.gemCount,0);
+                html+=`<div class="history-round">
+                    <div class="history-round-header">Round ${r} — ${roundPts} pts · ${roundGems}💎 earned</div>`;
+                words.forEach(w=>{
+                    const extras=[];
+                    const multLabel={'DL':'×2L','TL':'×3L','2W':'×2W','3W':'×3W'};
+                    // Letter mults from tile data
+                    const lMults=[...new Set(w.tiles.filter(t=>t.multiplier==='DL'||t.multiplier==='TL').map(t=>multLabel[t.multiplier]))];
+                    lMults.forEach(m=>extras.push(m));
+                    if(w.wordMult>1)extras.push(multLabel[w.wordMult===2?'2W':'3W']);
+                    if(w.longBonus>0)extras.push(`+${w.longBonus} long`);
+                    if(w.gemCount>0)extras.push(`${w.gemCount}💎`);
+                    html+=`<div class="history-word-row">
+                        <div>
+                            <div class="history-word">${w.word}</div>
+                            ${extras.length?`<div class="history-meta">${extras.join(' · ')}</div>`:''}
+                        </div>
+                        <span class="history-score">+${w.score}</span>
+                    </div>`;
+                });
+                if(log.gemsSpent){
+                    const parts=[];
+                    if(log.shuffles)parts.push(`🔀 ${log.shuffles} shuffle${log.shuffles>1?'s':''}`);
+                    if(log.swaps)parts.push(`🔄 ${log.swaps} swap${log.swaps>1?'s':''}`);
+                    if(log.cocos)parts.push(`🐱 ${log.cocos} Coco`);
+                    if(log.times)parts.push(`⏱ ${log.times} +15s`);
+                    parts.push(`${log.gemsSpent}💎 spent`);
+                    html+=`<div class="history-ability-row">${parts.join(' · ')}</div>`;
+                }
+                html+=`</div>`;
+            }
+            const totalWords=p.wordsPlayed.length;
+            const totalSpent=Object.values(p.abilityLog).reduce((s,l)=>s+(l.gemsSpent||0),0);
+            html+=`<div class="history-total-row"><span>${totalWords} word${totalWords!==1?'s':''} played</span><span style="color:var(--gold-hi)">${p.score} pts total</span></div>`;
+            if(totalSpent)html+=`<div style="text-align:center;font-size:0.82rem;color:var(--ink-dim);padding-top:4px;">${totalSpent}💎 spent on abilities total</div>`;
+            body.innerHTML=html;
+        }
+        document.getElementById('modal-history').classList.remove('hidden');
+    }
+
+    showCocoOverlay(){
+        const svg=document.getElementById('coco-svg-sm').outerHTML.replace('coco-cat','coco-big-cat');
+        const o=document.createElement('div');o.className='coco-attack-overlay';
+        o.innerHTML=svg+`<span class="coco-text">🐱 COCO ATTACK! 🐱</span>`;
+        document.body.appendChild(o);setTimeout(()=>o.remove(),1800);
+    }
+
+    updateTimerDisplay(){const el=document.getElementById('timer-display');if(this.cocoTimerActive){el.innerText=this.timeLeft;el.style.color=this.timeLeft<=5?'var(--red)':'var(--coco)'}else{el.innerText='--';el.style.color='var(--ink)'}}
+
+    updateUI(){
+        document.getElementById('round-indicator').innerText=`✦ ROUND ${this.round} / ${CONFIG.rounds} ✦`;
+        // Render round pips
+        const pipsEl=document.getElementById('round-pips');
+        if(pipsEl){
+            pipsEl.innerHTML='';
+            for(let r=1;r<=CONFIG.rounds;r++){
+                const pip=document.createElement('span');
+                pip.className='round-pip '+(r<this.round?'done':r===this.round?'current':'future');
+                pipsEl.appendChild(pip);
+            }
+        }
+        const pList=document.getElementById('player-list');pList.innerHTML='';
+        this.players.forEach((p,i)=>{
+            const d=document.createElement('div');
+            d.className=`player-card${i===this.turnIndex?' active':''}`;
+            d.innerHTML=`<div class="player-name">${p.name} <span style="font-size:0.72em;color:var(--ink-dim);font-weight:400;">▸ history</span></div><div class="player-score">${p.score}</div><div class="player-gems">💎 ${p.gems} / ${CONFIG.maxGems}</div>${p.lastWord?`<div class="player-lastword">${p.lastWord}</div>`:''}`;
+            d.onclick=()=>this.showPlayerHistory(i);
+            pList.appendChild(d);
+        });
+        const grid=document.getElementById('grid');grid.innerHTML='';
+        const ls=this.selection.length>0?this.selection[this.selection.length-1]:-1;
+        this.tiles.forEach(tile=>{const el=tile.render(tile.id===ls);el.onclick=()=>this.handleTileClick(tile.id);grid.appendChild(el)});
+        const calc=this.calculateCurrentScore();
+        const wd=document.getElementById('word-display'),sp=document.getElementById('score-preview');
+        if(calc.word){
+            wd.innerText=calc.word;wd.className=calc.isValid?'valid':'invalid';
+            if(calc.isValid){
+                sp.innerText=`${calc.score} points`+(calc.gemCount>0?` + ${calc.gemCount}💎`:'')+(calc.longBonus>0?` (incl. +${calc.longBonus} long word)`:'');
+                sp.style.color='var(--gold-hi)';
+            } else {
+                sp.innerText=`Not in dictionary — would be ${calc.score} pts`;
+                sp.style.color='var(--red)';
+            }
+        }else{wd.innerText=this.pendingSwap?'Tap a tile to swap':'Tap letters to spell';wd.className='empty';sp.innerText=''}
+        document.getElementById('btn-submit').disabled=!calc.isValid;
+        document.getElementById('btn-clear').disabled=this.selection.length===0;
+        const p=this.currentPlayer;
+        document.getElementById('btn-shuffle').disabled=this.pendingSwap||p.gems<CONFIG.costs.shuffle;
+        document.getElementById('btn-swap').disabled=this.pendingSwap||p.gems<CONFIG.costs.swap;
+        document.getElementById('btn-swap').classList.toggle('active-swap',this.pendingSwap);
+        document.getElementById('btn-cancel-swap').classList.toggle('hidden',!this.pendingSwap);
+        const timeBtn=document.getElementById('btn-time');
+        timeBtn.style.display=this.cocoTimerActive?'inline-flex':'none';
+        timeBtn.disabled=this.pendingSwap||p.gems<CONFIG.costs.time;
+        const cocoBtn=document.getElementById('btn-coco');const np=this.nonActivePlayer;
+        cocoBtn.disabled=np.gems<CONFIG.cocoAttackCost||this.cocoTimerActive;
+        document.querySelector('.coco-title').innerText=`🐱 ${np.name}'s Coco Attack!`;
+        document.querySelector('.coco-desc').innerText=`Force opponent's timer: ${CONFIG.cocoAttackTime}s`;
+        cocoBtn.innerText=`${CONFIG.cocoAttackCost}💎 GO!`;
+        document.getElementById('coco-zone').classList.toggle('coco-timer-active',this.cocoTimerActive);
+        this.updateTimerDisplay();
+    }
+
+    showToast(m){const d=document.createElement('div');d.className='toast';d.innerText=m;document.body.appendChild(d);setTimeout(()=>d.remove(),2200)}
+    showScoreFloat(t){const d=document.createElement('div');d.className='score-float';d.innerText=t;d.style.left='50%';d.style.top='38%';document.body.appendChild(d);setTimeout(()=>d.remove(),1400)}
+    showCelebration(t){const a=document.getElementById('word-area');const b=document.createElement('div');b.className='celebration-banner';b.innerHTML=`<span>✨ ${t} ✨</span>`;a.appendChild(b);setTimeout(()=>b.remove(),2000)}
+    showRoundOverlay(t,s){const o=document.createElement('div');o.className='round-overlay';o.innerHTML=`<span class="round-text">✦ ${t} ✦</span><span class="round-sub">${s||''}</span>`;document.body.appendChild(o);setTimeout(()=>o.remove(),1800)}
+}
+
+let game;
+
+document.addEventListener('DOMContentLoaded',()=>{
+    document.querySelectorAll('.mult-toggle').forEach(label=>{
+        const cb=label.querySelector('input');
+        cb.addEventListener('change',()=>{
+            label.classList.toggle('active',cb.checked);
+        });
+    });
+    // Show/hide Coco Attack Cost row when the enable toggle changes
+    const cocoEnabledCb=document.getElementById('cfg-coco-enabled');
+    const cocoCostRow=document.getElementById('row-coco-cost');
+    cocoEnabledCb.addEventListener('change',()=>{
+        cocoCostRow.style.opacity=cocoEnabledCb.checked?'1':'0.35';
+        cocoCostRow.style.pointerEvents=cocoEnabledCb.checked?'':'none';
+    });
+    updateLWPreview();
+});
+
+let selectedLWPreset = 'keith';
+let customTiers = [{len:6,bonus:10}];
+
+function selectLWPreset(preset) {
+    selectedLWPreset = preset;
+    document.querySelectorAll('.lw-preset-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.preset === preset);
+    });
+    const panel = document.getElementById('lw-custom-panel');
+    if (preset === 'custom') {
+        panel.classList.remove('hidden');
+        renderCustomTiers();
+    } else {
+        panel.classList.add('hidden');
+    }
+    updateLWPreview();
+}
+
+function renderCustomTiers() {
+    const list = document.getElementById('lw-tier-list');
+    list.innerHTML = '';
+    customTiers.forEach((t, i) => {
+        const row = document.createElement('div');
+        row.className = 'lw-tier-row';
+        row.innerHTML = `
+            <span class="lw-tier-label">${t.len}+ letters</span>
+            <span style="font-size:0.85rem;color:var(--ink-dim);">→ +</span>
+            <input type="number" class="lw-tier-num" value="${t.bonus}" min="1" max="100"
+                onchange="updateCustomTier(${i},'bonus',this.value)">
+            <span style="font-size:0.85rem;color:var(--ink-dim);">pts</span>
+            ${customTiers.length > 1 ? `<button class="lw-tier-remove" onclick="removeCustomTier(${i})">✕</button>` : ''}
+        `;
+        list.appendChild(row);
+    });
+    updateLWPreview();
+}
+
+function addCustomTier() {
+    const maxLen = customTiers.length > 0 ? Math.max(...customTiers.map(t => t.len)) : 5;
+    const newLen = Math.min(maxLen + 1, 25);
+    if (customTiers.find(t => t.len === newLen)) return;
+    const lastBonus = customTiers.length > 0 ? customTiers[customTiers.length - 1].bonus : 5;
+    customTiers.push({len: newLen, bonus: lastBonus + 5});
+    customTiers.sort((a, b) => a.len - b.len);
+    renderCustomTiers();
+}
+
+function removeCustomTier(i) {
+    if (customTiers.length <= 1) return;
+    customTiers.splice(i, 1);
+    renderCustomTiers();
+}
+
+function updateCustomTier(i, field, val) {
+    customTiers[i][field] = Math.max(1, parseInt(val) || 1);
+    updateLWPreview();
+}
+
+function updateLWPreview() {
+    const preview = document.getElementById('lw-preview');
+    let tiers, stack;
+    if (selectedLWPreset === 'custom') {
+        tiers = customTiers;
+        stack = document.getElementById('cfg-lw-stack')?.checked || false;
+    } else {
+        const p = LW_PRESETS[selectedLWPreset];
+        tiers = p.tiers;
+        stack = p.stack;
+    }
+    if (tiers.length === 0) { preview.innerHTML = 'No bonuses active'; return; }
+    const sorted = [...tiers].sort((a, b) => a.len - b.len);
+    let html = sorted.map(t => `<span class="lw-pv-tier">${t.len}+ → +${t.bonus}</span>`).join(' · ');
+    if (stack && tiers.length > 1) {
+        html += `<br><span class="lw-pv-stack">⟳ Stacking: bonuses accumulate</span>`;
+    } else if (tiers.length > 1) {
+        html += `<br><span class="lw-pv-stack">↑ Highest matching tier only</span>`;
+    }
+    preview.innerHTML = html;
+}
+
+function startGame(){
+    if(!dictFileLoaded){
+        document.getElementById('modal-dict-confirm').classList.remove('hidden');
+        return;
+    }
+    launchGame();
+}
+
+function closeDictConfirm(proceed){
+    document.getElementById('modal-dict-confirm').classList.add('hidden');
+    if(proceed) launchGame();
+}
+
+function launchGame(){
+    soundEnabled=document.getElementById('sound-toggle').checked;
+    document.getElementById('btn-mute').innerText=soundEnabled?'🔊':'🔇';
+    document.getElementById('btn-mute').classList.toggle('active',soundEnabled);
+    if(soundEnabled)initAudio();
+
+    const sg=parseInt(document.getElementById('cfg-start-gems').value)||3;
+    CONFIG.startGems=Math.max(0,Math.min(CONFIG.maxGems,sg));
+
+    CONFIG.cocoAttackEnabled=document.getElementById('cfg-coco-enabled').checked;
+
+    const cc=parseInt(document.getElementById('cfg-coco-cost').value)||4;
+    CONFIG.cocoAttackCost=Math.max(1,Math.min(10,cc));
+
+    const bg=parseInt(document.getElementById('cfg-board-gems').value)||9;
+    CONFIG.boardGemCount=Math.max(1,Math.min(25,bg));
+
+    document.querySelectorAll('.mult-toggle').forEach(label=>{
+        const mult=label.dataset.mult;
+        const checked=label.querySelector('input').checked;
+        CONFIG.enabledMults[mult]=checked;
+    });
+
+    CONFIG.longWordMode=selectedLWPreset;
+    if(selectedLWPreset==='custom'){
+        CONFIG.longWordTiers=customTiers.map(t=>({len:t.len,bonus:t.bonus}));
+        CONFIG.longWordStack=document.getElementById('cfg-lw-stack').checked;
+    } else {
+        const p=LW_PRESETS[selectedLWPreset];
+        CONFIG.longWordTiers=p.tiers.map(t=>({...t}));
+        CONFIG.longWordStack=p.stack;
+    }
+
+    // Populate in-game long word bonus reference
+    const lwRefEl=document.getElementById('lw-ref');
+    const lwRefTiers=document.getElementById('lw-ref-tiers');
+    lwRefTiers.innerHTML='';
+    if(CONFIG.longWordTiers.length===0){
+        lwRefTiers.innerHTML='<span class="lw-ref-none">No bonuses active</span>';
+    } else {
+        const sorted=[...CONFIG.longWordTiers].sort((a,b)=>a.len-b.len);
+        sorted.forEach(t=>{
+            const chip=document.createElement('span');
+            chip.className='lw-ref-chip';
+            chip.textContent=`${t.len}+ → +${t.bonus}`;
+            lwRefTiers.appendChild(chip);
+        });
+        if(CONFIG.longWordStack&&CONFIG.longWordTiers.length>1){
+            const chip=document.createElement('span');
+            chip.className='lw-ref-chip';
+            chip.style.background='rgba(77,128,255,0.12)';
+            chip.style.borderColor='var(--blue-deep)';
+            chip.style.color='var(--blue-hi)';
+            chip.textContent='⟳ Stacking';
+            lwRefTiers.appendChild(chip);
+        }
+    }
+    lwRefEl.classList.remove('hidden');
+
+    document.getElementById('modal-start').classList.add('hidden');
+    game=new Game();
+    document.getElementById('coco-zone').classList.toggle('hidden',!CONFIG.cocoAttackEnabled);
+}
+function closeHistoryModal(){document.getElementById('modal-history').classList.add('hidden')}
+function closeSwapModal(){document.getElementById('modal-swap').classList.add('hidden');if(game){game.pendingSwap=false;game.updateUI()}}
+function closeShuffleConfirm(){document.getElementById('modal-shuffle-confirm').classList.add('hidden')}
+function confirmShuffle(){document.getElementById('modal-shuffle-confirm').classList.add('hidden');if(game){const p=game.currentPlayer;p.gems-=CONFIG.costs.shuffle;game.logAbility(p,'shuffle',CONFIG.costs.shuffle);game.shuffleBoard();game.clearSelection();game.showToast('Board shuffled!');SFX.shuffle();game.updateUI()}}
+</script>
+</body>
+</html>
