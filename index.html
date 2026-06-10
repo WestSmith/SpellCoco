@@ -11,6 +11,21 @@
 
     <!--
     ================================================================
+    SPELLCOCO v36 — ONE COCO, MANY PAWS
+    ================================================================
+
+    CHANGELOG v35 → v36:
+    - CHANGE: De-duplicated Coco's face. The v35 logo mark is now the
+      only face in the UI. The old hand-drawn cat next to Coco Attack
+      is replaced by a tilted ginger paw.
+    - CHANGE: Coco Attack overlay is now a giant paw that slams down
+      (pawSwat animation) instead of the old cat pop-in.
+    - ADD: Round progress pips are now tiny paw prints (same bi-flag
+      colors as before — blue done, gradient current, dim future).
+    - ADD: The active player's card grows a pair of ginger ears
+      peeking over its top edge — Coco watches whoever's turn it is.
+
+    ================================================================
     SPELLCOCO v35 — REMATCH, HINTS & PALETTE 2.0
     ================================================================
 
@@ -535,25 +550,24 @@
         }
         .round-pips{display:flex;gap:8px;align-items:center}
         .round-pip{
-            width:10px;height:10px;border-radius:50%;
+            width:14px;height:14px;
+            -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cellipse cx='6.5' cy='7' rx='2.1' ry='2.7' fill='white'/%3E%3Cellipse cx='12' cy='5.4' rx='2.1' ry='2.7' fill='white'/%3E%3Cellipse cx='17.5' cy='7' rx='2.1' ry='2.7' fill='white'/%3E%3Cpath d='M12 9.8c-3.9 0-6.6 2.7-6.6 5.6 0 2 1.7 3.3 3.4 3.3 1.2 0 2.1-.5 3.2-.5s2 .5 3.2.5c1.7 0 3.4-1.3 3.4-3.3 0-2.9-2.7-5.6-6.6-5.6z' fill='white'/%3E%3C/svg%3E") center/contain no-repeat;
+            mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cellipse cx='6.5' cy='7' rx='2.1' ry='2.7' fill='white'/%3E%3Cellipse cx='12' cy='5.4' rx='2.1' ry='2.7' fill='white'/%3E%3Cellipse cx='17.5' cy='7' rx='2.1' ry='2.7' fill='white'/%3E%3Cpath d='M12 9.8c-3.9 0-6.6 2.7-6.6 5.6 0 2 1.7 3.3 3.4 3.3 1.2 0 2.1-.5 3.2-.5s2 .5 3.2.5c1.7 0 3.4-1.3 3.4-3.3 0-2.9-2.7-5.6-6.6-5.6z' fill='white'/%3E%3C/svg%3E") center/contain no-repeat;
             transition:all 0.3s;
             flex-shrink:0;
         }
         .round-pip.done{
             background:var(--blue);
-            box-shadow:0 0 6px var(--blue-glow);
-            opacity:0.7;
+            opacity:0.8;
         }
         .round-pip.current{
-            width:14px;height:14px;
+            width:19px;height:19px;
             background:var(--flag-gradient);
-            box-shadow:0 0 10px var(--purple-glow), 0 0 20px var(--pink-glow);
             animation:gemPulse 1.5s ease-in-out infinite alternate;
         }
         .round-pip.future{
-            background:var(--bg-elevated);
-            border:2px solid var(--ink-dim);
-            opacity:0.8;
+            background:var(--ink-dim);
+            opacity:0.4;
         }
         .header-right{display:flex;align-items:center;gap:8px;min-width:0}
         @media(max-width:839px){
@@ -625,6 +639,12 @@
                 var(--blue) 66.66%, var(--blue) 100%);
             border-radius:0 0 4px 4px;
             box-shadow:0 1px 8px rgba(180,105,224,0.5);
+        }
+        .player-card.active::after{
+            content:'';position:absolute;
+            top:-10px;right:14px;width:34px;height:12px;
+            background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 20'%3E%3Cpolygon points='2,20 9,1 24,17' fill='%23f49b3e' stroke='%23b05f0a' stroke-width='1.4' stroke-linejoin='round'/%3E%3Cpolygon points='7,16 10,6 18,13' fill='%23ffb9c4'/%3E%3Cpolygon points='58,20 51,1 36,17' fill='%23f49b3e' stroke='%23b05f0a' stroke-width='1.4' stroke-linejoin='round'/%3E%3Cpolygon points='53,16 50,6 42,13' fill='%23ffb9c4'/%3E%3C/svg%3E") bottom/contain no-repeat;
+            pointer-events:none;
         }
         .player-name{
             font-size:clamp(0.95rem,2.1vw,1.1rem);
@@ -976,7 +996,8 @@
             display:flex;align-items:center;gap:12px;
             box-shadow:0 3px 0 var(--bg-void);
         }
-        .coco-cat{width:52px;height:52px;flex-shrink:0}
+        .coco-paw-slot{width:46px;height:46px;flex-shrink:0;line-height:0;transform:rotate(-14deg)}
+        .coco-paw-slot svg{width:100%;height:100%}
         .coco-info{flex:1;min-width:0}
         .coco-title{
             font-family:'Atkinson Hyperlegible',sans-serif;
@@ -1032,9 +1053,15 @@
             letter-spacing:0.04em;
         }
         .coco-attack-overlay .coco-big-cat{
-            width:100px;height:100px;margin-bottom:14px;
-            animation:pop 0.4s cubic-bezier(0.175,0.885,0.32,1.275);
+            width:110px;height:110px;margin-bottom:14px;
+            animation:pawSwat 0.55s cubic-bezier(0.34,1.56,0.64,1);
             filter:drop-shadow(0 4px 24px var(--coco-glow));
+            transform:rotate(-10deg);
+        }
+        @keyframes pawSwat{
+            0%{transform:translateY(-90px) rotate(-35deg) scale(0.5);opacity:0}
+            55%{transform:translateY(10px) rotate(6deg) scale(1.18);opacity:1}
+            100%{transform:translateY(0) rotate(-10deg) scale(1)}
         }
 
         /* Dictionary checker */
@@ -1919,40 +1946,7 @@
         </div>
 
         <div class="coco-attack-zone" id="coco-zone">
-            <svg class="coco-cat" id="coco-svg-sm" viewBox="0 0 100 100" fill="none">
-                <!-- Head -->
-                <ellipse cx="50" cy="58" rx="32" ry="28" fill="#e88200"/>
-                <!-- Ears -->
-                <polygon points="22,38 18,10 40,30" fill="#e88200" stroke="#cc7000" stroke-width="1"/>
-                <polygon points="78,38 82,10 60,30" fill="#e88200" stroke="#cc7000" stroke-width="1"/>
-                <polygon points="25,34 22,16 37,29" fill="#ffb3b3"/>
-                <polygon points="75,34 78,16 63,29" fill="#ffb3b3"/>
-                <!-- Tabby stripes -->
-                <path d="M40,36 Q50,30 60,36" stroke="#cc7000" stroke-width="2" fill="none"/>
-                <path d="M43,32 Q50,27 57,32" stroke="#cc7000" stroke-width="1.5" fill="none"/>
-                <line x1="50" y1="30" x2="50" y2="42" stroke="#cc7000" stroke-width="1.5"/>
-                <!-- White muzzle -->
-                <ellipse cx="50" cy="67" rx="16" ry="12" fill="white"/>
-                <ellipse cx="50" cy="64" rx="12" ry="8" fill="#fff8f0"/>
-                <!-- Green eyes -->
-                <ellipse cx="38" cy="52" rx="7" ry="7.5" fill="white"/>
-                <ellipse cx="62" cy="52" rx="7" ry="7.5" fill="white"/>
-                <ellipse cx="39" cy="52" rx="4.5" ry="5.5" fill="#4caf50"/>
-                <ellipse cx="63" cy="52" rx="4.5" ry="5.5" fill="#4caf50"/>
-                <ellipse cx="39" cy="51.5" rx="2" ry="4" fill="#1b5e20"/>
-                <ellipse cx="63" cy="51.5" rx="2" ry="4" fill="#1b5e20"/>
-                <circle cx="37" cy="49.5" r="1.5" fill="white"/>
-                <circle cx="61" cy="49.5" r="1.5" fill="white"/>
-                <!-- Nose -->
-                <ellipse cx="50" cy="61" rx="3.5" ry="2.5" fill="#ff8a80"/>
-                <!-- Mouth -->
-                <path d="M47,64 Q50,68 53,64" stroke="#cc7000" stroke-width="1.2" fill="none"/>
-                <!-- Whiskers -->
-                <line x1="8" y1="56" x2="33" y2="59" stroke="#ddd" stroke-width="0.8"/>
-                <line x1="8" y1="63" x2="33" y2="62" stroke="#ddd" stroke-width="0.8"/>
-                <line x1="67" y1="59" x2="92" y2="56" stroke="#ddd" stroke-width="0.8"/>
-                <line x1="67" y1="62" x2="92" y2="63" stroke="#ddd" stroke-width="0.8"/>
-            </svg>
+            <span class="coco-paw-slot" id="coco-paw-slot"></span>
             <div class="coco-info">
                 <div class="coco-title">🐱 Coco Attack!</div>
                 <div class="coco-desc">Force opponent's timer: 35s</div>
@@ -2631,6 +2625,14 @@ const COCO_MARK=`<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" r
 <line x1="84" y1="82" x2="106" y2="82" stroke="#f7e9d8" stroke-width="1.8" stroke-linecap="round"/>
 </svg>`;
 document.querySelectorAll('.coco-mark-slot').forEach(el=>{el.innerHTML=COCO_MARK});
+const COCO_PAW=`<svg class="coco-paw-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Coco's paw">
+<ellipse cx="6.5" cy="7" rx="2.1" ry="2.7" fill="#f49b3e" stroke="#b05f0a" stroke-width="0.9"/>
+<ellipse cx="12" cy="5.4" rx="2.1" ry="2.7" fill="#f49b3e" stroke="#b05f0a" stroke-width="0.9"/>
+<ellipse cx="17.5" cy="7" rx="2.1" ry="2.7" fill="#f49b3e" stroke="#b05f0a" stroke-width="0.9"/>
+<path d="M12 9.8c-3.9 0-6.6 2.7-6.6 5.6 0 2 1.7 3.3 3.4 3.3 1.2 0 2.1-.5 3.2-.5s2 .5 3.2.5c1.7 0 3.4-1.3 3.4-3.3 0-2.9-2.7-5.6-6.6-5.6z" fill="#f49b3e" stroke="#b05f0a" stroke-width="0.9"/>
+</svg>`;
+const _pawSlot=document.getElementById('coco-paw-slot');
+if(_pawSlot)_pawSlot.innerHTML=COCO_PAW;
 
 
 // Sound
@@ -3253,7 +3255,7 @@ class Game{
 
     showCocoOverlay(fromNet){
         if(NET.mode==='host'&&!fromNet)NET.send({type:'fx',coco:true,sfx:'cocoAttack'});
-        const svg=document.getElementById('coco-svg-sm').outerHTML.replace('coco-cat','coco-big-cat');
+        const svg=COCO_PAW.replace('coco-paw-svg','coco-paw-svg coco-big-cat');
         const o=document.createElement('div');o.className='coco-attack-overlay';
         o.innerHTML=svg+`<span class="coco-text">🐱 COCO ATTACK! 🐱</span>`;
         document.body.appendChild(o);setTimeout(()=>o.remove(),1800);
