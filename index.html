@@ -7,6 +7,28 @@
 
     <!--
     ================================================================
+    SPELLCOCO v33 — ONLINE PLAY + PERSISTENCE  (renamed for Coco 🐾)
+    ================================================================
+
+    CHANGELOG v32 → v33:
+    - REBRAND: SpellCraft → SpellCoco, in loving memory of Coco.
+    - ADD: Online 2-player mode via PeerJS (WebRTC). Host gets a
+      4-letter room code; guest joins from any device. Host is
+      authoritative: guests send actions, host broadcasts state.
+    - ADD: Settings persistence (localStorage). All start-screen
+      options are remembered between sessions.
+    - ADD: In-game custom word editor. Add words on the start screen
+      or straight from a rejected word during play. Saved locally,
+      merged with custom_words.txt and any uploaded file.
+    - ADD: Resume after refresh (local mode). Game state autosaves;
+      reopening the page offers Resume / Discard.
+    - ADD: All-time win tracker — Keith vs Shawn record, best word,
+      longest word. Shown on start screen and game-over recap.
+    - ADD: Best-word reveal. After each submit, a Boggle-style trie
+      solver finds the best possible word that was on the board;
+      shown as a toast, in player history, and in the recap.
+
+    ================================================================
     SPELLCRAFT v26 — PLAYER HISTORY + ROUND PIPS
     ================================================================
 
@@ -1693,6 +1715,68 @@
             border:1px solid var(--bg-border);
         }
 
+        /* ===== v33 additions ===== */
+        .coco-tribute{
+            font-size:0.82rem;color:var(--ink-dim);font-style:italic;margin-bottom:12px;
+        }
+        .resume-banner{
+            border:2px solid var(--gold,#e8b53a);border-radius:12px;
+            padding:12px;margin-bottom:14px;background:rgba(232,181,58,0.08);
+        }
+        .stats-box{
+            border:1px solid var(--bg-border);border-radius:10px;
+            padding:9px 12px;margin-bottom:14px;font-size:0.86rem;
+            color:var(--ink-soft);line-height:1.5;background:var(--bg-input);
+        }
+        .stats-box .stats-record{font-weight:700;color:var(--ink);font-size:0.95rem;}
+        .online-panel{
+            margin-top:10px;padding:12px;border:1px dashed var(--purple-deep);
+            border-radius:12px;
+        }
+        .room-code-box{
+            text-align:center;margin:10px 0 4px;padding:10px;
+            background:var(--bg-input);border-radius:10px;border:1px solid var(--bg-border);
+        }
+        .room-code-box span{
+            font-size:2rem;font-weight:900;letter-spacing:0.45em;
+            color:var(--pink-hi);font-family:'Fredoka','Atkinson Hyperlegible',sans-serif;
+            margin-right:-0.45em;
+        }
+        .net-status{font-size:0.86rem;color:var(--ink-dim);margin-top:6px;text-align:center;}
+        .side-toggle{display:flex;gap:6px;}
+        .side-btn{
+            padding:6px 14px;border-radius:8px;border:2px solid var(--bg-border);
+            background:var(--bg-input);color:var(--ink-dim);font-weight:700;cursor:pointer;
+            font-family:inherit;font-size:0.9rem;
+        }
+        .side-btn.active{border-color:var(--pink);color:var(--pink-hi);background:rgba(255,61,146,0.1);}
+        .custom-word-list{
+            display:flex;flex-wrap:wrap;gap:6px;margin-top:9px;justify-content:center;
+        }
+        .word-chip{
+            display:inline-flex;align-items:center;gap:5px;
+            padding:3px 8px;border-radius:999px;font-size:0.8rem;font-weight:700;
+            background:rgba(180,105,224,0.13);border:1px solid var(--purple-deep);color:var(--ink);
+        }
+        .word-chip button{
+            background:none;border:none;color:var(--ink-dim);cursor:pointer;
+            font-size:0.85rem;padding:0;line-height:1;font-family:inherit;
+        }
+        .word-chip button:hover{color:var(--red,#ff5252);}
+        .add-word-btn{
+            margin-left:8px;padding:2px 9px;border-radius:999px;font-size:0.78rem;font-weight:700;
+            background:rgba(255,61,146,0.12);border:1px solid var(--pink);color:var(--pink-hi);
+            cursor:pointer;font-family:inherit;vertical-align:middle;
+        }
+        .net-pill{
+            font-size:0.78rem;font-weight:700;padding:3px 9px;border-radius:999px;
+            border:1px solid var(--bg-border);background:var(--bg-input);color:var(--ink-soft);
+            white-space:nowrap;
+        }
+        .net-pill.ok{border-color:#3dbf6e;color:#7fe3a8;}
+        .net-pill.bad{border-color:var(--red,#ff5252);color:#ff9c9c;}
+        .best-word-meta{color:var(--gold-hi);}
+
         /* REDUCED MOTION — freeze all the fancy stuff for anyone who needs it */
         @media (prefers-reduced-motion: reduce){
             .logo, .modal-content h1, .winner-banner, .round-overlay .round-text,
@@ -1719,13 +1803,14 @@
 <div id="app">
     <div class="side-panel">
         <header>
-            <div><div class="logo">SpellCraft<small>Word Duel</small></div></div>
+            <div><div class="logo">SpellCoco<small>Word Duel · 🐾</small></div></div>
             <div class="header-right">
                 <div class="sound-controls">
                     <button class="btn-icon" id="btn-mute" onclick="toggleMute()" title="Toggle Sound">🔇</button>
                     <input type="range" class="volume-slider" id="volume-slider" min="0" max="100" value="50" oninput="setVolume(this.value)">
                 </div>
                 <div id="timer-display">--</div>
+                <div id="net-pill" class="net-pill hidden">🌐</div>
             </div>
         </header>
         <div class="round-indicator-row">
@@ -1814,8 +1899,59 @@
 
 <div id="modal-start" class="modal">
     <div class="modal-content" style="width:460px;">
-        <h1>✦ SpellCraft ✦</h1>
-        <p style="color:var(--ink-soft);margin-bottom:10px;font-size:1rem;font-weight:700;">Keith vs Shawn</p>
+        <h1>✦ SpellCoco ✦</h1>
+        <p style="color:var(--ink-soft);margin-bottom:2px;font-size:1rem;font-weight:700;">Keith vs Shawn</p>
+        <p class="coco-tribute">in loving memory of Coco, the very best cat 🐾</p>
+
+        <div id="resume-banner" class="resume-banner hidden">
+            <div id="resume-desc" style="font-size:0.92rem;margin-bottom:8px;"></div>
+            <div style="display:flex;gap:8px;">
+                <button class="btn-submit" style="max-width:none;flex:1;padding:8px;" onclick="resumeSavedGame()">▶ Resume</button>
+                <button class="btn-clear" style="max-width:none;flex:1;padding:8px;" onclick="discardSavedGame()">✕ Discard</button>
+            </div>
+        </div>
+
+        <div id="stats-box" class="stats-box hidden"></div>
+
+        <div class="settings-section">
+            <div class="settings-section-title">🌐 Game Mode</div>
+            <div class="lw-presets">
+                <button class="lw-preset-btn active" id="mode-local" onclick="setMode('local')">
+                    <span class="lw-preset-name">Local</span>
+                    <span class="lw-preset-desc">Pass &amp; play, one device</span>
+                </button>
+                <button class="lw-preset-btn" id="mode-host" onclick="setMode('host')">
+                    <span class="lw-preset-name">Host Online</span>
+                    <span class="lw-preset-desc">Get a room code</span>
+                </button>
+                <button class="lw-preset-btn" id="mode-join" onclick="setMode('join')">
+                    <span class="lw-preset-name">Join Online</span>
+                    <span class="lw-preset-desc">Enter a code</span>
+                </button>
+            </div>
+            <div id="online-host-panel" class="online-panel hidden">
+                <div class="setting-row">
+                    <span>Play as</span>
+                    <div class="side-toggle">
+                        <button class="side-btn" id="side-Keith" onclick="pickSide('Keith')">Keith</button>
+                        <button class="side-btn active" id="side-Shawn" onclick="pickSide('Shawn')">Shawn</button>
+                    </div>
+                </div>
+                <div class="room-code-box"><span id="room-code">····</span></div>
+                <p class="net-status" id="host-status">Creating room…</p>
+            </div>
+            <div id="online-join-panel" class="online-panel hidden">
+                <div class="setting-row">
+                    <span>Play as</span>
+                    <span id="join-side" style="font-weight:700;color:var(--ink);">(host picks first)</span>
+                </div>
+                <div class="dict-checker-row" style="margin-top:8px;">
+                    <input type="text" class="dict-checker-input" id="join-code" placeholder="Room code" maxlength="4" style="text-transform:uppercase;" onkeydown="if(event.key==='Enter')joinGame()">
+                    <button class="dict-checker-btn" onclick="joinGame()">Join</button>
+                </div>
+                <p class="net-status" id="join-status"></p>
+            </div>
+        </div>
 
         <div class="setting-row">
             <span>Sound Effects</span>
@@ -1905,6 +2041,11 @@
                 <p style="font-size:0.85rem;margin-bottom:10px;color:var(--ink-dim);">Words Keith & Shawn think should count. Merged into the dictionary — duplicates are fine.</p>
                 <input type="file" id="custom-words-file" accept=".txt" onchange="loadCustomWords(this)">
                 <p id="custom-status" style="margin-top:7px;font-size:0.9rem;"></p>
+                <div class="dict-checker-row" style="margin-top:10px;">
+                    <input type="text" class="dict-checker-input" id="new-custom-word" placeholder="Type a word to add…" maxlength="15" onkeydown="if(event.key==='Enter')addCustomWordFromInput()">
+                    <button class="dict-checker-btn" onclick="addCustomWordFromInput()">＋ Add</button>
+                </div>
+                <div id="custom-word-list" class="custom-word-list"></div>
             </div>
         </div>
         <button class="btn-start" onclick="startGame()">⚡ Start Game</button>
@@ -1962,9 +2103,10 @@
     </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js"></script>
 <script>
 /*
- * SPELLCRAFT v21 — GEM CHAOS + COCO TOGGLE
+ * SPELLCOCO v33 — see changelog at top of file. Core logic from v21
  * Game logic unchanged from v17/v18/v19. v20's only changes are CSS:
  * tile letters use Fredoka; tile numbers restored to v17 sizing/weight.
  * Starfield JS (createAtmosphere) is as v19 — multi-colored stars +
@@ -1982,6 +2124,236 @@ let CONFIG = {
 };
 
 function fisherYates(arr){for(let i=arr.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]]}return arr}
+
+// ===================== v33: storage helpers =====================
+function lsGet(k,fb){try{const v=localStorage.getItem(k);return v?JSON.parse(v):fb}catch(e){return fb}}
+function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+function lsDel(k){try{localStorage.removeItem(k)}catch(e){}}
+
+// ===================== v33: all-time win tracker =====================
+let STATS=lsGet('spellcoco.stats',{games:0,draws:0,wins:{Keith:0,Shawn:0},bestWord:null,longestWord:null});
+function recordGameStats(players){
+    STATS.games++;
+    if(players.length>1&&players[0].score===players[1].score)STATS.draws++;
+    else STATS.wins[players[0].name]=(STATS.wins[players[0].name]||0)+1;
+    players.forEach(p=>(p.wordsPlayed||[]).forEach(w=>{
+        if(!STATS.bestWord||w.score>STATS.bestWord.score)STATS.bestWord={word:w.word,score:w.score,player:p.name};
+        if(!STATS.longestWord||w.word.length>STATS.longestWord.word.length)STATS.longestWord={word:w.word,player:p.name};
+    }));
+    lsSet('spellcoco.stats',STATS);
+    renderStatsBox();
+}
+function statsRecordLine(){
+    const k=STATS.wins.Keith||0,sh=STATS.wins.Shawn||0;
+    return `All-time: Keith ${k} – ${sh} Shawn${STATS.draws?` · ${STATS.draws} draw${STATS.draws>1?'s':''}`:''}`;
+}
+function renderStatsBox(){
+    const el=document.getElementById('stats-box');if(!el)return;
+    if(!STATS.games){el.classList.add('hidden');return}
+    el.classList.remove('hidden');
+    let h=`<div class="stats-record">🏆 ${statsRecordLine()}</div>`;
+    h+=`<div>${STATS.games} game${STATS.games>1?'s':''} played on this device</div>`;
+    if(STATS.bestWord)h+=`<div>⭐ Best word: <strong>${STATS.bestWord.word}</strong> (${STATS.bestWord.score} pts, ${STATS.bestWord.player})</div>`;
+    if(STATS.longestWord)h+=`<div>📏 Longest: <strong>${STATS.longestWord.word}</strong> (${STATS.longestWord.word.length} letters, ${STATS.longestWord.player})</div>`;
+    el.innerHTML=h;
+}
+
+// ===================== v33: settings persistence =====================
+function saveSettings(){
+    const cfg={sound:document.getElementById('sound-toggle').checked,
+        startGems:document.getElementById('cfg-start-gems').value,
+        cocoEnabled:document.getElementById('cfg-coco-enabled').checked,
+        cocoCost:document.getElementById('cfg-coco-cost').value,
+        boardGems:document.getElementById('cfg-board-gems').value,
+        mults:{},lwPreset:selectedLWPreset,customTiers:customTiers,
+        lwStack:document.getElementById('cfg-lw-stack').checked};
+    document.querySelectorAll('.mult-toggle').forEach(l=>cfg.mults[l.dataset.mult]=l.querySelector('input').checked);
+    lsSet('spellcoco.settings',cfg);
+}
+function restoreSettings(){
+    const cfg=lsGet('spellcoco.settings',null);if(!cfg)return;
+    try{
+        document.getElementById('sound-toggle').checked=!!cfg.sound;
+        if(cfg.startGems!==undefined)document.getElementById('cfg-start-gems').value=cfg.startGems;
+        document.getElementById('cfg-coco-enabled').checked=cfg.cocoEnabled!==false;
+        document.getElementById('cfg-coco-enabled').dispatchEvent(new Event('change'));
+        if(cfg.cocoCost!==undefined)document.getElementById('cfg-coco-cost').value=cfg.cocoCost;
+        if(cfg.boardGems!==undefined)document.getElementById('cfg-board-gems').value=cfg.boardGems;
+        document.querySelectorAll('.mult-toggle').forEach(l=>{
+            const cb=l.querySelector('input');
+            if(cfg.mults&&cfg.mults[l.dataset.mult]!==undefined){cb.checked=cfg.mults[l.dataset.mult];l.classList.toggle('active',cb.checked)}
+        });
+        if(cfg.customTiers&&cfg.customTiers.length)customTiers=cfg.customTiers;
+        document.getElementById('cfg-lw-stack').checked=!!cfg.lwStack;
+        if(cfg.lwPreset)selectLWPreset(cfg.lwPreset);
+    }catch(e){}
+}
+
+// ===================== v33: best-word solver =====================
+const NEIGHBORS=(()=>{const n=[];for(let r=0;r<5;r++)for(let c=0;c<5;c++){const a=[];for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){if(!dr&&!dc)continue;const rr=r+dr,cc=c+dc;if(rr>=0&&rr<5&&cc>=0&&cc<5)a.push(rr*5+cc)}n.push(a)}return n})();
+function scoreTilePath(path){
+    let base=0,wm=1;
+    path.forEach(t=>{let v=t.baseValue;if(t.multiplier==='DL')v*=2;else if(t.multiplier==='TL')v*=3;base+=v;if(t.multiplier==='2W')wm*=2;else if(t.multiplier==='3W')wm*=3});
+    return base*wm+calcLongWordBonus(path.length);
+}
+function findBestWord(tiles){
+    if(!trieBuilt)return null;
+    let best=null;
+    const visited=new Array(25).fill(false),path=[];
+    function dfs(id,node){
+        const nx=node.children[tiles[id].char];if(!nx)return;
+        visited[id]=true;path.push(tiles[id]);
+        if(nx.isEnd&&path.length>=2){
+            const sc=scoreTilePath(path);
+            if(!best||sc>best.score)best={word:path.map(t=>t.char).join(''),score:sc};
+        }
+        const nbs=NEIGHBORS[id];
+        for(let i=0;i<nbs.length;i++)if(!visited[nbs[i]])dfs(nbs[i],nx);
+        visited[id]=false;path.pop();
+    }
+    for(let i=0;i<25;i++)dfs(i,trie.root);
+    return best;
+}
+
+// ===================== v33: networking (PeerJS) =====================
+const NET={
+    mode:'local',peer:null,conn:null,myIndex:-1,myName:'Shawn',code:'',connected:false,quiet:false,
+    open(){return !!(this.conn&&this.conn.open)},
+    send(m){if(this.open()){try{this.conn.send(m)}catch(e){}}},
+    setPill(txt,cls){const p=document.getElementById('net-pill');if(!p)return;
+        if(!txt){p.classList.add('hidden');return}
+        p.className='net-pill '+(cls||'');p.innerText=txt;},
+    sendStart(){this.send({type:'start',config:CONFIG,state:game.serialize(),customs:localCustomWords})},
+    cleanup(){if(this.peer){try{this.peer.destroy()}catch(e){}}this.peer=null;this.conn=null;this.connected=false;}
+};
+function genCode(){const a='ABCDEFGHJKMNPQRSTUVWXYZ23456789';let c='';for(let i=0;i<4;i++)c+=a[Math.floor(Math.random()*a.length)];return c}
+function setMode(m){
+    NET.cleanup();NET.mode=m;NET.setPill('');
+    ['local','host','join'].forEach(x=>document.getElementById('mode-'+x).classList.toggle('active',x===m));
+    document.getElementById('online-host-panel').classList.toggle('hidden',m!=='host');
+    document.getElementById('online-join-panel').classList.toggle('hidden',m!=='join');
+    const sb=document.querySelector('#modal-start .btn-start');
+    if(m==='join'){sb.innerText='⏳ Waiting for host to start…';sb.disabled=true}
+    else{sb.innerText='⚡ Start Game';sb.disabled=false;if(m==='host')hostGame()}
+}
+function pickSide(n){
+    NET.myName=n;
+    document.getElementById('side-Keith').classList.toggle('active',n==='Keith');
+    document.getElementById('side-Shawn').classList.toggle('active',n==='Shawn');
+    if(NET.mode==='host')NET.send({type:'side',host:n});
+}
+function mergeRemoteWords(ws){(ws||[]).forEach(w=>{if(typeof w==='string'&&/^[A-Z]{2,15}$/.test(w)){DICTIONARY.add(w);if(trieBuilt)trie.insert(w)}})}
+function hostGame(){
+    if(typeof Peer==='undefined'){document.getElementById('host-status').innerText='⚠ Online library failed to load — check internet';return}
+    const code=genCode();NET.code=code;
+    document.getElementById('room-code').innerText='····';
+    document.getElementById('host-status').innerText='Creating room…';
+    const peer=new Peer('spellcoco-'+code);NET.peer=peer;
+    peer.on('open',()=>{if(NET.peer!==peer)return;document.getElementById('room-code').innerText=code;document.getElementById('host-status').innerText='Share this code — waiting for opponent…'});
+    peer.on('error',err=>{
+        if(NET.peer!==peer)return;
+        if(err.type==='unavailable-id'){hostGame();return}
+        document.getElementById('host-status').innerText='⚠ Connection error: '+err.type;
+    });
+    peer.on('connection',conn=>{
+        if(NET.peer!==peer)return;
+        NET.conn=conn;
+        conn.on('open',()=>{
+            NET.connected=true;
+            document.getElementById('host-status').innerText='✓ Opponent connected! Press Start when ready.';
+            NET.setPill('🌐 connected','ok');
+            NET.send({type:'side',host:NET.myName});
+            NET.send({type:'customs',words:localCustomWords});
+            if(game&&!game.over)NET.sendStart();
+        });
+        conn.on('data',m=>hostOnData(m));
+        conn.on('close',()=>{
+            NET.connected=false;NET.setPill('⚠ disconnected','bad');
+            if(game&&!game.over)game.showToast('⚠ Opponent disconnected — they can rejoin with the same code');
+            else document.getElementById('host-status').innerText='Opponent left — waiting for someone to join…';
+        });
+    });
+}
+function joinGame(){
+    if(typeof Peer==='undefined'){document.getElementById('join-status').innerText='⚠ Online library failed to load — check internet';return}
+    const code=(document.getElementById('join-code').value||'').trim().toUpperCase();
+    if(code.length!==4){document.getElementById('join-status').innerText='Enter the 4-character code';return}
+    NET.cleanup();NET.mode='join';
+    document.getElementById('join-status').innerText='Connecting…';
+    const peer=new Peer();NET.peer=peer;
+    peer.on('error',err=>{if(NET.peer!==peer)return;document.getElementById('join-status').innerText=err.type==='peer-unavailable'?'⚠ Room not found — check the code':'⚠ Connection error: '+err.type});
+    peer.on('open',()=>{
+        if(NET.peer!==peer)return;
+        const conn=peer.connect('spellcoco-'+code,{reliable:true});NET.conn=conn;
+        conn.on('open',()=>{NET.connected=true;document.getElementById('join-status').innerText='✓ Connected! Waiting for host to start…';NET.setPill('🌐 connected','ok');NET.send({type:'customs',words:localCustomWords})});
+        conn.on('data',m=>guestOnData(m));
+        conn.on('close',()=>{NET.connected=false;NET.setPill('⚠ disconnected','bad');if(game&&!game.over)game.showToast('⚠ Host disconnected');document.getElementById('join-status').innerText='⚠ Connection closed'});
+    });
+}
+function hostOnData(m){
+    if(!m||typeof m!=='object')return;
+    switch(m.type){
+        case 'customs':mergeRemoteWords(m.words);break;
+        case 'addword':addCustomWord(m.w,true);if(game){game.showToast(`📖 ${m.w} added by opponent`);game.updateUI()}break;
+        case 'sel':if(game&&game.turnIndex!==NET.myIndex){NET.quiet=true;game.applySelection(m.ids||[]);NET.quiet=false}break;
+        case 'act':if(game&&!game.over)game.handleRemoteAction(m);break;
+    }
+}
+function guestOnData(m){
+    if(!m||typeof m!=='object')return;
+    switch(m.type){
+        case 'side':{NET.myName=m.host==='Keith'?'Shawn':'Keith';const el=document.getElementById('join-side');if(el)el.innerText=NET.myName;break}
+        case 'customs':mergeRemoteWords(m.words);break;
+        case 'addword':addCustomWord(m.w,true);if(game)game.updateUI();break;
+        case 'start':guestStart(m);break;
+        case 'state':if(game)game.applyState(m.state);break;
+        case 'timer':if(game){game.cocoTimerActive=m.on;game.timeLeft=m.t;game.updateTimerDisplay()}break;
+        case 'fx':if(game){if(m.toast)game.showToast(m.toast,true);if(m.overlay)game.showRoundOverlay(m.overlay.t,m.overlay.s,true);if(m.celebrate)game.showCelebration(m.celebrate,true);if(m.coco)game.showCocoOverlay(true);if(m.sfx&&SFX[m.sfx])SFX[m.sfx]()}break;
+        case 'gameover':{if(game)game.over=true;recordGameStats(m.players);renderGameOver(m.players);break}
+    }
+}
+function guestStart(m){
+    CONFIG=m.config;
+    mergeRemoteWords(m.customs);
+    soundEnabled=document.getElementById('sound-toggle').checked;
+    document.getElementById('btn-mute').innerText=soundEnabled?'🔊':'🔇';
+    document.getElementById('btn-mute').classList.toggle('active',soundEnabled);
+    if(soundEnabled)initAudio();
+    populateLwRef();
+    document.getElementById('modal-start').classList.add('hidden');
+    document.getElementById('modal-gameover').classList.add('hidden');
+    document.getElementById('coco-zone').classList.toggle('hidden',!CONFIG.cocoAttackEnabled);
+    game=Game.fromState(m.state);
+    NET.myIndex=game.players.findIndex(p=>p.name===NET.myName);
+    game.showRoundOverlay(`Round ${game.round}`,`${game.currentPlayer.name}'s turn`,true);
+}
+
+// ===================== v33: resume after refresh =====================
+function saveGameState(){
+    if(NET.mode!=='local'||!game||game.over)return;
+    lsSet('spellcoco.save',{config:CONFIG,state:game.serialize(),ts:Date.now()});
+}
+function checkSavedGame(){
+    const sv=lsGet('spellcoco.save',null);if(!sv||!sv.state||!sv.state.players)return;
+    document.getElementById('resume-banner').classList.remove('hidden');
+    document.getElementById('resume-desc').innerHTML=
+        `<strong>⏸ Unfinished game found</strong> — Round ${sv.state.round}/${sv.config.rounds}: `+
+        sv.state.players.map(p=>`${p.name} ${p.score}`).join(' · ');
+}
+function resumeSavedGame(){
+    const sv=lsGet('spellcoco.save',null);if(!sv)return;
+    CONFIG=sv.config;
+    soundEnabled=document.getElementById('sound-toggle').checked;
+    document.getElementById('btn-mute').innerText=soundEnabled?'🔊':'🔇';
+    document.getElementById('btn-mute').classList.toggle('active',soundEnabled);
+    if(soundEnabled)initAudio();
+    populateLwRef();
+    document.getElementById('modal-start').classList.add('hidden');
+    document.getElementById('coco-zone').classList.toggle('hidden',!CONFIG.cocoAttackEnabled);
+    game=Game.fromState(sv.state);
+    game.showRoundOverlay(`Round ${game.round}`,`${game.currentPlayer.name}'s turn — welcome back!`);
+}
+function discardSavedGame(){lsDel('spellcoco.save');document.getElementById('resume-banner').classList.add('hidden')}
 
 const LW_PRESETS = {
     original: {
@@ -2097,13 +2469,58 @@ function buildTrie(ws){trie=new Trie;for(const w of ws)if(w.length>=2)trie.inser
 
 // Dictionary
 const BUILT_IN_WORDS=["THE","AND","FOR","ARE","BUT","NOT","YOU","ALL","ANY","CAN","HAD","HAS","HIM","HER","ITS","ONE","TWO","SIX","TEN","NEW","WHO","MAY","NOW","OUT","SEE","USE","WAY","GET","OUR","MAN","MEN","SAY","SHE","TOO","WON","DID","EYE","EAR","LET","RUN","SET","PUT","RED","OLD","BIG","EAT","BOY","CAT","DOG","BED","CAR","BUS","KEY","SKY","TOP","JOY","FUN","ACE","ADD","AID","AIM","APE","ARC","ARK","AWE","ATE","OAT","OWL","OWN","ORE","ODD","GAME","PLAY","TIME","WORD","LIST","GRID","TILE","HELP","CODE","FILE","SAVE","OPEN","EXIT","QUIT","WIN","MAP","TEST","DATA","USER","PATH","LINK","TEXT","FONT","SIZE","TYPE","MODE","VIEW","EDIT","COPY","CUT","PASTE","ZIP","ZOO","FIND","TOOL","MENU","ICON","ITEM","NAME","DATE","RANK","RATE","ROLE","TEAM","SIDE","TURN","MOVE","STEP","RAW","ROW","STOP","WAIT","LOAD","READ","SENT","MAIL","POST","BLOG","CHAT","TALK","CALL","CARD","DEAL","HAND","FACE","AGE","AGO","HEAD","FOOT","BODY","ARM","LEG","NOSE","MOUTH","LIP","NAIL","HAIR","SKIN","BONE","RIB","HIP","MIND","SOUL","LOVE","HATE","FEAR","HOPE","WISH","NEED","WANT","LIKE","LIVE","LIFE","DEAD","DIE","WAR","BORN","GROW","YEAR","HOUR","DAY","WEEK","PAST","PLAN","GOAL","IDEA","WORK","JOB","PAY","REST","STAY","HOME","LAND","SEA","AIR","FIRE","WIND","RAIN","SNOW","COLD","HEAT","WARM","COOL","DARK","ICE","SUN","BLUE","PINK","GRAY","GOLD","WOOD","IRON","ROCK","SAND","DUST","DIRT","MUD","GRASS","TREE","LEAF","ROSE","TAN","LILY","BIRD","FISH","LION","BEAR","WOLF","FOX","DEER","COW","PIG","DUCK","HEN","ANT","BEE","SPELL","CAST","MAGIC","WITCH","WIZARD","POWER","LEVEL","SKILL","QUEST","LOOT","ORC","ELF","BOSS","RAID","GUILD","PARTY","SOLO","TANK","HEAL","MANA","ITEM","BAG","POT","PAN","GEAR","DROP","ROLL","LOSE","DRAW","SCORE","HIGH","LOW","BEST","GOOD","BAD","SAD","EVIL","HERO","KING","QUEEN","PRINCE","LORD","LADY","KNIGHT","SWORD","SHIELD","BOW","ARROW","AXE","PEN","INK","ART","CLUB","SPEAR","KNIFE","BLADE","EDGE","POINT","HIT","MISS","BLOCK","DODGE","STUN","SLOW","ROOT","CHARM","HEX","CURSE","POISON","BURN","SHOCK","FREEZE","BLAST","ICY","HOT","BOLT","WAVE","BEAM","RAY","AURA","BUFF","SONG","DANCE","BARD","MONK","DRUID","MAGE","ROGUE","GOD","WARRIOR","HUNTER","DEMON","ANGEL","GHOST","SPIRIT","DRAGON","GIANT","DWARF","GNOME","TROLL","GOBLIN","CHEST","DOOR","TRAP","LOCK","ROOM","FLOOR","WALL","ROOF","ROPE","TIE","KNOT","BRIDGE","GATE","FENCE","YARD","GARDEN","PARK","CITY","TOWN","VILLAGE","FARM","FIELD","FOREST","ZOO","PET","DESERT","SWAMP","CAVE","MINE","RUIN","TOMB","GRAVE","TEMPLE","CHURCH","SHRINE","KINGDOM","EMPIRE","NATION","STATE","LAW","TAX","AREA","ZONE","WORLD","PLANET","STAR","MOON","SPACE","GALAXY","COMET","ORBIT","MATH","LOGIC","FACT","TRUTH","LIE","MYTH","LEGEND","TALE","STORY","BOOK","PAGE","LETTER","NOTE","PAPER","SCROLL","TOME","MEMO","DIARY","LOG","RECORD","NEWS","WEB","VIDEO","IMAGE","PHOTO","AUDIO","SOUND","MUSIC","TUNE","TONE","PITCH","BEAT","SPEED","RATE","PACE","FAST","QUICK","SWIFT","RUSH","DASH","WALK","JOG","SPRINT","JUMP","LEAP","HOP","SKIP","CLIMB","SWIM","FLOAT","SINK","DIVE","FALL","SIT","DROP","SLIP","SLIDE","GLIDE","DRIFT","SPIN","TWIST","BEND","FLEX","BREAK","SNAP","CRACK","CRUSH","SMASH","BASH","STRIKE","PUNCH","KICK","BITE","CLAW","SLICE","CHOP","APPLE","ORANGE","BANANA","GRAPE","MELON","BERRY","LEMON","LIME","PEAR","PEACH","PLUM","KIWI","FIG","NUT","PIE","CAKE","BREAD","MEAT","BEEF","PORK","EGG","MILK","CHEESE","WATER","WINE","BEER","TEA","OIL","GAS","ATOM","CELL","VIRUS","GENE","ACID","BASE","SALT","SUGAR","FAT","LEAD","ZINC","TIN","RUBY","OPAL","JADE","ONYX","PEARL","LAVA","ASH","CLAY","SILK","WOOL","FUR","ROBE","CAPE","COAT","SHIRT","PANTS","SHOE","BOOT","HAT","HELM","VEST","BELT","RING","GEM","JEWEL","CROWN","ORB","WAND","STAFF","POTION","RUNE","SIGIL","WARD","GOLEM","WISP","SHADE","FROG","FERN","VINE","SHORE","BEACH","COVE","REEF","CREEK","RIVER","LAKE","POND","POOL","WELL","SPRING","STONE","CLIFF","HILL","EAGLE","HAWK","CROW","DOVE","SWAN","CRANE","ROBIN","STORK","HARE","MOUSE","SNAKE","TOAD","ACORN","EMBER","FLAME","FROST","STORM","CLOUD","MIST","HAZE","DAWN","DUSK","NIGHT","NOON","GLOW","GLEAM","COCO"];
+let BASE_WORDS=BUILT_IN_WORDS.slice();
 let DICTIONARY=new Set(BUILT_IN_WORDS);
 let dictFileLoaded=false;
 let customWords=[];
+let localCustomWords=(lsGet('spellcoco.customWords',[])||[]).filter(w=>typeof w==='string'&&/^[A-Z]{2,15}$/.test(w));
+
+function renderCustomWordList(){
+    const el=document.getElementById('custom-word-list');if(!el)return;
+    el.innerHTML='';
+    localCustomWords.forEach(w=>{
+        const chip=document.createElement('span');chip.className='word-chip';
+        chip.appendChild(document.createTextNode(w+' '));
+        const x=document.createElement('button');x.innerText='✕';x.title='Remove '+w;
+        x.onclick=()=>removeCustomWord(w);
+        chip.appendChild(x);el.appendChild(chip);
+    });
+}
+function addCustomWord(w,fromNet){
+    w=(w||'').trim().toUpperCase();
+    const msg=t=>{if(game)game.showToast(t);else{const st=document.getElementById('custom-status');st.innerText=t;st.style.color='var(--ink-dim)'}};
+    if(!/^[A-Z]{2,15}$/.test(w)){if(!fromNet)msg('Letters only, 2–15 long');return false}
+    if(DICTIONARY.has(w)){if(!fromNet)msg(`${w} is already a valid word!`);return false}
+    if(!localCustomWords.includes(w))localCustomWords.push(w);
+    lsSet('spellcoco.customWords',localCustomWords);
+    DICTIONARY.add(w);if(trieBuilt)trie.insert(w);
+    renderCustomWordList();
+    if(!fromNet&&NET.mode!=='local'&&NET.open())NET.send({type:'addword',w:w});
+    return true;
+}
+function removeCustomWord(w){
+    localCustomWords=localCustomWords.filter(x=>x!==w);
+    lsSet('spellcoco.customWords',localCustomWords);
+    renderCustomWordList();
+    rebuildWithCustom();
+}
+function addCustomWordFromInput(){
+    const i=document.getElementById('new-custom-word');
+    if(addCustomWord(i.value)){
+        i.value='';
+        const st=document.getElementById('custom-status');
+        st.innerText='✓ word added to your dictionary';st.style.color='var(--pink-hi)';
+    }
+}
+function addWordFromGame(){
+    if(!game)return;
+    const r=game.calculateCurrentScore();
+    if(r.word&&addCustomWord(r.word)){game.showToast(`📖 ${r.word} added to dictionary!`);game.updateUI()}
+}
 
 window.addEventListener('DOMContentLoaded',()=>{buildTrie(BUILT_IN_WORDS);fetch('dictionary.txt').then(r=>{if(r.ok)return r.text();throw new Error}).then(t=>{processDictionaryText(t);dictFileLoaded=true}).catch(()=>console.log('Built-in dict'));fetch('custom_words.txt').then(r=>{if(r.ok)return r.text();throw new Error}).then(t=>{const ws=t.split(/\r?\n/).map(w=>w.trim().toUpperCase()).filter(w=>w.length>=2);if(ws.length){customWords=ws;const st=document.getElementById('custom-status');st.innerText='\u2713 '+ws.length+' custom words (auto)';st.style.color='var(--pink-hi)';rebuildWithCustom()}}).catch(()=>{});});
 function loadDictionary(input){const f=input.files[0];if(!f)return;const r=new FileReader;r.onload=e=>{processDictionaryText(e.target.result);dictFileLoaded=true};r.readAsText(f)}
-function processDictionaryText(text){const ws=text.split(/\r?\n/).map(w=>w.trim().toUpperCase()).filter(w=>w.length>=2);DICTIONARY=new Set(ws);document.getElementById('dict-status').innerText=`✓ ${ws.length.toLocaleString()} words!`;document.getElementById('dict-status').style.color='var(--pink-hi)';rebuildWithCustom()}
+function processDictionaryText(text){const ws=text.split(/\r?\n/).map(w=>w.trim().toUpperCase()).filter(w=>w.length>=2);BASE_WORDS=ws;DICTIONARY=new Set(ws);document.getElementById('dict-status').innerText=`✓ ${ws.length.toLocaleString()} words!`;document.getElementById('dict-status').style.color='var(--pink-hi)';rebuildWithCustom()}
 
 function loadCustomWords(input){
     const f=input.files[0];if(!f)return;
@@ -2119,7 +2536,9 @@ function loadCustomWords(input){
 }
 
 function rebuildWithCustom(){
-    if(customWords.length>0) customWords.forEach(w=>DICTIONARY.add(w));
+    DICTIONARY=new Set(BASE_WORDS);
+    customWords.forEach(w=>DICTIONARY.add(w));
+    localCustomWords.forEach(w=>DICTIONARY.add(w));
     const st=document.getElementById('trie-status');st.classList.remove('hidden');
     setTimeout(()=>{
         buildTrie([...DICTIONARY]);
@@ -2170,15 +2589,15 @@ class Tile{
 
 // Game
 class Game{
-    constructor(){
-        const names=Math.random()<0.5?['Keith','Shawn']:['Shawn','Keith'];
+    constructor(opts){
+        const names=(opts&&opts.names)||(Math.random()<0.5?['Keith','Shawn']:['Shawn','Keith']);
         this.players=names.map((n,i)=>({
             id:i,name:n,score:0,gems:CONFIG.startGems,lastWord:'',
             wordsPlayed:[],
             totalGems:0,
             abilityLog:{}
         }));
-        this.timerInterval=null;this.timeLeft=0;this.cocoTimerActive=false;
+        this.timerInterval=null;this.timeLeft=0;this.cocoTimerActive=false;this.over=false;
         this.round=1;this.turnIndex=0;this.tiles=[];this.selection=[];
         this.pendingSwap=false;this.isDragging=false;
         this.generateBoard();this.selection=[];this.updateUI();this.setupTouchDrag();
@@ -2186,6 +2605,82 @@ class Game{
     }
     get currentPlayer(){return this.players[this.turnIndex]}
     get nonActivePlayer(){return this.players[1-this.turnIndex]}
+    get myTurn(){return NET.mode==='local'||this.turnIndex===NET.myIndex}
+
+    serialize(){
+        return {round:this.round,turnIndex:this.turnIndex,
+            players:JSON.parse(JSON.stringify(this.players)),
+            tiles:this.tiles.map(t=>({char:t.char,mult:t.multiplier,gem:t.hasGem})),
+            cocoTimerActive:this.cocoTimerActive,timeLeft:this.timeLeft,
+            sel:[...this.selection]};
+    }
+    static fromState(st){
+        const g=Object.create(Game.prototype);
+        g.timerInterval=null;g.timeLeft=st.timeLeft||0;g.cocoTimerActive=false;
+        g.round=st.round;g.turnIndex=st.turnIndex;g.selection=[];
+        g.pendingSwap=false;g.isDragging=false;g.over=false;
+        g.players=st.players;
+        g.tiles=st.tiles.map((td,i)=>{const t=new Tile(i,Math.floor(i/5),i%5,td.char);t.multiplier=td.mult;t.hasGem=td.gem;return t});
+        (st.sel||[]).forEach(id=>{if(g.tiles[id]){g.tiles[id].isSelected=true;g.selection.push(id)}});
+        NET.quiet=true;g.updateUI();NET.quiet=false;
+        g.setupTouchDrag();
+        return g;
+    }
+    applyState(st){
+        this.round=st.round;this.turnIndex=st.turnIndex;
+        this.players=st.players;
+        this.cocoTimerActive=st.cocoTimerActive;this.timeLeft=st.timeLeft;
+        this.tiles=st.tiles.map((td,i)=>{const t=new Tile(i,Math.floor(i/5),i%5,td.char);t.multiplier=td.mult;t.hasGem=td.gem;return t});
+        const keep=NET.mode==='join'&&this.myTurn;
+        const sel=keep?this.selection:(st.sel||[]);
+        this.selection=[];
+        sel.forEach(id=>{if(this.tiles[id]){this.tiles[id].isSelected=true;this.selection.push(id)}});
+        NET.quiet=true;this.updateUI();NET.quiet=false;
+    }
+    applySelection(ids){
+        this.selection.forEach(id=>{if(this.tiles[id])this.tiles[id].isSelected=false});
+        this.selection=[];
+        (ids||[]).forEach(id=>{if(this.tiles[id]){this.tiles[id].isSelected=true;this.selection.push(id)}});
+        this.updateUI();
+    }
+    handleRemoteAction(m){
+        const guestTurn=this.turnIndex!==NET.myIndex;
+        switch(m.kind){
+            case 'submit':
+                if(!guestTurn)return;
+                this.applySelection(m.sel||[]);
+                this.submitWord();
+                break;
+            case 'shuffle':{
+                if(!guestTurn)return;
+                const p=this.currentPlayer;
+                if(p.gems<CONFIG.costs.shuffle)return;
+                p.gems-=CONFIG.costs.shuffle;this.logAbility(p,'shuffle',CONFIG.costs.shuffle);
+                this.shuffleBoard();this.clearSelection();
+                this.showToast('Board shuffled!');SFX.shuffle();this.updateUI();
+                break;}
+            case 'swap':{
+                if(!guestTurn)return;
+                const p=this.currentPlayer;
+                if(p.gems<CONFIG.costs.swap||!this.tiles[m.tileId]||!LETTERS[m.ch])return;
+                p.gems-=CONFIG.costs.swap;this.logAbility(p,'swap',CONFIG.costs.swap);
+                const t=this.tiles[m.tileId];t.char=m.ch;t.baseValue=LETTERS[m.ch].val;
+                this.showToast(`Swapped to ${m.ch}!`);SFX.swap();this.updateUI();
+                break;}
+            case 'time':{
+                if(!guestTurn)return;
+                const p=this.currentPlayer;
+                if(p.gems<CONFIG.costs.time||!this.cocoTimerActive)return;
+                p.gems-=CONFIG.costs.time;this.logAbility(p,'time',CONFIG.costs.time);
+                this.timeLeft+=CONFIG.bonusTime;this.updateTimerDisplay();
+                this.showToast('+15 seconds!');this.updateUI();
+                break;}
+            case 'coco':
+                if(guestTurn)return;
+                this.cocoAttack();
+                break;
+        }
+    }
 
     generateBoard(){
         this.tiles=[];
@@ -2258,6 +2753,7 @@ class Game{
     }
 
     handleTileClick(id){
+        if(NET.mode!=='local'&&!this.myTurn)return;
         if(this.pendingSwap){this.openSwapModal(id);return}
         const tile=this.tiles[id];
         if(this.selection.includes(id)){
@@ -2300,17 +2796,24 @@ class Game{
     submitWord(){
         const r=this.calculateCurrentScore();
         if(!r.isValid){this.showToast('Not a valid word!');SFX.invalid();return}
+        if(NET.mode==='join'){NET.send({type:'act',kind:'submit',sel:[...this.selection]});return}
+        const best=findBestWord(this.tiles);
         const p=this.currentPlayer;
         p.score+=r.score;p.gems=Math.min(CONFIG.maxGems,p.gems+r.gemCount);
         p.lastWord=r.word;p.totalGems+=r.gemCount;
         p.wordsPlayed.push({
             word:r.word, score:r.score, round:this.round,
             gemCount:r.gemCount, longBonus:r.longBonus, wordMult:r.wordMult,
-            tiles:r.tileData
+            tiles:r.tileData,
+            best:best?{word:best.word,score:best.score}:null
         });
 
         if(r.longBonus>0){this.showCelebration(`LONG WORD! +${r.longBonus}`);SFX.longWord()}else{SFX.submit()}
         this.showScoreFloat(`+${r.score}`);this.showToast(`${r.word} → +${r.score} pts`);
+        if(best){
+            const found=r.score>=best.score;
+            setTimeout(()=>{if(!game||game.over)return;this.showToast(found?'🏆 That was the best word on the board!':`⭐ Best was ${best.word} (${best.score} pts)`)},2600);
+        }
 
         const used=[...this.selection];
         const mults=[];
@@ -2357,11 +2860,19 @@ class Game{
         SFX.gameOver();
         this.players.forEach(p=>{p.gemBonus=p.gems;p.score+=p.gems});
         this.players.sort((a,b)=>b.score-a.score);
-        const winner=this.players[0];
+        this.over=true;
+        lsDel('spellcoco.save');
+        recordGameStats(this.players);
+        if(NET.mode==='host')NET.send({type:'gameover',players:JSON.parse(JSON.stringify(this.players))});
+        renderGameOver(this.players);
+    }
+
+    renderRecap(players){
+        const winner=players[0];
         document.getElementById('winner-banner').innerText=`👑 ${winner.name} Wins with ${winner.score} pts!`;
 
-        let html='';
-        this.players.forEach((p,pi)=>{
+        let html='<div style="text-align:center;font-size:0.92rem;color:var(--ink-soft);margin-bottom:10px;">🏆 '+statsRecordLine()+'</div>';
+        players.forEach((p,pi)=>{
             const best=p.wordsPlayed.reduce((b,w)=>w.score>(b?.score||0)?w:b,null);
             const rounds={};
             p.wordsPlayed.forEach(w=>{if(!rounds[w.round])rounds[w.round]=[];rounds[w.round].push(w)});
@@ -2389,12 +2900,13 @@ class Game{
                     const isBest=best&&w===best;
                     const multLabel=w.wordMult>1?` ×${w.wordMult}W`:'';
                     const longLabel=w.longBonus>0?` +${w.longBonus} long`:'';
+                    const bestLabel=w.best?(w.best.score>w.score?` · <span class="best-word-meta">board best: ${w.best.word} (${w.best.score})</span>`:` · <span class="best-word-meta">🏆 best possible</span>`):'';
                     html+=`<div class="recap-word-row">
                         <div class="recap-word-main">
                             <span class="recap-word-name${isBest?' best':['']}"">${isBest?'⭐ ':''}${w.word}</span>
                             <span class="recap-word-score">+${w.score}</span>
                         </div>
-                        <div class="recap-word-meta">${w.gemCount}💎${multLabel}${longLabel}</div>
+                        <div class="recap-word-meta">${w.gemCount}💎${multLabel}${longLabel}${bestLabel}</div>
                         <details class="recap-tile-detail">
                             <summary>Tile breakdown</summary>
                             <div class="tile-breakdown">`;
@@ -2432,8 +2944,10 @@ class Game{
     }
 
     useAbility(type){
+        if(NET.mode!=='local'&&!this.myTurn)return;
         const p=this.currentPlayer,cost=CONFIG.costs[type];
         if(p.gems<cost){this.showToast('Not enough gems!');SFX.invalid();return}
+        if(NET.mode==='join'&&type==='time'){if(this.cocoTimerActive)NET.send({type:'act',kind:'time'});return}
         if(type==='shuffle'){document.getElementById('modal-shuffle-confirm').classList.remove('hidden');return}
         else if(type==='swap'){this.pendingSwap=true;this.showToast('Tap a tile to swap (or cancel)')}
         else if(type==='time'){if(!this.cocoTimerActive)return;p.gems-=cost;this.logAbility(p,'time',cost);this.timeLeft+=CONFIG.bonusTime;this.updateTimerDisplay();this.showToast('+15 seconds!')}
@@ -2454,9 +2968,15 @@ class Game{
         this.replenishGems();
     }
     openSwapModal(tileId){this.swapTargetId=tileId;const g=document.getElementById('swap-options');g.innerHTML='';for(let ch of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'){const d=document.createElement('div');d.className='swap-tile';d.innerText=ch;d.onclick=()=>this.performSwap(ch);g.appendChild(d)}document.getElementById('modal-swap').classList.remove('hidden')}
-    performSwap(ch){const p=this.currentPlayer;if(p.gems<CONFIG.costs.swap){this.showToast('Not enough gems!');SFX.invalid();this.pendingSwap=false;document.getElementById('modal-swap').classList.add('hidden');this.updateUI();return}p.gems-=CONFIG.costs.swap;this.logAbility(p,'swap',CONFIG.costs.swap);const t=this.tiles[this.swapTargetId];t.char=ch;t.baseValue=LETTERS[ch].val;document.getElementById('modal-swap').classList.add('hidden');this.pendingSwap=false;this.showToast(`Swapped to ${ch}!`);SFX.swap();this.updateUI()}
+    performSwap(ch){
+        if(NET.mode==='join'){document.getElementById('modal-swap').classList.add('hidden');this.pendingSwap=false;NET.send({type:'act',kind:'swap',tileId:this.swapTargetId,ch:ch});return}
+        const p=this.currentPlayer;if(p.gems<CONFIG.costs.swap){this.showToast('Not enough gems!');SFX.invalid();this.pendingSwap=false;document.getElementById('modal-swap').classList.add('hidden');this.updateUI();return}p.gems-=CONFIG.costs.swap;this.logAbility(p,'swap',CONFIG.costs.swap);const t=this.tiles[this.swapTargetId];t.char=ch;t.baseValue=LETTERS[ch].val;document.getElementById('modal-swap').classList.add('hidden');this.pendingSwap=false;this.showToast(`Swapped to ${ch}!`);SFX.swap();this.updateUI()}
 
     cocoAttack(){
+        if(NET.mode==='join'){
+            if(this.turnIndex===NET.myIndex){this.showToast('Coco attacks the active player — use it on your opponent\'s turn!');return}
+            NET.send({type:'act',kind:'coco'});return;
+        }
         const attacker=this.nonActivePlayer;
         if(attacker.gems<CONFIG.cocoAttackCost){this.showToast(`${attacker.name} needs ${CONFIG.cocoAttackCost} gems!`);SFX.invalid();return}
         if(this.cocoTimerActive){this.showToast('Timer already active!');return}
@@ -2465,7 +2985,7 @@ class Game{
         this.showToast(`🐱 Coco Attack! ${this.currentPlayer.name} has ${CONFIG.cocoAttackTime}s!`);
         this.updateTimerDisplay();
         if(this.timerInterval)clearInterval(this.timerInterval);
-        this.timerInterval=setInterval(()=>{this.timeLeft--;this.updateTimerDisplay();if(this.timeLeft<=5&&this.timeLeft>0)SFX.timerWarn();if(this.timeLeft<=0){clearInterval(this.timerInterval);this.cocoTimerActive=false;this.clearSelection();this.showToast("🐱 Coco says time's up!");setTimeout(()=>this.endTurn(),800)}},1000);
+        this.timerInterval=setInterval(()=>{this.timeLeft--;this.updateTimerDisplay();if(NET.mode==='host')NET.send({type:'timer',on:true,t:this.timeLeft});if(this.timeLeft<=5&&this.timeLeft>0)SFX.timerWarn();if(this.timeLeft<=0){clearInterval(this.timerInterval);this.cocoTimerActive=false;if(NET.mode==='host')NET.send({type:'timer',on:false,t:0});this.clearSelection();this.showToast("🐱 Coco says time's up!");setTimeout(()=>this.endTurn(),800)}},1000);
         this.updateUI();
     }
 
@@ -2494,6 +3014,7 @@ class Game{
                     if(w.wordMult>1)extras.push(multLabel[w.wordMult===2?'2W':'3W']);
                     if(w.longBonus>0)extras.push(`+${w.longBonus} long`);
                     if(w.gemCount>0)extras.push(`${w.gemCount}💎`);
+                    if(w.best)extras.push(w.best.score>w.score?`⭐ best: ${w.best.word} (${w.best.score})`:'🏆 best possible');
                     html+=`<div class="history-word-row">
                         <div>
                             <div class="history-word">${w.word}</div>
@@ -2522,7 +3043,8 @@ class Game{
         document.getElementById('modal-history').classList.remove('hidden');
     }
 
-    showCocoOverlay(){
+    showCocoOverlay(fromNet){
+        if(NET.mode==='host'&&!fromNet)NET.send({type:'fx',coco:true,sfx:'cocoAttack'});
         const svg=document.getElementById('coco-svg-sm').outerHTML.replace('coco-cat','coco-big-cat');
         const o=document.createElement('div');o.className='coco-attack-overlay';
         o.innerHTML=svg+`<span class="coco-text">🐱 COCO ATTACK! 🐱</span>`;
@@ -2562,34 +3084,42 @@ class Game{
                 sp.innerText=`${calc.score} points`+(calc.gemCount>0?` + ${calc.gemCount}💎`:'')+(calc.longBonus>0?` (incl. +${calc.longBonus} long word)`:'');
                 sp.style.color='var(--gold-hi)';
             } else {
-                sp.innerText=`Not in dictionary — would be ${calc.score} pts`;
+                sp.innerHTML=`Not in dictionary — would be ${calc.score} pts <button class="add-word-btn" onclick="addWordFromGame()">＋ add word</button>`;
                 sp.style.color='var(--red)';
             }
         }else{wd.innerText=this.pendingSwap?'Tap a tile to swap':'Tap letters to spell';wd.className='empty';sp.innerText=''}
-        document.getElementById('btn-submit').disabled=!calc.isValid;
-        document.getElementById('btn-clear').disabled=this.selection.length===0;
+        const myTurn=this.myTurn;
+        document.getElementById('btn-submit').disabled=!calc.isValid||!myTurn;
+        document.getElementById('btn-clear').disabled=this.selection.length===0||!myTurn;
         const p=this.currentPlayer;
-        document.getElementById('btn-shuffle').disabled=this.pendingSwap||p.gems<CONFIG.costs.shuffle;
-        document.getElementById('btn-swap').disabled=this.pendingSwap||p.gems<CONFIG.costs.swap;
+        document.getElementById('btn-shuffle').disabled=!myTurn||this.pendingSwap||p.gems<CONFIG.costs.shuffle;
+        document.getElementById('btn-swap').disabled=!myTurn||this.pendingSwap||p.gems<CONFIG.costs.swap;
         document.getElementById('btn-swap').classList.toggle('active-swap',this.pendingSwap);
         document.getElementById('btn-cancel-swap').classList.toggle('hidden',!this.pendingSwap);
         const timeBtn=document.getElementById('btn-time');
         timeBtn.style.display=this.cocoTimerActive?'inline-flex':'none';
-        timeBtn.disabled=this.pendingSwap||p.gems<CONFIG.costs.time;
+        timeBtn.disabled=!myTurn||this.pendingSwap||p.gems<CONFIG.costs.time;
         const cocoBtn=document.getElementById('btn-coco');const np=this.nonActivePlayer;
-        cocoBtn.disabled=np.gems<CONFIG.cocoAttackCost||this.cocoTimerActive;
+        cocoBtn.disabled=np.gems<CONFIG.cocoAttackCost||this.cocoTimerActive||(NET.mode!=='local'&&this.turnIndex===NET.myIndex);
         document.querySelector('.coco-title').innerText=`🐱 ${np.name}'s Coco Attack!`;
         document.querySelector('.coco-desc').innerText=`Force opponent's timer: ${CONFIG.cocoAttackTime}s`;
         cocoBtn.innerText=`${CONFIG.cocoAttackCost}💎 GO!`;
         document.getElementById('coco-zone').classList.toggle('coco-timer-active',this.cocoTimerActive);
         this.updateTimerDisplay();
+        if(!NET.quiet){
+            if(NET.mode==='host')NET.send({type:'state',state:this.serialize()});
+            else if(NET.mode==='join'&&myTurn)NET.send({type:'sel',ids:[...this.selection]});
+            else if(NET.mode==='local')saveGameState();
+        }
     }
 
-    showToast(m){const d=document.createElement('div');d.className='toast';d.innerText=m;document.body.appendChild(d);setTimeout(()=>d.remove(),2200)}
+    showToast(m,fromNet){if(NET.mode==='host'&&!fromNet)NET.send({type:'fx',toast:m});const d=document.createElement('div');d.className='toast';d.innerText=m;document.body.appendChild(d);setTimeout(()=>d.remove(),2200)}
     showScoreFloat(t){const d=document.createElement('div');d.className='score-float';d.innerText=t;d.style.left='50%';d.style.top='38%';document.body.appendChild(d);setTimeout(()=>d.remove(),1400)}
-    showCelebration(t){const a=document.getElementById('word-area');const b=document.createElement('div');b.className='celebration-banner';b.innerHTML=`<span>✨ ${t} ✨</span>`;a.appendChild(b);setTimeout(()=>b.remove(),2000)}
-    showRoundOverlay(t,s){const o=document.createElement('div');o.className='round-overlay';o.innerHTML=`<span class="round-text">✦ ${t} ✦</span><span class="round-sub">${s||''}</span>`;document.body.appendChild(o);setTimeout(()=>o.remove(),1800)}
+    showCelebration(t,fromNet){if(NET.mode==='host'&&!fromNet)NET.send({type:'fx',celebrate:t,sfx:'longWord'});const a=document.getElementById('word-area');const b=document.createElement('div');b.className='celebration-banner';b.innerHTML=`<span>✨ ${t} ✨</span>`;a.appendChild(b);setTimeout(()=>b.remove(),2000)}
+    showRoundOverlay(t,s,fromNet){if(NET.mode==='host'&&!fromNet)NET.send({type:'fx',overlay:{t:t,s:s}});const o=document.createElement('div');o.className='round-overlay';o.innerHTML=`<span class="round-text">✦ ${t} ✦</span><span class="round-sub">${s||''}</span>`;document.body.appendChild(o);setTimeout(()=>o.remove(),1800)}
 }
+
+function renderGameOver(players){if(game)game.renderRecap(players)}
 
 let game;
 
@@ -2608,6 +3138,10 @@ document.addEventListener('DOMContentLoaded',()=>{
         cocoCostRow.style.pointerEvents=cocoEnabledCb.checked?'':'none';
     });
     updateLWPreview();
+    restoreSettings();
+    renderStatsBox();
+    renderCustomWordList();
+    checkSavedGame();
 });
 
 let selectedLWPreset = 'keith';
@@ -2691,6 +3225,11 @@ function updateLWPreview() {
 }
 
 function startGame(){
+    if(NET.mode==='join')return;
+    if(NET.mode==='host'&&!NET.connected){
+        document.getElementById('host-status').innerText='⚠ Waiting for your opponent to join before starting…';
+        return;
+    }
     if(!dictFileLoaded){
         document.getElementById('modal-dict-confirm').classList.remove('hidden');
         return;
@@ -2708,6 +3247,7 @@ function launchGame(){
     document.getElementById('btn-mute').innerText=soundEnabled?'🔊':'🔇';
     document.getElementById('btn-mute').classList.toggle('active',soundEnabled);
     if(soundEnabled)initAudio();
+    saveSettings();
 
     const sg=parseInt(document.getElementById('cfg-start-gems').value)||3;
     CONFIG.startGems=Math.max(0,Math.min(CONFIG.maxGems,sg));
@@ -2736,7 +3276,24 @@ function launchGame(){
         CONFIG.longWordStack=p.stack;
     }
 
-    // Populate in-game long word bonus reference
+    populateLwRef();
+
+    document.getElementById('modal-start').classList.add('hidden');
+    lsDel('spellcoco.save');
+    document.getElementById('resume-banner').classList.add('hidden');
+    let opts=null;
+    if(NET.mode==='host'){
+        const other=NET.myName==='Keith'?'Shawn':'Keith';
+        const ns=Math.random()<0.5?[NET.myName,other]:[other,NET.myName];
+        opts={names:ns};
+        NET.myIndex=ns.indexOf(NET.myName);
+    }
+    game=new Game(opts);
+    document.getElementById('coco-zone').classList.toggle('hidden',!CONFIG.cocoAttackEnabled);
+    if(NET.mode==='host')NET.sendStart();
+}
+
+function populateLwRef(){
     const lwRefEl=document.getElementById('lw-ref');
     const lwRefTiers=document.getElementById('lw-ref-tiers');
     lwRefTiers.innerHTML='';
@@ -2761,15 +3318,11 @@ function launchGame(){
         }
     }
     lwRefEl.classList.remove('hidden');
-
-    document.getElementById('modal-start').classList.add('hidden');
-    game=new Game();
-    document.getElementById('coco-zone').classList.toggle('hidden',!CONFIG.cocoAttackEnabled);
 }
 function closeHistoryModal(){document.getElementById('modal-history').classList.add('hidden')}
 function closeSwapModal(){document.getElementById('modal-swap').classList.add('hidden');if(game){game.pendingSwap=false;game.updateUI()}}
 function closeShuffleConfirm(){document.getElementById('modal-shuffle-confirm').classList.add('hidden')}
-function confirmShuffle(){document.getElementById('modal-shuffle-confirm').classList.add('hidden');if(game){const p=game.currentPlayer;p.gems-=CONFIG.costs.shuffle;game.logAbility(p,'shuffle',CONFIG.costs.shuffle);game.shuffleBoard();game.clearSelection();game.showToast('Board shuffled!');SFX.shuffle();game.updateUI()}}
+function confirmShuffle(){document.getElementById('modal-shuffle-confirm').classList.add('hidden');if(game&&NET.mode==='join'){NET.send({type:'act',kind:'shuffle'});return}if(game){const p=game.currentPlayer;p.gems-=CONFIG.costs.shuffle;game.logAbility(p,'shuffle',CONFIG.costs.shuffle);game.shuffleBoard();game.clearSelection();game.showToast('Board shuffled!');SFX.shuffle();game.updateUI()}}
 </script>
 </body>
 </html>
