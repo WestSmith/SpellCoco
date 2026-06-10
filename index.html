@@ -11,6 +11,33 @@
 
     <!--
     ================================================================
+    SPELLCOCO v41 — COCO PLAYS: SOLO MODE + COCO'S GUEST
+    ================================================================
+
+    CHANGELOG v40 → v41:
+    - ADD: Single player "vs Coco" mode. Coco himself takes the
+      second seat (🐾 ginger name — orange stays Coco-only) and
+      plays real words using the same trie solver, with three moods
+      picked at setup: 😴 Sleepy (gentle little words), 😺 Cozy
+      (a fair match), 🌪 Zoomies (near-purrfect play). His word is
+      traced tile by tile on the board so you can watch him play.
+      He collects the treats he lands on (end-of-game bonus, like
+      everyone else) but never uses abilities — he's a cat.
+      Coco Attack is hidden in solo (he won't attack himself).
+    - ADD: Coco's Guest. In Local mode either seat can be Keith,
+      Shawn, or a Guest with an editable name (default "Coco's
+      Guest"). Guest games are friendly matches — they never touch
+      the all-time Keith–Shawn record. Solo can also be played as
+      a guest. Online stays Keith & Shawn (side-pick protocol is
+      name-based).
+    - ADD: vs-Coco record on the start screen (humans vs Coco),
+      stored separately — bestWord / longestWord stay
+      Keith–Shawn-only so the duel record stays pure.
+    - FIX: Input is hard-locked while Coco plays (taps, drags,
+      abilities); also closes a drag-select leak on the opponent's
+      device online.
+
+    ================================================================
     SPELLCOCO v40 — DE-BOXITIS: ONE HERO, THREE PANELS, QUIET CHROME
     ================================================================
 
@@ -780,6 +807,13 @@
             margin-top:3px;
             font-style:italic;
             font-weight:400;
+        }
+        /* v41: Coco-the-player — orange means Coco (≈7.4:1 on the panel, AAA) */
+        .player-name.is-coco{color:var(--coco)}
+        .guest-name-row{display:flex;align-items:center;gap:8px;margin:2px 0 8px}
+        .guest-name-row label{
+            font-size:0.85rem;color:var(--ink-dim);
+            white-space:nowrap;font-weight:700;
         }
 
         /* Word display — v40: lives inside the action zone, no box of its own.
@@ -2125,7 +2159,7 @@
     <div class="modal-content" style="width:460px;">
         <span class="coco-mark-slot mark-lg"></span>
         <h1>✦ SpellCoco ✦</h1>
-        <p style="color:var(--ink-soft);margin-bottom:2px;font-size:1rem;font-weight:700;">Keith vs Shawn</p>
+        <p style="color:var(--ink-soft);margin-bottom:2px;font-size:1rem;font-weight:700;">Keith vs Shawn — plus Coco &amp; guests</p>
         <p class="coco-tribute">in loving memory of Coco, the very best cat 🐾</p>
 
         <div id="resume-banner" class="resume-banner hidden">
@@ -2145,6 +2179,10 @@
                     <span class="lw-preset-name">Local</span>
                     <span class="lw-preset-desc">Pass &amp; play, one device</span>
                 </button>
+                <button class="lw-preset-btn" id="mode-solo" onclick="setMode('solo')">
+                    <span class="lw-preset-name">vs Coco</span>
+                    <span class="lw-preset-desc">Play Coco himself 🐾</span>
+                </button>
                 <button class="lw-preset-btn" id="mode-host" onclick="setMode('host')">
                     <span class="lw-preset-name">Host Online</span>
                     <span class="lw-preset-desc">Get a room code</span>
@@ -2153,6 +2191,63 @@
                     <span class="lw-preset-name">Join Online</span>
                     <span class="lw-preset-desc">Enter a code</span>
                 </button>
+            </div>
+            <div id="local-players-panel" class="online-panel">
+                <div class="setting-row">
+                    <span>Player 1</span>
+                    <div class="side-toggle">
+                        <button class="side-btn active" id="seat1-Keith" onclick="pickSeat(1,'Keith')">Keith</button>
+                        <button class="side-btn" id="seat1-Shawn" onclick="pickSeat(1,'Shawn')">Shawn</button>
+                        <button class="side-btn" id="seat1-Guest" onclick="pickSeat(1,'Guest')">Guest</button>
+                    </div>
+                </div>
+                <div class="guest-name-row hidden" id="seat1-guest-row">
+                    <label for="seat1-guest-name">Guest name</label>
+                    <input type="text" class="dict-checker-input" id="seat1-guest-name" value="Coco's Guest" maxlength="14" style="text-transform:none;letter-spacing:0.02em;" onchange="guestNameChanged(1,this)">
+                </div>
+                <div class="setting-row">
+                    <span>Player 2</span>
+                    <div class="side-toggle">
+                        <button class="side-btn" id="seat2-Keith" onclick="pickSeat(2,'Keith')">Keith</button>
+                        <button class="side-btn active" id="seat2-Shawn" onclick="pickSeat(2,'Shawn')">Shawn</button>
+                        <button class="side-btn" id="seat2-Guest" onclick="pickSeat(2,'Guest')">Guest</button>
+                    </div>
+                </div>
+                <div class="guest-name-row hidden" id="seat2-guest-row">
+                    <label for="seat2-guest-name">Guest name</label>
+                    <input type="text" class="dict-checker-input" id="seat2-guest-name" value="Coco's Guest" maxlength="14" style="text-transform:none;letter-spacing:0.02em;" onchange="guestNameChanged(2,this)">
+                </div>
+                <p class="setting-hint">Guest games are friendly matches — the all-time Keith–Shawn record stays untouched.</p>
+            </div>
+            <div id="solo-panel" class="online-panel hidden">
+                <div class="setting-row">
+                    <span>Play as</span>
+                    <div class="side-toggle">
+                        <button class="side-btn" id="solo-Keith" onclick="pickSoloYou('Keith')">Keith</button>
+                        <button class="side-btn active" id="solo-Shawn" onclick="pickSoloYou('Shawn')">Shawn</button>
+                        <button class="side-btn" id="solo-Guest" onclick="pickSoloYou('Guest')">Guest</button>
+                    </div>
+                </div>
+                <div class="guest-name-row hidden" id="solo-guest-row">
+                    <label for="solo-guest-name">Guest name</label>
+                    <input type="text" class="dict-checker-input" id="solo-guest-name" value="Coco's Guest" maxlength="14" style="text-transform:none;letter-spacing:0.02em;" onchange="soloGuestChanged(this)">
+                </div>
+                <div style="margin-top:10px;font-weight:700;font-size:0.95rem;color:var(--coco);">🐾 Coco's mood</div>
+                <div class="lw-presets" style="margin-top:8px;">
+                    <button class="lw-preset-btn" id="mood-sleepy" onclick="pickMood('sleepy')">
+                        <span class="lw-preset-name">😴 Sleepy</span>
+                        <span class="lw-preset-desc">Gentle little words</span>
+                    </button>
+                    <button class="lw-preset-btn active" id="mood-cozy" onclick="pickMood('cozy')">
+                        <span class="lw-preset-name">😺 Cozy</span>
+                        <span class="lw-preset-desc">A fair match</span>
+                    </button>
+                    <button class="lw-preset-btn" id="mood-zoomies" onclick="pickMood('zoomies')">
+                        <span class="lw-preset-name">🌪 Zoomies</span>
+                        <span class="lw-preset-desc">Near-purrfect play</span>
+                    </button>
+                </div>
+                <p class="setting-hint">Coco plays real words on the same board and keeps every treat he lands on. He never uses abilities — he's a cat.</p>
             </div>
             <div id="online-host-panel" class="online-panel hidden">
                 <div class="setting-row">
@@ -2401,6 +2496,20 @@ function lsDel(k){try{localStorage.removeItem(k)}catch(e){}}
 // ===================== v33: all-time win tracker =====================
 let STATS=lsGet('spellcoco.stats',{games:0,draws:0,wins:{Keith:0,Shawn:0},bestWord:null,longestWord:null});
 function recordGameStats(players){
+    // v41: solo games get their own vs-Coco record; guest games are friendly
+    // matches (unrecorded). bestWord/longestWord stay Keith–Shawn-only so the
+    // duel record stays pure.
+    if(players.some(p=>p.isCoco)){
+        if(!STATS.coco)STATS.coco={games:0,draws:0,wins:{}};
+        STATS.coco.games++;
+        if(players.length>1&&players[0].score===players[1].score)STATS.coco.draws++;
+        else STATS.coco.wins[players[0].name]=(STATS.coco.wins[players[0].name]||0)+1;
+        lsSet('spellcoco.stats',STATS);
+        renderStatsBox();
+        return;
+    }
+    const names=players.map(p=>p.name);
+    if(!(players.length===2&&names.includes('Keith')&&names.includes('Shawn')))return;
     STATS.games++;
     if(players.length>1&&players[0].score===players[1].score)STATS.draws++;
     else STATS.wins[players[0].name]=(STATS.wins[players[0].name]||0)+1;
@@ -2417,10 +2526,19 @@ function statsRecordLine(){
 }
 function renderStatsBox(){
     const el=document.getElementById('stats-box');if(!el)return;
-    if(!STATS.games){el.classList.add('hidden');return}
+    const cocoGames=STATS.coco&&STATS.coco.games;
+    if(!STATS.games&&!cocoGames){el.classList.add('hidden');return}
     el.classList.remove('hidden');
-    let h=`<div class="stats-record">🏆 ${statsRecordLine()}</div>`;
-    h+=`<div>${STATS.games} game${STATS.games>1?'s':''} played on this device</div>`;
+    let h='';
+    if(STATS.games){
+        h+=`<div class="stats-record">🏆 ${statsRecordLine()}</div>`;
+        h+=`<div>${STATS.games} game${STATS.games>1?'s':''} played on this device</div>`;
+    }
+    if(cocoGames){
+        const cw=STATS.coco.wins.Coco||0;
+        const hw=Object.keys(STATS.coco.wins).filter(n=>n!=='Coco').reduce((s,n)=>s+STATS.coco.wins[n],0);
+        h+=`<div>🐾 vs Coco: humans ${hw} – ${cw} Coco${STATS.coco.draws?` · ${STATS.coco.draws} draw${STATS.coco.draws>1?'s':''}`:''}</div>`;
+    }
     if(STATS.bestWord)h+=`<div>⭐ Best word: <strong>${STATS.bestWord.word}</strong> (${STATS.bestWord.score} pts, ${STATS.bestWord.player})</div>`;
     if(STATS.longestWord)h+=`<div>📏 Longest: <strong>${STATS.longestWord.word}</strong> (${STATS.longestWord.word.length} letters, ${STATS.longestWord.player})</div>`;
     el.innerHTML=h;
@@ -2436,7 +2554,8 @@ function saveSettings(){
         hintCost:document.getElementById('cfg-hint-cost').value,
         zoomiesCost:document.getElementById('cfg-zoomies-cost').value,
         mults:{},lwPreset:selectedLWPreset,customTiers:customTiers,
-        lwStack:document.getElementById('cfg-lw-stack').checked};
+        lwStack:document.getElementById('cfg-lw-stack').checked,
+        seats:SEATS,solo:SOLO};
     document.querySelectorAll('.mult-toggle').forEach(l=>cfg.mults[l.dataset.mult]=l.querySelector('input').checked);
     lsSet('spellcoco.settings',cfg);
 }
@@ -2458,6 +2577,12 @@ function restoreSettings(){
         if(cfg.customTiers&&cfg.customTiers.length)customTiers=cfg.customTiers;
         document.getElementById('cfg-lw-stack').checked=!!cfg.lwStack;
         if(cfg.lwPreset)selectLWPreset(cfg.lwPreset);
+        const vt=t=>['Keith','Shawn','Guest'].includes(t)?t:null;
+        if(cfg.seats&&cfg.seats[1]&&cfg.seats[2]){
+            SEATS={1:{type:vt(cfg.seats[1].type)||'Keith',guest:sanitizeGuestName(cfg.seats[1].guest)},
+                   2:{type:vt(cfg.seats[2].type)||'Shawn',guest:sanitizeGuestName(cfg.seats[2].guest)}};
+        }
+        if(cfg.solo)SOLO={you:vt(cfg.solo.you)||'Shawn',guest:sanitizeGuestName(cfg.solo.guest),mood:COCO_MOODS[cfg.solo.mood]?cfg.solo.mood:'cozy'};
     }catch(e){}
 }
 
@@ -2487,6 +2612,71 @@ function findBestWord(tiles){
     return best;
 }
 
+// ===================== v41: Coco the player (solo mode) =====================
+// Same trie DFS as findBestWord, but collects EVERY unique word (best-scoring
+// path per word) so Coco's moods can pick from the whole menu.
+function findWordCandidates(tiles){
+    if(!trieBuilt)return[];
+    const found=new Map();
+    const visited=new Array(25).fill(false),path=[];
+    function dfs(id,node){
+        const t=tiles[id],nx=node.children[t.char];if(!nx)return;
+        visited[id]=true;path.push(t);
+        if(nx.isEnd&&path.length>=2){
+            const w=path.map(x=>x.char).join('');
+            const sc=scoreTilePath(path);
+            const prev=found.get(w);
+            if(!prev||sc>prev.score)found.set(w,{word:w,score:sc,ids:path.map(x=>x.id)});
+        }
+        const nbs=NEIGHBORS[id];
+        for(let i=0;i<nbs.length;i++)if(!visited[nbs[i]])dfs(nbs[i],nx);
+        visited[id]=false;path.pop();
+    }
+    for(let i=0;i<25;i++)dfs(i,trie.root);
+    return [...found.values()].sort((a,b)=>a.score-b.score);
+}
+const COCO_MOODS={
+    sleepy:{label:'Sleepy',emoji:'😴',lo:0.18,hi:0.42,maxLen:5},
+    cozy:{label:'Cozy',emoji:'😺',lo:0.50,hi:0.78,maxLen:0},
+    zoomies:{label:'Zoomies',emoji:'🌪',lo:1,hi:1,maxLen:0}
+};
+function cocoChooseWord(cands,moodKey){
+    if(!cands.length)return null;
+    if(moodKey==='zoomies'){
+        // near-purrfect: usually THE best word, sometimes 2nd/3rd
+        const top=cands.slice(-3);
+        return Math.random()<0.7?top[top.length-1]:top[Math.floor(Math.random()*top.length)];
+    }
+    const mood=COCO_MOODS[moodKey]||COCO_MOODS.cozy;
+    let pool=cands;
+    if(mood.maxLen){const short=cands.filter(w=>w.word.length<=mood.maxLen);if(short.length>=4)pool=short;}
+    const best=pool[pool.length-1].score;
+    const f=mood.lo+Math.random()*(mood.hi-mood.lo);
+    const target=best*f;
+    let pick=pool[0],d=Infinity;
+    for(const w of pool){const dd=Math.abs(w.score-target);if(dd<d){d=dd;pick=w}}
+    return pick;
+}
+function cocoTakeTurn(){
+    if(!game||game.over||!game.currentPlayer.isCoco)return;
+    if(!trieBuilt){setTimeout(cocoTakeTurn,800);return}
+    const cands=findWordCandidates(game.tiles);
+    const choice=cocoChooseWord(cands,(CONFIG.solo&&CONFIG.solo.mood)||'cozy');
+    if(!choice){
+        game.showToast('😿 Coco found no word — he curls up and passes');
+        setTimeout(()=>{if(game&&!game.over)game.endTurn()},1400);
+        return;
+    }
+    game.clearSelection();
+    let i=0;
+    const step=()=>{
+        if(!game||game.over||!game.currentPlayer.isCoco)return;
+        if(i<choice.ids.length){game.selectTile(game.tiles[choice.ids[i]]);i++;setTimeout(step,300)}
+        else setTimeout(()=>{if(game&&!game.over&&game.currentPlayer.isCoco)game.submitWord()},750);
+    };
+    setTimeout(step,650);
+}
+
 // ===================== v33: networking (PeerJS) =====================
 const NET={
     mode:'local',peer:null,conn:null,myIndex:-1,myName:'Shawn',code:'',connected:false,quiet:false,
@@ -2500,9 +2690,12 @@ const NET={
     cleanup(){if(this.peer){try{this.peer.destroy()}catch(e){}}this.peer=null;this.conn=null;this.connected=false;}
 };
 function genCode(){const a='ABCDEFGHJKMNPQRSTUVWXYZ23456789';let c='';for(let i=0;i<4;i++)c+=a[Math.floor(Math.random()*a.length)];return c}
+let UI_MODE='local'; // v41: 'local' | 'solo' | 'host' | 'join' — NET.mode stays networking-only
 function setMode(m){
-    NET.cleanup();NET.mode=m;NET.setPill('');
-    ['local','host','join'].forEach(x=>document.getElementById('mode-'+x).classList.toggle('active',x===m));
+    NET.cleanup();UI_MODE=m;NET.mode=(m==='host'||m==='join')?m:'local';NET.setPill('');
+    ['local','solo','host','join'].forEach(x=>{const b=document.getElementById('mode-'+x);if(b)b.classList.toggle('active',x===m)});
+    document.getElementById('local-players-panel').classList.toggle('hidden',m!=='local');
+    document.getElementById('solo-panel').classList.toggle('hidden',m!=='solo');
     document.getElementById('online-host-panel').classList.toggle('hidden',m!=='host');
     document.getElementById('online-join-panel').classList.toggle('hidden',m!=='join');
     const sb=document.querySelector('#modal-start .btn-start');
@@ -2515,6 +2708,47 @@ function pickSide(n){
     document.getElementById('side-Shawn').classList.toggle('active',n==='Shawn');
     if(NET.mode==='host')NET.send({type:'side',host:n});
 }
+// ===================== v41: player seats (local) + solo vs Coco =====================
+let SEATS={1:{type:'Keith',guest:"Coco's Guest"},2:{type:'Shawn',guest:"Coco's Guest"}};
+let SOLO={you:'Shawn',guest:"Coco's Guest",mood:'cozy'};
+function sanitizeGuestName(v){
+    let n=String(v||'').replace(/[^A-Za-z0-9 '\-]/g,'').replace(/\s+/g,' ').trim().slice(0,14);
+    if(!n||/^coco$/i.test(n))n="Coco's Guest"; // "Coco" is taken — by Coco
+    return n;
+}
+function pickSeat(n,t){
+    const other=n===1?2:1;
+    SEATS[n].type=t;
+    if(t!=='Guest'&&SEATS[other].type===t)SEATS[other].type=(t==='Keith'?'Shawn':'Keith');
+    renderSeatPickers();saveSettings();
+}
+function guestNameChanged(n,input){SEATS[n].guest=sanitizeGuestName(input.value);input.value=SEATS[n].guest;saveSettings()}
+function pickSoloYou(t){SOLO.you=t;renderSeatPickers();saveSettings()}
+function soloGuestChanged(input){SOLO.guest=sanitizeGuestName(input.value);input.value=SOLO.guest;saveSettings()}
+function pickMood(m){if(COCO_MOODS[m])SOLO.mood=m;renderSeatPickers();saveSettings()}
+function renderSeatPickers(){
+    [1,2].forEach(n=>{
+        ['Keith','Shawn','Guest'].forEach(t=>{
+            const b=document.getElementById(`seat${n}-${t}`);if(b)b.classList.toggle('active',SEATS[n].type===t);
+        });
+        const row=document.getElementById(`seat${n}-guest-row`);
+        if(row)row.classList.toggle('hidden',SEATS[n].type!=='Guest');
+        const inp=document.getElementById(`seat${n}-guest-name`);
+        if(inp&&document.activeElement!==inp)inp.value=SEATS[n].guest;
+    });
+    ['Keith','Shawn','Guest'].forEach(t=>{
+        const b=document.getElementById('solo-'+t);if(b)b.classList.toggle('active',SOLO.you===t);
+    });
+    const srow=document.getElementById('solo-guest-row');
+    if(srow)srow.classList.toggle('hidden',SOLO.you!=='Guest');
+    const sinp=document.getElementById('solo-guest-name');
+    if(sinp&&document.activeElement!==sinp)sinp.value=SOLO.guest;
+    ['sleepy','cozy','zoomies'].forEach(m=>{
+        const b=document.getElementById('mood-'+m);if(b)b.classList.toggle('active',SOLO.mood===m);
+    });
+}
+function seatName(n){return SEATS[n].type==='Guest'?SEATS[n].guest:SEATS[n].type}
+
 function mergeRemoteWords(ws){(ws||[]).forEach(w=>{if(typeof w==='string'&&/^[A-Z]{2,15}$/.test(w)){DICTIONARY.add(w);if(trieBuilt)trie.insert(w)}})}
 function mergeStats(r){
     if(!r||typeof r!=='object')return;
@@ -3044,22 +3278,37 @@ class Tile{
 // Game
 class Game{
     constructor(opts){
-        const names=(opts&&opts.names)||(Math.random()<0.5?['Keith','Shawn']:['Shawn','Keith']);
-        this.players=names.map((n,i)=>({
-            id:i,name:n,score:0,gems:CONFIG.startGems,lastWord:'',
+        // v41: seats can be {name,isCoco,mood} objects; plain names still work (online)
+        let seats=(opts&&opts.seats)||null;
+        if(!seats){
+            const names=(opts&&opts.names)||(Math.random()<0.5?['Keith','Shawn']:['Shawn','Keith']);
+            seats=names.map(n=>({name:n}));
+        }
+        this.players=seats.map((s,i)=>({
+            id:i,name:s.name,isCoco:!!s.isCoco,mood:s.mood||null,
+            score:0,gems:CONFIG.startGems,lastWord:'',
             wordsPlayed:[],
             totalGems:0,
             abilityLog:{}
         }));
         this.timerInterval=null;this.timeLeft=0;this.cocoTimerActive=false;this.over=false;
         this.round=1;this.turnIndex=0;this.tiles=[];this.selection=[];
-        this.pendingSwap=false;this.isDragging=false;
+        this.pendingSwap=false;this.isDragging=false;this.cocoPending=false;
         this.generateBoard();this.selection=[];this.updateUI();this.setupTouchDrag();
-        this.showRoundOverlay('Round 1',`${names[0]} goes first!`);
+        this.showRoundOverlay('Round 1',`${this.players[0].name} goes first!`);
+        this.maybeCoco();
     }
     get currentPlayer(){return this.players[this.turnIndex]}
     get nonActivePlayer(){return this.players[1-this.turnIndex]}
-    get myTurn(){return NET.mode==='local'||this.turnIndex===NET.myIndex}
+    // v41: in local play it's "my turn" unless Coco has the seat
+    get myTurn(){if(NET.mode!=='local')return this.turnIndex===NET.myIndex;return !this.currentPlayer.isCoco}
+    // v41: if it's Coco's turn (solo mode), let him play after the overlay clears
+    maybeCoco(){
+        if(this.over||!(CONFIG.solo&&CONFIG.solo.active))return;
+        if(!this.currentPlayer.isCoco||this.cocoPending)return;
+        this.cocoPending=true;
+        setTimeout(()=>{this.cocoPending=false;cocoTakeTurn()},2100);
+    }
 
     serialize(){
         return {round:this.round,turnIndex:this.turnIndex,
@@ -3078,6 +3327,8 @@ class Game{
         (st.sel||[]).forEach(id=>{if(g.tiles[id]){g.tiles[id].isSelected=true;g.selection.push(id)}});
         NET.quiet=true;g.updateUI();NET.quiet=false;
         g.setupTouchDrag();
+        g.cocoPending=false;
+        g.maybeCoco();
         return g;
     }
     applyState(st){
@@ -3222,14 +3473,14 @@ class Game{
     setupTouchDrag(){
         const grid=document.getElementById('grid');
         const gt=(x,y)=>{const el=document.elementFromPoint(x,y);if(!el)return null;const t=el.closest('.tile');return t?parseInt(t.dataset.id):null};
-        grid.addEventListener('pointerdown',e=>{if(this.pendingSwap)return;const id=gt(e.clientX,e.clientY);if(id!==null){this.isDragging=true;this.handleTileClick(id)}e.preventDefault()});
+        grid.addEventListener('pointerdown',e=>{if(this.pendingSwap||!this.myTurn)return;const id=gt(e.clientX,e.clientY);if(id!==null){this.isDragging=true;this.handleTileClick(id)}e.preventDefault()});
         grid.addEventListener('pointermove',e=>{if(!this.isDragging||this.pendingSwap)return;const id=gt(e.clientX,e.clientY);if(id!==null&&!this.selection.includes(id)){const l=this.selection[this.selection.length-1];if(l!==undefined&&this.isAdjacent(this.tiles[l],this.tiles[id]))this.selectTile(this.tiles[id])}e.preventDefault()});
         const end=()=>{this.isDragging=false};
         grid.addEventListener('pointerup',end);grid.addEventListener('pointercancel',end);grid.addEventListener('pointerleave',end);
     }
 
     handleTileClick(id){
-        if(NET.mode!=='local'&&!this.myTurn)return;
+        if(!this.myTurn)return;
         if(this.pendingSwap){this.openSwapModal(id);return}
         const tile=this.tiles[id];
         if(this.selection.includes(id)){
@@ -3319,6 +3570,7 @@ class Game{
         else{
             this.updateUI();
             this.showRoundOverlay(`${this.currentPlayer.name}'s Turn`,`Round ${this.round} of ${CONFIG.rounds}`);
+            this.maybeCoco();
         }
     }
 
@@ -3329,6 +3581,7 @@ class Game{
         this.upgradeMultipliersForNewRound();
         this.updateUI();
         this.showRoundOverlay(`Round ${this.round}`,`${CONFIG.rounds-this.round+1} remaining`);
+        this.maybeCoco();
     }
 
     endGame(){
@@ -3425,7 +3678,7 @@ class Game{
     }
 
     useAbility(type){
-        if(NET.mode!=='local'&&!this.myTurn)return;
+        if(!this.myTurn)return;
         const p=this.currentPlayer,cost=CONFIG.costs[type];
         if(p.gems<cost){this.showToast('Not enough treats!');SFX.invalid();return}
         if(NET.mode==='join'&&type==='time'){if(this.cocoTimerActive)NET.send({type:'act',kind:'time'});return}
@@ -3570,11 +3823,13 @@ class Game{
                 pipsEl.appendChild(pip);
             }
         }
+        const solo=!!(CONFIG.solo&&CONFIG.solo.active);
         const pList=document.getElementById('player-list');pList.innerHTML='';
         this.players.forEach((p,i)=>{
             const d=document.createElement('div');
             d.className=`player-card${i===this.turnIndex?' active':''}`;
-            d.innerHTML=`<div class="player-name">${p.name} <span style="font-size:0.72em;color:var(--ink-dim);font-weight:400;">▸ history</span></div><div class="player-score">${p.score}</div><div class="player-gems">${TICON} ${p.gems} / ${CONFIG.maxGems}</div>${p.lastWord?`<div class="player-lastword">${p.lastWord}</div>`:''}`;
+            const mood=p.isCoco&&p.mood&&COCO_MOODS[p.mood]?COCO_MOODS[p.mood]:null;
+            d.innerHTML=`<div class="player-name${p.isCoco?' is-coco':''}">${p.isCoco?'🐾 ':''}${p.name}${mood?` <span title="${mood.label} mood" aria-label="${mood.label} mood">${mood.emoji}</span>`:''} <span style="font-size:0.72em;color:var(--ink-dim);font-weight:400;">▸ history</span></div><div class="player-score">${p.score}</div><div class="player-gems">${TICON} ${p.gems} / ${CONFIG.maxGems}</div>${p.lastWord?`<div class="player-lastword">${p.lastWord}</div>`:''}`;
             d.onclick=()=>this.showPlayerHistory(i);
             pList.appendChild(d);
         });
@@ -3592,7 +3847,7 @@ class Game{
                 sp.innerHTML=`Not in dictionary — would be ${calc.score} pts <button class="add-word-btn" onclick="addWordFromGame()">＋ add word</button>`;
                 sp.style.color='var(--red)';
             }
-        }else{wd.innerText=this.pendingSwap?'Tap a tile to swap':'Tap letters to spell';wd.className='empty';sp.innerText=''}
+        }else{wd.innerText=this.pendingSwap?'Tap a tile to swap':(solo&&!this.myTurn?'🐾 Coco is hunting for a word…':'Tap letters to spell');wd.className='empty';sp.innerText=''}
         const myTurn=this.myTurn;
         document.getElementById('btn-submit').disabled=!calc.isValid||!myTurn;
         document.getElementById('btn-clear').disabled=this.selection.length===0||!myTurn;
@@ -3620,8 +3875,10 @@ class Game{
         // v40.2: online, each device only shows the move that's YOURS to make —
         // active player gets Zoomies, opponent gets Coco Attack. Local shows both.
         const isOnline=NET.mode!=='local';
-        const zoomHidden=isOnline&&!myTurn;
-        const attackHidden=!CONFIG.cocoAttackEnabled||(isOnline&&myTurn);
+        // v41: solo behaves like online for Zoomies (only on YOUR turn);
+        // Coco Attack is hidden entirely — Coco won't attack himself.
+        const zoomHidden=(isOnline||solo)&&!myTurn;
+        const attackHidden=!CONFIG.cocoAttackEnabled||(isOnline&&myTurn)||solo;
         document.getElementById('zoomies-zone').classList.toggle('hidden',zoomHidden);
         document.getElementById('coco-zone').classList.toggle('hidden',attackHidden);
         document.getElementById('coco-hairline').classList.toggle('hidden',zoomHidden&&attackHidden);
@@ -3687,6 +3944,10 @@ function startRematch(){
         const other=NET.myName==='Keith'?'Shawn':'Keith';
         const ns=Math.random()<0.5?[NET.myName,other]:[other,NET.myName];
         opts={names:ns};NET.myIndex=ns.indexOf(NET.myName);
+    } else if(game){
+        // v41: rematch keeps the same seats (incl. Coco / guests), fresh order
+        const seats=game.players.map(p=>({name:p.name,isCoco:!!p.isCoco,mood:p.mood||null}));
+        opts={seats:fisherYates(seats)};
     }
     game=new Game(opts);
     if(NET.mode==='host')NET.sendStart();
@@ -3711,6 +3972,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     });
     updateLWPreview();
     restoreSettings();
+    renderSeatPickers();
     renderStatsBox();
     renderCustomWordList();
     checkSavedGame();
@@ -3860,12 +4122,22 @@ function launchGame(){
     document.getElementById('modal-start').classList.add('hidden');
     lsDel('spellcoco.save');
     document.getElementById('resume-banner').classList.add('hidden');
+    CONFIG.solo=null;
     let opts=null;
     if(NET.mode==='host'){
         const other=NET.myName==='Keith'?'Shawn':'Keith';
         const ns=Math.random()<0.5?[NET.myName,other]:[other,NET.myName];
         opts={names:ns};
         NET.myIndex=ns.indexOf(NET.myName);
+    } else if(UI_MODE==='solo'){
+        CONFIG.solo={active:true,mood:SOLO.mood};
+        const you={name:SOLO.you==='Guest'?SOLO.guest:SOLO.you};
+        const coco={name:'Coco',isCoco:true,mood:SOLO.mood};
+        opts={seats:Math.random()<0.5?[you,coco]:[coco,you]};
+    } else {
+        let n1=seatName(1),n2=seatName(2);
+        if(n1===n2)n2=n2.slice(0,12)+' 2';
+        opts={seats:Math.random()<0.5?[{name:n1},{name:n2}]:[{name:n2},{name:n1}]};
     }
     game=new Game(opts);
     /* v40.2: coco-zone visibility is now owned by updateUI (combines
