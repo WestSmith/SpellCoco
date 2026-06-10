@@ -3869,7 +3869,9 @@ function launchGame(){
         NET.myIndex=ns.indexOf(NET.myName);
     }
     game=new Game(opts);
-    document.getElementById('coco-zone').classList.toggle('hidden',!CONFIG.cocoAttackEnabled);
+    /* v40.2: coco-zone visibility is now owned by updateUI (combines
+       cocoAttackEnabled with online whose-move-is-it) — no toggle here,
+       it would override the constructor's updateUI. */
     if(NET.mode==='host')NET.sendStart();
     saveGameState();
 }
