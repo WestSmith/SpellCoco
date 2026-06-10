@@ -11,6 +11,35 @@
 
     <!--
     ================================================================
+    SPELLCOCO v39 — KEITH'S CUT: NO SPOILERS, CRYSTAL TREATS, ZOOMIES
+    ================================================================
+
+    CHANGELOG v38 → v39:
+    - CHANGE: Best-word reveal de-spoilered (Keith's call — the word
+      was often still playable by the next player). Mid-game, the
+      toast and history modal show only the SCORE ("⭐ Best possible:
+      41 pts"). Full words are revealed in the end-of-game recap,
+      where tap-to-define still works. Hint unchanged (paid, current
+      player only).
+    - CHANGE: Treats are high-contrast purple crystals on tiles again
+      (deep purple ≈6:1 on cream vs the ginger fish's ≈1.8:1 — hard
+      for Keith to see and to parse). Gold crystal on selected/path
+      tiles. Inline treat icon is a brighter crystal for dark panels.
+      Still called Coco Treats everywhere in text.
+    - ADD: 🌪 Coco Zoomies ability (default 5 treats, configurable):
+      Coco tears across the board — ALL 25 letters rerolled,
+      multiplier types kept but repositioned, treats re-scattered.
+      Confirm modal like Shuffle; online-safe (guest sends action,
+      host validates). Orange-themed: orange now strictly means
+      "Coco does something" (Attack + Zoomies).
+    - FIX: Removed the ginger ears on the active player card — they
+      read as two arrows pointing at the round paw pips.
+    - FIX: "＋ Add" custom-word button no longer overflows the start
+      modal (input min-width:0).
+    - FIX: Idle "--" timer placeholder hidden; the timer appears only
+      while a Coco timer is running.
+
+    ================================================================
     SPELLCOCO v38 — CUSTOM WORD CONSENT + EXPORT
     ================================================================
 
@@ -674,12 +703,7 @@
             border-radius:0 0 4px 4px;
             box-shadow:0 1px 8px rgba(180,105,224,0.5);
         }
-        .player-card.active::after{
-            content:'';position:absolute;
-            top:-10px;right:14px;width:34px;height:12px;
-            background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 20'%3E%3Cpolygon points='2,20 9,1 24,17' fill='%23f49b3e' stroke='%23b05f0a' stroke-width='1.4' stroke-linejoin='round'/%3E%3Cpolygon points='7,16 10,6 18,13' fill='%23ffb9c4'/%3E%3Cpolygon points='58,20 51,1 36,17' fill='%23f49b3e' stroke='%23b05f0a' stroke-width='1.4' stroke-linejoin='round'/%3E%3Cpolygon points='53,16 50,6 42,13' fill='%23ffb9c4'/%3E%3C/svg%3E") bottom/contain no-repeat;
-            pointer-events:none;
-        }
+        /* v39: ears removed — they read as two arrows pointing at the round paw pips */
         .player-name{
             font-size:clamp(0.95rem,2.1vw,1.1rem);
             font-weight:700;
@@ -910,24 +934,25 @@
             box-shadow:0 2px 10px var(--gold-glow), 0 0 0 1px rgba(255,255,255,0.3) inset;
         }
 
-        /* Coco treat — ginger fish kibble; flips to cream on selected/path tiles (v34) */
+        /* Coco treat — v39: high-contrast purple crystal (Keith's pick).
+           Deep purple ~6:1 on cream tiles; flips to gold on selected/path tiles. */
         .tile-gem{
             position:absolute;
             top:clamp(3px,4%,6px);
             right:clamp(3px,4%,7px);
-            width:clamp(18px,4.2vmin,26px);
-            height:clamp(14px,3.2vmin,20px);
-            background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 20'%3E%3Cpath d='M19.5 10c0 3.9-4.2 7-9.3 7C5.1 17 1 13.9 1 10s4.1-7 9.2-7c5.1 0 9.3 3.1 9.3 7z' fill='%23ffa845' stroke='%23a86214' stroke-width='1.6'/%3E%3Cpath d='M18.5 10l8.2-5.6-2.6 5.6 2.6 5.6z' fill='%23ffa845' stroke='%23a86214' stroke-width='1.4' stroke-linejoin='round'/%3E%3Ccircle cx='6.6' cy='8' r='1.5' fill='%233a2105'/%3E%3C/svg%3E") center/contain no-repeat;
-            filter:drop-shadow(0 2px 5px rgba(255,158,61,0.7));
+            width:clamp(16px,3.9vmin,24px);
+            height:clamp(15px,3.6vmin,22px);
+            background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 22'%3E%3Cpath d='M7 1.5h10l5.5 7L12 20.5 1.5 8.5z' fill='%237d3eb8' stroke='%23271252' stroke-width='1.8' stroke-linejoin='round'/%3E%3Cpath d='M2.4 8.5h19.2M7.4 2.2l4.6 6 4.6-6M12 8.8V19.6' stroke='%23e0c3f5' stroke-width='1.2' fill='none' opacity='0.8'/%3E%3C/svg%3E") center/contain no-repeat;
+            filter:drop-shadow(0 2px 5px rgba(180,105,224,0.7));
             animation:gemPulse 2s ease-in-out infinite alternate;
         }
         @keyframes gemPulse{
-            0%{filter:drop-shadow(0 1px 3px rgba(255,158,61,0.5))}
-            100%{filter:drop-shadow(0 2px 8px rgba(255,158,61,1))}
+            0%{filter:drop-shadow(0 1px 3px rgba(180,105,224,0.5))}
+            100%{filter:drop-shadow(0 2px 8px rgba(180,105,224,1))}
         }
         .tile.selected .tile-gem,.tile.path-tile .tile-gem{
-            background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 20'%3E%3Cpath d='M19.5 10c0 3.9-4.2 7-9.3 7C5.1 17 1 13.9 1 10s4.1-7 9.2-7c5.1 0 9.3 3.1 9.3 7z' fill='%23fff3e0' stroke='%23a86214' stroke-width='1.6'/%3E%3Cpath d='M18.5 10l8.2-5.6-2.6 5.6 2.6 5.6z' fill='%23fff3e0' stroke='%23a86214' stroke-width='1.4' stroke-linejoin='round'/%3E%3Ccircle cx='6.6' cy='8' r='1.5' fill='%233a2105'/%3E%3C/svg%3E");
-            filter:drop-shadow(0 2px 6px rgba(255,243,224,0.8));
+            background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 22'%3E%3Cpath d='M7 1.5h10l5.5 7L12 20.5 1.5 8.5z' fill='%23ffc37d' stroke='%23764408' stroke-width='1.8' stroke-linejoin='round'/%3E%3Cpath d='M2.4 8.5h19.2M7.4 2.2l4.6 6 4.6-6M12 8.8V19.6' stroke='%23fff6ea' stroke-width='1.2' fill='none' opacity='0.8'/%3E%3C/svg%3E");
+            filter:drop-shadow(0 2px 6px rgba(255,195,125,0.85));
             animation:none;
         }
         .tile.error-shake{
@@ -1007,6 +1032,10 @@
             background:rgba(255,61,146,0.12);
             box-shadow:0 3px 0 var(--pink-shadow), 0 0 20px var(--pink-glow);
         }
+        /* v39: Zoomies — orange means "Coco does something" (Attack + Zoomies) */
+        .btn-ability.btn-zoomies{border-color:var(--coco-deep);color:var(--coco)}
+        .btn-ability.btn-zoomies:hover{background:rgba(255,142,60,0.12);border-color:var(--coco);color:var(--ink)}
+        .btn-ability.btn-zoomies:disabled{border-color:var(--bg-border);color:var(--ink-faint)}
         .btn-cancel-swap{
             background:var(--bg-panel);
             color:var(--red);
@@ -1116,7 +1145,7 @@
         }
         .dict-checker-row{display:flex;gap:8px;align-items:center}
         .dict-checker-input{
-            flex:1;padding:8px 10px;
+            flex:1;min-width:0;padding:8px 10px;
             border-radius:8px;
             border:2px solid var(--bg-border);
             background:var(--bg-input);
@@ -1897,9 +1926,9 @@
         .net-pill.ok{border-color:#3dbf6e;color:#7fe3a8;}
         .net-pill.bad{border-color:var(--red,#ff5252);color:#ff9c9c;}
         .ticon{
-            display:inline-block;width:1.1em;height:0.82em;
-            background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 20'%3E%3Cpath d='M19.5 10c0 3.9-4.2 7-9.3 7C5.1 17 1 13.9 1 10s4.1-7 9.2-7c5.1 0 9.3 3.1 9.3 7z' fill='%23ffa845' stroke='%23a86214' stroke-width='1.6'/%3E%3Cpath d='M18.5 10l8.2-5.6-2.6 5.6 2.6 5.6z' fill='%23ffa845' stroke='%23a86214' stroke-width='1.4' stroke-linejoin='round'/%3E%3Ccircle cx='6.6' cy='8' r='1.5' fill='%233a2105'/%3E%3C/svg%3E") center/contain no-repeat;
-            vertical-align:-0.06em;
+            display:inline-block;width:0.95em;height:0.88em;
+            background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 22'%3E%3Cpath d='M7 1.5h10l5.5 7L12 20.5 1.5 8.5z' fill='%23ce92ee' stroke='%234d2577' stroke-width='1.8' stroke-linejoin='round'/%3E%3Cpath d='M2.4 8.5h19.2M7.4 2.2l4.6 6 4.6-6M12 8.8V19.6' stroke='%23ffffff' stroke-width='1.2' fill='none' opacity='0.7'/%3E%3C/svg%3E") center/contain no-repeat;
+            vertical-align:-0.08em;
         }
         .paw{
             background:transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cellipse cx='6.5' cy='7' rx='2.1' ry='2.7' fill='%23ffa845'/%3E%3Cellipse cx='12' cy='5.4' rx='2.1' ry='2.7' fill='%23ffa845'/%3E%3Cellipse cx='17.5' cy='7' rx='2.1' ry='2.7' fill='%23ffa845'/%3E%3Cpath d='M12 9.8c-3.9 0-6.6 2.7-6.6 5.6 0 2 1.7 3.3 3.4 3.3 1.2 0 2.1-.5 3.2-.5s2 .5 3.2.5c1.7 0 3.4-1.3 3.4-3.3 0-2.9-2.7-5.6-6.6-5.6z' fill='%23ffa845'/%3E%3C/svg%3E") center/contain no-repeat !important;
@@ -1952,7 +1981,7 @@
                     <button class="btn-icon" id="btn-mute" onclick="toggleMute()" title="Toggle Sound">🔇</button>
                     <input type="range" class="volume-slider" id="volume-slider" min="0" max="100" value="50" oninput="setVolume(this.value)">
                 </div>
-                <div id="timer-display">--</div>
+                <div id="timer-display" class="hidden">--</div>
                 <div id="net-pill" class="net-pill hidden">🌐</div>
             </div>
         </header>
@@ -1973,6 +2002,7 @@
             <div class="ability-bar">
                 <button class="btn-ability" id="btn-shuffle" onclick="game.useAbility('shuffle')">🔀 Shuffle <span class="cost">1<span class="ticon"></span></span></button>
                 <button class="btn-ability" id="btn-swap" onclick="game.useAbility('swap')">🔄 Swap <span class="cost">3<span class="ticon"></span></span></button>
+                <button class="btn-ability btn-zoomies" id="btn-zoomies" onclick="game.useAbility('zoomies')">🌪 Zoomies <span class="cost" id="zoomies-cost-label">5<span class="ticon"></span></span></button>
                 <button class="btn-ability" id="btn-hint" onclick="game.useAbility('hint')">💡 Hint <span class="cost" id="hint-cost-label">2<span class="ticon"></span></span></button>
                 <button class="btn-ability" id="btn-time" onclick="game.useAbility('time')">⏱ +15s <span class="cost">1<span class="ticon"></span></span></button>
                 <button class="btn-cancel-swap hidden" id="btn-cancel-swap" onclick="game.cancelSwap()">✕ Cancel Swap</button>
@@ -2091,6 +2121,10 @@
             <div class="setting-row">
                 <span>Hint Cost</span>
                 <input type="number" class="setting-num" id="cfg-hint-cost" value="2" min="1" max="10">
+            </div>
+            <div class="setting-row">
+                <span>Zoomies Cost</span>
+                <input type="number" class="setting-num" id="cfg-zoomies-cost" value="5" min="1" max="10">
             </div>
             <div class="setting-hint">Max 25 (treats can share tiles with multipliers)</div>
         </div>
@@ -2212,6 +2246,17 @@
     </div>
 </div>
 
+<div id="modal-zoomies-confirm" class="modal hidden">
+    <div class="modal-content" style="width:400px;">
+        <h3 style="margin-bottom:14px;">🌪 Coco Zoomies?</h3>
+        <p style="font-size:0.95rem;margin-bottom:18px;">Coco tears across the board — <strong>every letter is rerolled</strong>, multipliers and treats land in new spots. Costs <strong style="color:var(--coco);"><span id="zoomies-confirm-cost">5</span><span class="ticon"></span></strong>.</p>
+        <div style="display:flex;gap:10px;justify-content:center;">
+            <button class="btn-clear" style="max-width:none;flex:1;" onclick="closeZoomiesConfirm()">Cancel</button>
+            <button class="btn-submit" style="max-width:none;flex:1;" onclick="confirmZoomies()">🌪 Zoomies!</button>
+        </div>
+    </div>
+</div>
+
 <div id="modal-wordreq" class="modal hidden" style="z-index:200;">
     <div class="modal-content" style="width:400px;">
         <h3 style="margin-bottom:14px;">📖 Word Request</h3>
@@ -2257,7 +2302,7 @@ let CONFIG = {
     longWordStack:false,
     boardGemCount:9,
     cocoAttackTime:35, cocoAttackCost:4, cocoAttackEnabled:true,
-    costs:{shuffle:1, swap:3, time:1, hint:2},
+    costs:{shuffle:1, swap:3, time:1, hint:2, zoomies:5},
     enabledMults:{DL:true, TL:true, '2W':true, '3W':true}
 };
 
@@ -2306,6 +2351,7 @@ function saveSettings(){
         cocoCost:document.getElementById('cfg-coco-cost').value,
         boardGems:document.getElementById('cfg-board-gems').value,
         hintCost:document.getElementById('cfg-hint-cost').value,
+        zoomiesCost:document.getElementById('cfg-zoomies-cost').value,
         mults:{},lwPreset:selectedLWPreset,customTiers:customTiers,
         lwStack:document.getElementById('cfg-lw-stack').checked};
     document.querySelectorAll('.mult-toggle').forEach(l=>cfg.mults[l.dataset.mult]=l.querySelector('input').checked);
@@ -2321,6 +2367,7 @@ function restoreSettings(){
         if(cfg.cocoCost!==undefined)document.getElementById('cfg-coco-cost').value=cfg.cocoCost;
         if(cfg.boardGems!==undefined)document.getElementById('cfg-board-gems').value=cfg.boardGems;
         if(cfg.hintCost!==undefined)document.getElementById('cfg-hint-cost').value=cfg.hintCost;
+        if(cfg.zoomiesCost!==undefined)document.getElementById('cfg-zoomies-cost').value=cfg.zoomiesCost;
         document.querySelectorAll('.mult-toggle').forEach(l=>{
             const cb=l.querySelector('input');
             if(cfg.mults&&cfg.mults[l.dataset.mult]!==undefined){cb.checked=cfg.mults[l.dataset.mult];l.classList.toggle('active',cb.checked)}
@@ -2501,7 +2548,7 @@ function guestStart(m){
 }
 
 // ===================== v33: resume after refresh =====================
-function normalizeConfig(c){if(c&&c.costs&&!c.costs.hint)c.costs.hint=2;return c}
+function normalizeConfig(c){if(c&&c.costs&&!c.costs.hint)c.costs.hint=2;if(c&&c.costs&&!c.costs.zoomies)c.costs.zoomies=5;return c}
 function saveGameState(){
     if(NET.mode==='join'||!game||game.over)return;
     lsSet('spellcoco.save',{config:CONFIG,state:game.serialize(),ts:Date.now(),online:NET.mode==='host',hostName:NET.myName});
@@ -2934,6 +2981,14 @@ class Game{
                 this.shuffleBoard();this.clearSelection();
                 this.showToast('Board shuffled!');SFX.shuffle();this.updateUI();
                 break;}
+            case 'zoomies':{
+                if(!guestTurn)return;
+                const p=this.currentPlayer,cost=CONFIG.costs.zoomies||5;
+                if(p.gems<cost)return;
+                p.gems-=cost;this.logAbility(p,'zoomies',cost);
+                this.zoomiesBoard();this.clearSelection();
+                this.showToast('🌪 Coco zoomies — fresh board!');SFX.cocoAttack();this.updateUI();
+                break;}
             case 'swap':{
                 if(!guestTurn)return;
                 const p=this.currentPlayer;
@@ -3100,7 +3155,7 @@ class Game{
         this.showScoreFloat(`+${r.score}`);this.showToast(`${r.word} → +${r.score} pts`);
         if(best){
             const found=r.score>=best.score;
-            setTimeout(()=>{if(!game||game.over)return;this.showToast(found?'🏆 That was the best word on the board!':`⭐ Best was ${best.word} (${best.score} pts)`)},2600);
+            setTimeout(()=>{if(!game||game.over)return;this.showToast(found?'🏆 That was the best word on the board!':`⭐ Best possible: ${best.score} pts`)},2600);
         }
 
         const used=[...this.selection];
@@ -3233,6 +3288,7 @@ class Game{
         if(type==='coco')player.abilityLog[r].cocos++;
         if(type==='time')player.abilityLog[r].times++;
         if(type==='hint')player.abilityLog[r].hints=(player.abilityLog[r].hints||0)+1;
+        if(type==='zoomies')player.abilityLog[r].zoomies=(player.abilityLog[r].zoomies||0)+1;
     }
 
     useAbility(type){
@@ -3241,6 +3297,7 @@ class Game{
         if(p.gems<cost){this.showToast('Not enough treats!');SFX.invalid();return}
         if(NET.mode==='join'&&type==='time'){if(this.cocoTimerActive)NET.send({type:'act',kind:'time'});return}
         if(type==='hint'){if(NET.mode==='join'){NET.send({type:'act',kind:'hint'});return}this.doHint();return}
+        if(type==='zoomies'){document.getElementById('zoomies-confirm-cost').innerText=CONFIG.costs.zoomies;document.getElementById('modal-zoomies-confirm').classList.remove('hidden');return}
         if(type==='shuffle'){document.getElementById('modal-shuffle-confirm').classList.remove('hidden');return}
         else if(type==='swap'){this.pendingSwap=true;this.showToast('Tap a tile to swap (or cancel)')}
         else if(type==='time'){if(!this.cocoTimerActive)return;p.gems-=cost;this.logAbility(p,'time',cost);this.timeLeft+=CONFIG.bonusTime;this.updateTimerDisplay();this.showToast('+15 seconds!')}
@@ -3266,6 +3323,18 @@ class Game{
         const shuffled=fisherYates([...Array(25).keys()]);
         let si=0;
         mults.forEach(m=>{if(si<shuffled.length)this.tiles[shuffled[si++]].multiplier=m});
+        this.replenishGems();
+    }
+    // v39: Coco Zoomies — every letter rerolled; mult types kept, new spots; treats re-scattered
+    zoomiesBoard(){
+        const mults=this.tiles.map(t=>t.multiplier).filter(Boolean);
+        for(let i=0;i<25;i++){
+            const ch=LETTER_BAG[Math.floor(Math.random()*LETTER_BAG.length)];
+            const t=new Tile(i,Math.floor(i/5),i%5,ch);t.isNew=true;this.tiles[i]=t;
+        }
+        const idx=fisherYates([...Array(25).keys()]);
+        let si=0;
+        mults.forEach(m=>{if(si<idx.length)this.tiles[idx[si++]].multiplier=m});
         this.replenishGems();
     }
     openSwapModal(tileId){this.swapTargetId=tileId;const g=document.getElementById('swap-options');g.innerHTML='';for(let ch of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'){const d=document.createElement('div');d.className='swap-tile';d.innerText=ch;d.onclick=()=>this.performSwap(ch);g.appendChild(d)}document.getElementById('modal-swap').classList.remove('hidden')}
@@ -3315,7 +3384,7 @@ class Game{
                     if(w.wordMult>1)extras.push(multLabel[w.wordMult===2?'2W':'3W']);
                     if(w.longBonus>0)extras.push(`+${w.longBonus} long`);
                     if(w.gemCount>0)extras.push(`${w.gemCount}${TICON}`);
-                    if(w.best)extras.push(w.best.score>w.score?`⭐ best: <span class="definable" onclick="defineWord('${w.best.word}')">${w.best.word}</span> (${w.best.score})`:'🏆 best possible');
+                    if(w.best)extras.push(w.best.score>w.score?(this.over?`⭐ best: <span class="definable" onclick="defineWord('${w.best.word}')">${w.best.word}</span> (${w.best.score})`:`⭐ best possible: ${w.best.score} pts`):'🏆 best possible');
                     html+=`<div class="history-word-row">
                         <div>
                             <div class="history-word definable" onclick="defineWord('${w.word}')">${w.word}</div>
@@ -3331,6 +3400,7 @@ class Game{
                     if(log.cocos)parts.push(`🐱 ${log.cocos} Coco`);
                     if(log.times)parts.push(`⏱ ${log.times} +15s`);
                     if(log.hints)parts.push(`💡 ${log.hints} hint${log.hints>1?'s':''}`);
+                    if(log.zoomies)parts.push(`🌪 ${log.zoomies} zoomies`);
                     parts.push(`${log.gemsSpent}${TICON} spent`);
                     html+=`<div class="history-ability-row">${parts.join(' · ')}</div>`;
                 }
@@ -3353,7 +3423,7 @@ class Game{
         document.body.appendChild(o);setTimeout(()=>o.remove(),1800);
     }
 
-    updateTimerDisplay(){const el=document.getElementById('timer-display');if(this.cocoTimerActive){el.innerText=this.timeLeft;el.style.color=this.timeLeft<=5?'var(--red)':'var(--coco)'}else{el.innerText='--';el.style.color='var(--ink)'}}
+    updateTimerDisplay(){const el=document.getElementById('timer-display');el.classList.toggle('hidden',!this.cocoTimerActive);if(this.cocoTimerActive){el.innerText=this.timeLeft;el.style.color=this.timeLeft<=5?'var(--red)':'var(--coco)'}else{el.innerText='--';el.style.color='var(--ink)'}}
 
     updateUI(){
         document.getElementById('round-indicator').innerText=`✦ ROUND ${this.round} / ${CONFIG.rounds} ✦`;
@@ -3397,6 +3467,7 @@ class Game{
         document.getElementById('btn-shuffle').disabled=!myTurn||this.pendingSwap||p.gems<CONFIG.costs.shuffle;
         document.getElementById('btn-swap').disabled=!myTurn||this.pendingSwap||p.gems<CONFIG.costs.swap;
         document.getElementById('btn-hint').disabled=!myTurn||this.pendingSwap||p.gems<(CONFIG.costs.hint||2);
+        document.getElementById('btn-zoomies').disabled=!myTurn||this.pendingSwap||p.gems<(CONFIG.costs.zoomies||5);
         document.getElementById('btn-swap').classList.toggle('active-swap',this.pendingSwap);
         document.getElementById('btn-cancel-swap').classList.toggle('hidden',!this.pendingSwap);
         const timeBtn=document.getElementById('btn-time');
@@ -3619,6 +3690,10 @@ function launchGame(){
     CONFIG.costs.hint=Math.max(1,Math.min(10,hc));
     document.getElementById('hint-cost-label').innerHTML=CONFIG.costs.hint+'<span class="ticon"></span>';
 
+    const zc=parseInt(document.getElementById('cfg-zoomies-cost').value)||5;
+    CONFIG.costs.zoomies=Math.max(1,Math.min(10,zc));
+    document.getElementById('zoomies-cost-label').innerHTML=CONFIG.costs.zoomies+'<span class="ticon"></span>';
+
     document.querySelectorAll('.mult-toggle').forEach(label=>{
         const mult=label.dataset.mult;
         const checked=label.querySelector('input').checked;
@@ -3683,6 +3758,8 @@ function closeHistoryModal(){document.getElementById('modal-history').classList.
 function closeSwapModal(){document.getElementById('modal-swap').classList.add('hidden');if(game){game.pendingSwap=false;game.updateUI()}}
 function closeShuffleConfirm(){document.getElementById('modal-shuffle-confirm').classList.add('hidden')}
 function confirmShuffle(){document.getElementById('modal-shuffle-confirm').classList.add('hidden');if(game&&NET.mode==='join'){NET.send({type:'act',kind:'shuffle'});return}if(game){const p=game.currentPlayer;p.gems-=CONFIG.costs.shuffle;game.logAbility(p,'shuffle',CONFIG.costs.shuffle);game.shuffleBoard();game.clearSelection();game.showToast('Board shuffled!');SFX.shuffle();game.updateUI()}}
+function closeZoomiesConfirm(){document.getElementById('modal-zoomies-confirm').classList.add('hidden')}
+function confirmZoomies(){document.getElementById('modal-zoomies-confirm').classList.add('hidden');if(game&&NET.mode==='join'){NET.send({type:'act',kind:'zoomies'});return}if(game){const p=game.currentPlayer;if(p.gems<CONFIG.costs.zoomies){game.showToast('Not enough treats!');SFX.invalid();return}p.gems-=CONFIG.costs.zoomies;game.logAbility(p,'zoomies',CONFIG.costs.zoomies);game.zoomiesBoard();game.clearSelection();game.showToast('🌪 Coco zoomies — fresh board!');SFX.cocoAttack();game.updateUI()}}
 </script>
 </body>
 </html>
