@@ -12,6 +12,38 @@
 
     <!--
     ================================================================
+    SPELLCOCO v45 — A CALMER FRONT DOOR + A DICTIONARY THAT KNOWS "OK"
+    ================================================================
+
+    CHANGELOG v44 → v45 (Shawn's mobile feedback + dictionary upgrade):
+    - CHANGE: Start screen de-boxified. Advanced sections (Game
+      Settings, Multipliers, Long Word Bonus, Dictionary & Words)
+      now live in collapsible <details> accordions under the Start
+      button — first paint is just mode + players + Start. Dashed
+      boxes are gone; panels use a soft tint instead of borders.
+    - FIX: iPhone could pan the start screen left–right. Root cause:
+      .modal-content{max-width:min(92vw,560px)} ignores .modal's
+      20px side padding, so under ~500px wide the card was wider
+      than the padded flex container (92vw+40px > 100vw) → sideways
+      scroll. Now max-width:min(100%,560px) (100% respects the
+      padding) + overflow-x:hidden + file inputs clamped to 100%
+      (their intrinsic width was a second offender).
+    - CHANGE: dictionary.txt upgraded TWL06 (178,696 words, 2006) →
+      NWL2023 (196,601 words) — adds OK, EW, ZEN, VAX, DOXING,
+      YEET and ~20k other modern words Keith & Shawn kept missing.
+    - ADD: custom_words.txt seeded with the 11 house words NWL2023
+      still lacks (GOONER, SIZZ, UNTAX, LAWYERESS, FOVEATION, …).
+    - ADD: Cloud word check (Dictionary section, default ON). If a
+      submitted word isn't in the local list, the game asks
+      dictionaryapi.dev (already used for definitions); real words
+      are accepted, auto-added to custom words, and broadcast to
+      the opponent in online games. Offline → graceful "couldn't
+      check" message, nothing breaks.
+    - FIX (latent): selectLWPreset() stripped .active off the Game
+      Mode and mood buttons because they shared .lw-preset-btn.
+      They now use .choice-btn (same look, no interference).
+
+    ================================================================
     SPELLCOCO v44 — COCO GETS A SHELF + THE iOS BLEED, ACTUALLY FIXED
     ================================================================
 
@@ -1466,10 +1498,7 @@
         }
 
         .file-upload-wrapper{
-            margin-top:14px;padding:16px;
-            border:2px dashed var(--purple-deep);
-            border-radius:12px;
-            background:rgba(0,0,0,0.35);
+            margin-top:4px;
             text-align:left;
         }
         .file-upload-wrapper p{color:var(--ink-soft)}
@@ -1478,6 +1507,7 @@
             font-family:'Atkinson Hyperlegible',sans-serif;
             font-size:0.95rem;
             font-weight:400;
+            display:block;width:100%;max-width:100%; /* v45: intrinsic width caused sideways scroll on phones */
         }
         .file-upload-wrapper input[type="file"]::file-selector-button{
             background:var(--bg-elevated);
@@ -1755,7 +1785,7 @@
 
         /* Long Word Bonus presets */
         .lw-presets{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
-        .lw-preset-btn{
+        .lw-preset-btn,.choice-btn{
             flex:1;min-width:110px;
             padding:11px 12px;
             border-radius:10px;
@@ -1766,11 +1796,11 @@
             text-align:left;
             font-family:'Atkinson Hyperlegible',sans-serif;
         }
-        .lw-preset-btn:hover{
+        .lw-preset-btn:hover,.choice-btn:hover{
             background:var(--bg-panel-hi);
             border-color:var(--purple-deep);
         }
-        .lw-preset-btn.active{
+        .lw-preset-btn.active,.choice-btn.active{
             border-color:var(--pink);
             background:rgba(255,61,146,0.1);
             box-shadow:0 0 16px var(--pink-glow);
@@ -1781,7 +1811,7 @@
             font-size:1rem;
             color:var(--ink);
         }
-        .lw-preset-btn.active .lw-preset-name{color:var(--pink-hi)}
+        .lw-preset-btn.active .lw-preset-name,.choice-btn.active .lw-preset-name{color:var(--pink-hi)}
         .lw-preset-desc{
             display:block;
             font-size:0.82rem;
@@ -2066,8 +2096,8 @@
         }
         .stats-box .stats-record{font-weight:700;color:var(--ink);font-size:0.95rem;}
         .online-panel{
-            margin-top:10px;padding:12px;border:1px dashed var(--purple-deep);
-            border-radius:12px;
+            margin-top:10px;padding:12px;
+            border-radius:12px;background:rgba(255,255,255,0.035); /* v45: tint, not a box */
         }
         .room-code-box{
             text-align:center;margin:10px 0 4px;padding:10px;
@@ -2079,7 +2109,7 @@
             margin-right:-0.45em;
         }
         .net-status{font-size:0.86rem;color:var(--ink-dim);margin-top:6px;text-align:center;}
-        .side-toggle{display:flex;gap:6px;}
+        .side-toggle{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
         .side-btn{
             padding:6px 14px;border-radius:8px;border:2px solid var(--bg-border);
             background:var(--bg-input);color:var(--ink-dim);font-weight:700;cursor:pointer;
@@ -2132,8 +2162,30 @@
         @media(max-width:839px){.mark-sm{width:44px;height:44px;}}
         .definable{cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px;}
         .definable:hover{opacity:0.8;}
-        /* v34: keep modals inside the viewport at high zoom / narrow widths */
-        .modal-content{max-width:min(92vw,560px);}
+        /* v34→v45: keep modals inside the viewport. 92vw ignored .modal's side
+           padding, so on phones the card overflowed sideways and the start
+           screen could pan left–right. 100% respects the padded container;
+           overflow-x is a hard stop for any wide child. */
+        .modal-content{max-width:min(100%,560px);overflow-x:hidden;}
+
+        /* v45: start screen — 2×2 mode grid + accordion stack (less boxitis) */
+        .mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px;}
+        .settings-stack{margin-top:18px;text-align:left;border-top:1px solid var(--bg-border);}
+        .settings-acc{border-bottom:1px solid var(--bg-border);}
+        .settings-acc>summary{
+            list-style:none;cursor:pointer;display:flex;align-items:center;gap:9px;
+            padding:13px 2px;font-size:0.95rem;font-weight:700;color:var(--ink);
+            text-transform:uppercase;letter-spacing:0.12em;
+        }
+        .settings-acc>summary::-webkit-details-marker{display:none}
+        .settings-acc>summary::after{content:'▾';margin-left:auto;color:var(--purple-hi);transition:transform 0.2s}
+        .settings-acc[open]>summary::after{transform:rotate(180deg)}
+        .settings-acc[open]>summary{color:var(--pink-hi)}
+        .settings-acc>.acc-body{padding:0 2px 16px;}
+        @media(max-width:520px){
+            .modal{padding:10px;}
+            .modal-content{padding:20px 14px;max-height:94vh;max-height:94dvh;}
+        }
         .best-word-meta{color:var(--gold-hi);}
 
         /* REDUCED MOTION — freeze all the fancy stuff for anyone who needs it */
@@ -2277,20 +2329,20 @@
 
         <div class="settings-section">
             <div class="settings-section-title">🌐 Game Mode</div>
-            <div class="lw-presets">
-                <button class="lw-preset-btn active" id="mode-local" onclick="setMode('local')">
+            <div class="mode-grid">
+                <button class="choice-btn active" id="mode-local" onclick="setMode('local')">
                     <span class="lw-preset-name">Local</span>
                     <span class="lw-preset-desc">Pass &amp; play, one device</span>
                 </button>
-                <button class="lw-preset-btn" id="mode-solo" onclick="setMode('solo')">
+                <button class="choice-btn" id="mode-solo" onclick="setMode('solo')">
                     <span class="lw-preset-name">vs Coco</span>
                     <span class="lw-preset-desc">Play Coco himself 🐾</span>
                 </button>
-                <button class="lw-preset-btn" id="mode-host" onclick="setMode('host')">
+                <button class="choice-btn" id="mode-host" onclick="setMode('host')">
                     <span class="lw-preset-name">Host Online</span>
                     <span class="lw-preset-desc">Get a room code</span>
                 </button>
-                <button class="lw-preset-btn" id="mode-join" onclick="setMode('join')">
+                <button class="choice-btn" id="mode-join" onclick="setMode('join')">
                     <span class="lw-preset-name">Join Online</span>
                     <span class="lw-preset-desc">Enter a code</span>
                 </button>
@@ -2337,15 +2389,15 @@
                 </div>
                 <div style="margin-top:10px;font-weight:700;font-size:0.95rem;color:var(--coco);">🐾 Coco's mood</div>
                 <div class="lw-presets" style="margin-top:8px;">
-                    <button class="lw-preset-btn" id="mood-sleepy" onclick="pickMood('sleepy')">
+                    <button class="choice-btn" id="mood-sleepy" onclick="pickMood('sleepy')">
                         <span class="lw-preset-name">😴 Sleepy</span>
                         <span class="lw-preset-desc">Gentle little words</span>
                     </button>
-                    <button class="lw-preset-btn active" id="mood-cozy" onclick="pickMood('cozy')">
+                    <button class="choice-btn active" id="mood-cozy" onclick="pickMood('cozy')">
                         <span class="lw-preset-name">😺 Cozy</span>
                         <span class="lw-preset-desc">A fair match</span>
                     </button>
-                    <button class="lw-preset-btn" id="mood-zoomies" onclick="pickMood('zoomies')">
+                    <button class="choice-btn" id="mood-zoomies" onclick="pickMood('zoomies')">
                         <span class="lw-preset-name">🌪 Zoomies</span>
                         <span class="lw-preset-desc">Near-purrfect play</span>
                     </button>
@@ -2391,13 +2443,16 @@
             </div>
         </div>
 
-        <div class="setting-row">
-            <span>Sound Effects</span>
-            <label class="toggle-switch"><input type="checkbox" id="sound-toggle"><span class="toggle-slider"></span></label>
-        </div>
+        <button class="btn-start" onclick="startGame()">⚡ Start Game</button>
 
-        <div class="settings-section">
-            <div class="settings-section-title">⚙ Game Settings</div>
+        <div class="settings-stack">
+        <details class="settings-acc">
+            <summary>⚙ Game Settings</summary>
+            <div class="acc-body">
+            <div class="setting-row">
+                <span>Sound Effects</span>
+                <label class="toggle-switch"><input type="checkbox" id="sound-toggle"><span class="toggle-slider"></span></label>
+            </div>
             <div class="setting-row">
                 <span>Starting Treats</span>
                 <input type="number" class="setting-num" id="cfg-start-gems" value="3" min="0" max="10">
@@ -2423,10 +2478,12 @@
                 <input type="number" class="setting-num" id="cfg-zoomies-cost" value="5" min="1" max="10">
             </div>
             <div class="setting-hint">Max 25 (treats can share tiles with multipliers)</div>
-        </div>
+            </div>
+        </details>
 
-        <div class="settings-section">
-            <div class="settings-section-title">✦ Multiplier Types</div>
+        <details class="settings-acc">
+            <summary>✦ Multiplier Types</summary>
+            <div class="acc-body">
             <div class="mult-toggles" id="mult-toggles">
                 <label class="mult-toggle mt-DL active" data-mult="DL">
                     <input type="checkbox" checked> <span class="mt-badge">×2L</span> Double Letter
@@ -2442,10 +2499,12 @@
                 </label>
             </div>
             <div class="setting-hint">Exclusivity still applies: ×2L & ×3L can't coexist, nor ×2W & ×3W</div>
-        </div>
+            </div>
+        </details>
 
-        <div class="settings-section">
-            <div class="settings-section-title">🏆 Long Word Bonus</div>
+        <details class="settings-acc">
+            <summary>🏆 Long Word Bonus</summary>
+            <div class="acc-body">
             <div class="lw-presets" id="lw-presets">
                 <button class="lw-preset-btn" data-preset="original" onclick="selectLWPreset('original')">
                     <span class="lw-preset-name">Original</span>
@@ -2473,14 +2532,23 @@
                 </div>
             </div>
             <div id="lw-preview" class="lw-preview"></div>
-        </div>
+            </div>
+        </details>
 
+        <details class="settings-acc">
+            <summary>📖 Dictionary &amp; Words</summary>
+            <div class="acc-body">
         <div class="file-upload-wrapper">
-            <p style="font-weight:700;margin-bottom:8px;color:var(--ink);font-size:1rem;">📖 Dictionary</p>
-            <p style="font-size:0.9rem;margin-bottom:12px;">Default: ~900 words. Upload <code>dictionary.txt</code> for 178k+.</p>
+            <p style="font-size:0.9rem;margin-bottom:8px;">Auto-loads our NWL2023 list (196,601 words) plus the shared custom words. Upload a <code>.txt</code> to override.</p>
+            <p id="dict-status" style="margin-bottom:10px;">Using Built-in List</p>
             <input type="file" id="dict-file" accept=".txt" onchange="loadDictionary(this)">
-            <p id="dict-status" style="margin-top:10px;">Using Built-in List</p>
             <div id="trie-status" class="hidden trie-loading"><span class="spinner"></span>Building index...</div>
+
+            <div class="setting-row" style="margin-top:12px;">
+                <span>Cloud word check</span>
+                <label class="toggle-switch"><input type="checkbox" id="cfg-cloud-assist" checked><span class="toggle-slider"></span></label>
+            </div>
+            <div class="setting-hint" style="margin-top:0;">If a word you play isn't in the local list, SpellCoco asks the online dictionary — real words count and join your custom words. Needs internet.</div>
 
             <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--bg-border);">
                 <p style="font-weight:700;margin-bottom:7px;color:var(--ink);font-size:0.98rem;">📝 Custom Words <span style="font-weight:400;color:var(--ink-dim);font-size:0.85rem;">(optional)</span></p>
@@ -2495,7 +2563,9 @@
                 <button class="dict-checker-btn" style="margin-top:9px;font-size:0.8rem;padding:5px 12px;" onclick="exportCustomWords()">⬇ Export my custom words</button>
             </div>
         </div>
-        <button class="btn-start" onclick="startGame()">⚡ Start Game</button>
+            </div>
+        </details>
+        </div><!-- /settings-stack -->
     </div>
 </div>
 
@@ -2522,8 +2592,8 @@
 <div id="modal-dict-confirm" class="modal hidden">
     <div class="modal-content" style="width:400px;">
         <h3 style="margin-bottom:14px;">📖 No Dictionary Loaded</h3>
-        <p style="font-size:0.95rem;margin-bottom:8px;">You haven't uploaded a <code>dictionary.txt</code> file.</p>
-        <p style="font-size:0.95rem;margin-bottom:18px;">The game will use the built-in list (~900 words). Did you forget to load one?</p>
+        <p style="font-size:0.95rem;margin-bottom:8px;">The word list (<code>dictionary.txt</code>) didn't load — are you offline?</p>
+        <p style="font-size:0.95rem;margin-bottom:18px;">The game will fall back to a tiny built-in list (~900 words).</p>
         <div style="display:flex;gap:10px;justify-content:center;">
             <button class="btn-clear" style="max-width:none;flex:1;" onclick="closeDictConfirm(false)">Go Back</button>
             <button class="btn-submit" style="max-width:none;flex:1;" onclick="closeDictConfirm(true)">Play Anyway</button>
@@ -2671,6 +2741,7 @@ function saveSettings(){
         boardGems:document.getElementById('cfg-board-gems').value,
         hintCost:document.getElementById('cfg-hint-cost').value,
         zoomiesCost:document.getElementById('cfg-zoomies-cost').value,
+        cloudAssist:document.getElementById('cfg-cloud-assist').checked,
         mults:{},lwPreset:selectedLWPreset,customTiers:customTiers,
         lwStack:document.getElementById('cfg-lw-stack').checked,
         seats:SEATS,solo:SOLO,onlineSide:{type:ONLINE_SIDE.type,guest:ONLINE_SIDE.guest}};
@@ -2688,6 +2759,7 @@ function restoreSettings(){
         if(cfg.boardGems!==undefined)document.getElementById('cfg-board-gems').value=cfg.boardGems;
         if(cfg.hintCost!==undefined)document.getElementById('cfg-hint-cost').value=cfg.hintCost;
         if(cfg.zoomiesCost!==undefined)document.getElementById('cfg-zoomies-cost').value=cfg.zoomiesCost;
+        document.getElementById('cfg-cloud-assist').checked=cfg.cloudAssist!==false; // v45: default ON
         document.querySelectorAll('.mult-toggle').forEach(l=>{
             const cb=l.querySelector('input');
             if(cfg.mults&&cfg.mults[l.dataset.mult]!==undefined){cb.checked=cfg.mults[l.dataset.mult];l.classList.toggle('active',cb.checked)}
@@ -3407,6 +3479,8 @@ function rebuildWithCustom(){
     },50);
 }
 function isValidWord(w){if(w.length<2)return false;return trieBuilt?trie.hasWord(w.toUpperCase()):DICTIONARY.has(w.toUpperCase())}
+// v45: cloud word check — is the toggle on and do we (probably) have internet?
+function cloudAssistOn(){const t=document.getElementById('cfg-cloud-assist');return !!(t&&t.checked)&&navigator.onLine!==false}
 
 function calcBasePoints(word) {
     let pts = 0;
@@ -3693,7 +3767,12 @@ class Game{
 
     submitWord(){
         const r=this.calculateCurrentScore();
-        if(!r.isValid){this.showToast('Not a valid word!');SFX.invalid();return}
+        if(!r.isValid){
+            // v45: before saying no, ask the cloud — the local list may just be behind
+            if(this.cloudPending){this.showToast('📡 Still checking…');return}
+            if(cloudAssistOn()&&/^[A-Z]{2,15}$/.test(r.word)){this.cloudCheckWord(r.word);return}
+            this.showToast('Not a valid word!');SFX.invalid();return
+        }
         if(NET.mode==='join'){NET.send({type:'act',kind:'submit',sel:[...this.selection]});return}
         const best=findBestWord(this.tiles);
         const p=this.currentPlayer;
@@ -3724,6 +3803,32 @@ class Game{
         }
         this.replenishGems();
         this.endTurn();
+    }
+
+    // v45: word isn't in the local list — check dictionaryapi.dev (the same
+    // service the define feature uses). Real word → added to custom words
+    // (addCustomWord also broadcasts to the opponent in online games, so the
+    // host will accept the guest's resubmit) and the submit retries itself.
+    cloudCheckWord(w){
+        this.cloudPending=true;
+        this.showToast('📡 Checking '+w+'…');
+        fetch('https://api.dictionaryapi.dev/api/v2/entries/en/'+w.toLowerCase())
+            .then(res=>{
+                this.cloudPending=false;
+                if(this.over)return;
+                if(res.ok){
+                    addCustomWord(w);
+                    this.showToast('📖 '+w+' is real — added to custom words!');
+                    if(this.calculateCurrentScore().word===w)this.submitWord();
+                }else{
+                    this.showToast(w+' isn’t in the dictionary');SFX.invalid();
+                }
+            })
+            .catch(()=>{
+                this.cloudPending=false;
+                if(this.over)return;
+                this.showToast('Couldn’t reach the cloud dictionary — add it as a custom word if it’s real');SFX.invalid();
+            });
     }
 
     endTurn(){
