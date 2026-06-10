@@ -12,6 +12,27 @@
 
     <!--
     ================================================================
+    SPELLCOCO v44 — COCO GETS A SHELF + THE iOS BLEED, ACTUALLY FIXED
+    ================================================================
+
+    CHANGELOG v43 → v44 (Shawn's iPhone, round 2):
+    - FIX: "What is Coco resting on?" On phones he floated 4px above
+      the grid. His lounge now overlaps the grid frame's top border
+      by ~8px (bottom:-58px vs the 50px gap) so he visibly lies ON
+      the frame — same way he's always lain on the action zone's
+      edge on desktop (which is unchanged).
+    - FIX: The iOS bleed survived v43's explicit rows because the
+      real bug is WebKit resolving the grid's height:100% against
+      the WRONG box of an aspect-ratio-sized parent (border-box vs
+      content-box → overflow by exactly padding+border, ~13px —
+      matches the screenshots). v44 removes percentage height from
+      the equation entirely: aspect-ratio:1/1 now lives on .grid
+      itself (width-driven, definite height, 1fr rows resolve
+      against it) and .grid-frame simply wraps its content —
+      uniform padding keeps the frame square. Desktop pixels are
+      identical; no engine has to resolve % inside aspect-ratio.
+
+    ================================================================
     SPELLCOCO v43 — COCO MOVES IN WITH THE NAMES + GRID FITS ITS FRAME
     ================================================================
 
@@ -932,7 +953,9 @@
             border-radius:clamp(16px,2.4vw,24px);
             width:100%;
             max-width:min(560px,88vmin);
-            aspect-ratio:1/1;
+            /* v44: no aspect-ratio here — the frame WRAPS the square grid.
+               iOS WebKit resolved a child's height:100% against the wrong
+               box of an aspect-ratio parent, bleeding tiles past the border. */
             /* Real gradient border via dual background-clip */
             border:3px solid transparent;
             background:
@@ -966,7 +989,7 @@
             grid-template-columns:repeat(5,1fr);
             grid-template-rows:repeat(5,1fr); /* v43: explicit tracks — board can never overflow the frame (iOS) */
             gap:clamp(5px,1vw,9px);
-            width:100%;height:100%;min-height:0;
+            width:100%;aspect-ratio:1/1;min-height:0; /* v44: the GRID is the square; frame wraps it */
         }
 
         .tile{
@@ -1126,7 +1149,9 @@
         @media(max-width:839px){
             .player-bar-wrap{margin-bottom:42px}
             .action-zone{margin-top:10px}
-            .coco-lounge{width:120px;height:50px;bottom:-46px;left:calc(100% - 128px)}
+            /* v44: bottom:-58px = his belly overlaps the grid frame's top
+               border by ~8px — he lies ON the frame, not floating above it */
+            .coco-lounge{width:120px;height:50px;bottom:-58px;left:calc(100% - 128px)}
             .coco-lounge.side-left{left:8px}
         }
         .action-buttons{display:flex;gap:10px;justify-content:center}
