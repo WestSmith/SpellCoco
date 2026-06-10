@@ -12,6 +12,28 @@
 
     <!--
     ================================================================
+    SPELLCOCO v43 — COCO MOVES IN WITH THE NAMES + GRID FITS ITS FRAME
+    ================================================================
+
+    CHANGELOG v42 → v43 (both from Shawn's iPhone feedback):
+    - CHANGE: Lounging Coco (the turn indicator) is re-anchored to
+      the PLAYER BAR instead of the action zone. On phones the
+      action zone sits below the grid, which left him stranded far
+      from the names he's supposed to point at. He now lies right
+      beneath the active player's card on every layout (a
+      .player-bar-wrap wrapper provides the anchor so updateUI's
+      innerHTML rebuild of #player-list can't wipe him). Desktop
+      geometry is pixel-identical: the 40px gap above the action
+      zone is the same spot he always occupied.
+    - FIX: The board could overflow its frame on iOS ("grid doesn't
+      fit the border"). Root cause: .grid never declared row tracks
+      — columns were repeat(5,1fr) but rows were IMPLICIT
+      (content-sized + stretch), and WebKit sizes those differently
+      than Blink. Now grid-template-rows:repeat(5,1fr) with
+      min-width/min-height:0 on tiles — the 5×5 board mathematically
+      cannot exceed the square frame on any engine.
+
+    ================================================================
     SPELLCOCO v42 — GUESTS GO ONLINE + PHONES STOP CLIPPING
     ================================================================
 
@@ -632,7 +654,7 @@
         @media(max-width:839px){
             .side-panel{display:contents}
             .grid-panel{flex:1;min-height:0;display:flex;justify-content:center;align-items:center}
-            header{order:1}.round-indicator-row{order:2}.player-bar{order:3}
+            header{order:1}.round-indicator-row{order:2}.player-bar-wrap{order:3}
             .grid-panel{order:4}.action-zone{order:5}
             .dict-checker{order:6}.lw-ref{order:7}
         }
@@ -942,13 +964,15 @@
         .grid{
             display:grid;
             grid-template-columns:repeat(5,1fr);
+            grid-template-rows:repeat(5,1fr); /* v43: explicit tracks — board can never overflow the frame (iOS) */
             gap:clamp(5px,1vw,9px);
-            width:100%;height:100%;
+            width:100%;height:100%;min-height:0;
         }
 
         .tile{
             background:linear-gradient(175deg,var(--tile-face) 0%,var(--tile-face-alt) 100%);
             color:var(--tile-ink);
+            min-width:0;min-height:0; /* v43: let 1fr tracks rule, not content */
             border-radius:12%;
             position:relative;cursor:pointer;
             display:flex;justify-content:center;align-items:center;
@@ -1084,10 +1108,13 @@
             color:var(--ink-soft);
             line-height:1.35;flex:1;min-width:0;
         }
-        /* Lounging Coco — lies on the zone's top edge, on the ACTIVE player's
-           side; ambles across on turn change, head always facing inward. */
+        /* Lounging Coco — v43: anchored to the PLAYER BAR (he's the turn
+           indicator, so he lives with the names on every layout). Lies on
+           the ACTIVE player's side; ambles across on turn change, head
+           always facing inward. Desktop pixels identical to v40-v42. */
+        .player-bar-wrap{position:relative;flex-shrink:0}
         .coco-lounge{
-            position:absolute;top:-48px;left:calc(100% - 158px);
+            position:absolute;bottom:-55px;left:calc(100% - 158px);
             width:150px;height:63px;line-height:0;
             pointer-events:none;z-index:2;
             filter:drop-shadow(0 3px 8px rgba(0,0,0,0.5));
@@ -1097,8 +1124,9 @@
         .coco-lounge svg{width:100%;height:100%}
         .coco-lounge.side-left{left:8px;transform:scaleX(-1)}
         @media(max-width:839px){
-            .action-zone{margin-top:30px}
-            .coco-lounge{width:120px;height:50px;top:-38px;left:calc(100% - 128px)}
+            .player-bar-wrap{margin-bottom:42px}
+            .action-zone{margin-top:10px}
+            .coco-lounge{width:120px;height:50px;bottom:-46px;left:calc(100% - 128px)}
             .coco-lounge.side-left{left:8px}
         }
         .action-buttons{display:flex;gap:10px;justify-content:center}
@@ -2144,9 +2172,11 @@
             <div id="round-indicator">✦ ROUND 1 / 5 ✦</div>
             <div class="round-pips" id="round-pips"></div>
         </div>
-        <div class="player-bar" id="player-list"></div>
-        <div class="action-zone">
+        <div class="player-bar-wrap">
+            <div class="player-bar" id="player-list"></div>
             <span class="coco-lounge" id="coco-lounge" aria-hidden="true"></span>
+        </div>
+        <div class="action-zone">
             <div class="word-area" id="word-area">
                 <div id="word-display" class="empty">Tap letters to spell</div>
                 <div id="score-preview"></div>
