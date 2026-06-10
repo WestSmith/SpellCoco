@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
+    <meta name="color-scheme" content="dark">
     <title>SpellCoco</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#1a1549">
@@ -10,6 +11,32 @@
     <link rel="icon" type="image/png" href="icon-192.png">
 
     <!--
+    ================================================================
+    SPELLCOCO v42 — GUESTS GO ONLINE + PHONES STOP CLIPPING
+    ================================================================
+
+    CHANGELOG v41 → v42:
+    - ADD: Online guest seats. Host AND joiner each pick Keith /
+      Shawn / Guest (editable name, default "Coco's Guest") in
+      their panel. The side messages now carry real names; each
+      end shows "…is playing as X". If both pick the same name the
+      host dedups (second becomes "Name 2") and the start message
+      carries the joiner's FINAL identity (guestName) so index
+      lookup never breaks. Joiner auto-complements (host took
+      Shawn → you default to Keith) until they pick explicitly.
+      Guest games online stay unrecorded (same rule as local).
+    - FIX: Phone / PWA layout (Shawn's iPhone screenshots). The
+      page was locked to viewport height with overflow:hidden, so
+      the square grid overflowed its flex slot, drew OVER the
+      action zone, and everything below the fold was clipped
+      unscrollably. ≤839px now scrolls naturally (body height:auto,
+      overflow-y:auto, .grid-panel flex:none) with safe-area
+      insets for the notch/home bar (viewport-fit=cover).
+    - FIX: color-scheme:dark declared (meta + CSS) so mobile
+      browsers' force-dark/auto-dark never inverts the cream tiles.
+    - CHANGE: oppName() now reads the real opponent name from the
+      game (or the announced side) instead of assuming Keith/Shawn.
+
     ================================================================
     SPELLCOCO v41 — COCO PLAYS: SOLO MODE + COCO'S GUEST
     ================================================================
@@ -409,6 +436,7 @@
 
     <style>
         :root{
+            color-scheme:dark; /* v42: stop mobile force-dark from inverting the cream tiles */
             /* Canvas — deep cosmos */
             --bg-void:#07051c;
             --bg-cosmos:#0f0b2d;
@@ -2069,6 +2097,26 @@
                 animation:pop 0.4s cubic-bezier(0.175,0.885,0.32,1.275) !important;
             }
         }
+
+        /* ===== v42: phones & PWA — the page SCROLLS instead of clipping =====
+           Previously body was locked to 100dvh with overflow:hidden; on phones
+           the square grid overflowed its flex slot, drew over the action zone,
+           and everything below the fold was unreachable. Keith's high-zoom
+           setups hit the same media query, so this helps him too. */
+        @media(max-width:839px){
+            body{
+                height:auto;min-height:100vh;min-height:100dvh;
+                overflow-y:auto;overflow-x:hidden;
+            }
+            #app{
+                height:auto;min-height:100dvh;
+                padding:calc(8px + env(safe-area-inset-top))
+                        calc(8px + env(safe-area-inset-right))
+                        calc(18px + env(safe-area-inset-bottom))
+                        calc(8px + env(safe-area-inset-left));
+            }
+            .grid-panel{flex:none;min-height:auto}
+        }
     </style>
 </head>
 <body>
@@ -2255,16 +2303,31 @@
                     <div class="side-toggle">
                         <button class="side-btn" id="side-Keith" onclick="pickSide('Keith')">Keith</button>
                         <button class="side-btn active" id="side-Shawn" onclick="pickSide('Shawn')">Shawn</button>
+                        <button class="side-btn" id="side-Guest" onclick="pickSide('Guest')">Guest</button>
                     </div>
                 </div>
+                <div class="guest-name-row hidden" id="online-guest-row">
+                    <label for="online-guest-name">Guest name</label>
+                    <input type="text" class="dict-checker-input" id="online-guest-name" value="Coco's Guest" maxlength="14" style="text-transform:none;letter-spacing:0.02em;" onchange="onlineGuestChanged(this)">
+                </div>
+                <p class="net-status" id="host-opp-side"></p>
                 <div class="room-code-box"><span id="room-code">····</span></div>
                 <p class="net-status" id="host-status">Creating room…</p>
             </div>
             <div id="online-join-panel" class="online-panel hidden">
                 <div class="setting-row">
                     <span>Play as</span>
-                    <span id="join-side" style="font-weight:700;color:var(--ink);">(host picks first)</span>
+                    <div class="side-toggle">
+                        <button class="side-btn" id="join-Keith" onclick="pickSide('Keith')">Keith</button>
+                        <button class="side-btn active" id="join-Shawn" onclick="pickSide('Shawn')">Shawn</button>
+                        <button class="side-btn" id="join-Guest" onclick="pickSide('Guest')">Guest</button>
+                    </div>
                 </div>
+                <div class="guest-name-row hidden" id="join-guest-row">
+                    <label for="join-guest-name">Guest name</label>
+                    <input type="text" class="dict-checker-input" id="join-guest-name" value="Coco's Guest" maxlength="14" style="text-transform:none;letter-spacing:0.02em;" onchange="onlineGuestChanged(this)">
+                </div>
+                <p class="net-status" id="join-opp-side"></p>
                 <div class="dict-checker-row" style="margin-top:8px;">
                     <input type="text" class="dict-checker-input" id="join-code" placeholder="Room code" maxlength="4" style="text-transform:uppercase;" onkeydown="if(event.key==='Enter')joinGame()">
                     <button class="dict-checker-btn" onclick="joinGame()">Join</button>
@@ -2366,7 +2429,7 @@
 
             <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--bg-border);">
                 <p style="font-weight:700;margin-bottom:7px;color:var(--ink);font-size:0.98rem;">📝 Custom Words <span style="font-weight:400;color:var(--ink-dim);font-size:0.85rem;">(optional)</span></p>
-                <p style="font-size:0.85rem;margin-bottom:10px;color:var(--ink-dim);">Words Keith & Shawn think should count. Merged into the dictionary — duplicates are fine.</p>
+                <p style="font-size:0.85rem;margin-bottom:10px;color:var(--ink-dim);">Words you both think should count. Merged into the dictionary — duplicates are fine.</p>
                 <input type="file" id="custom-words-file" accept=".txt" onchange="loadCustomWords(this)">
                 <p id="custom-status" style="margin-top:7px;font-size:0.9rem;"></p>
                 <div class="dict-checker-row" style="margin-top:10px;">
@@ -2555,7 +2618,7 @@ function saveSettings(){
         zoomiesCost:document.getElementById('cfg-zoomies-cost').value,
         mults:{},lwPreset:selectedLWPreset,customTiers:customTiers,
         lwStack:document.getElementById('cfg-lw-stack').checked,
-        seats:SEATS,solo:SOLO};
+        seats:SEATS,solo:SOLO,onlineSide:{type:ONLINE_SIDE.type,guest:ONLINE_SIDE.guest}};
     document.querySelectorAll('.mult-toggle').forEach(l=>cfg.mults[l.dataset.mult]=l.querySelector('input').checked);
     lsSet('spellcoco.settings',cfg);
 }
@@ -2583,6 +2646,7 @@ function restoreSettings(){
                    2:{type:vt(cfg.seats[2].type)||'Shawn',guest:sanitizeGuestName(cfg.seats[2].guest)}};
         }
         if(cfg.solo)SOLO={you:vt(cfg.solo.you)||'Shawn',guest:sanitizeGuestName(cfg.solo.guest),mood:COCO_MOODS[cfg.solo.mood]?cfg.solo.mood:'cozy'};
+        if(cfg.onlineSide)ONLINE_SIDE={type:vt(cfg.onlineSide.type)||'Shawn',guest:sanitizeGuestName(cfg.onlineSide.guest),picked:false};
     }catch(e){}
 }
 
@@ -2680,13 +2744,19 @@ function cocoTakeTurn(){
 // ===================== v33: networking (PeerJS) =====================
 const NET={
     mode:'local',peer:null,conn:null,myIndex:-1,myName:'Shawn',code:'',connected:false,quiet:false,
+    guestName:null,oppName:null, // v42: joiner's declared name (host side) / opponent's announced name
     open(){return !!(this.conn&&this.conn.open)},
     send(m){if(this.open()){try{this.conn.send(m)}catch(e){}}},
     setPill(icon,cls,label){const p=document.getElementById('net-pill');if(!p)return;
         if(!icon){p.classList.add('hidden');return}
         p.className='net-pill '+(cls||'');p.innerText=icon;
         p.title=label||'';p.setAttribute('aria-label',label||'');},
-    sendStart(){this.send({type:'start',config:CONFIG,state:game.serialize(),customs:localCustomWords})},
+    sendStart(){
+        // v42: tell the joiner their FINAL (possibly deduped) identity
+        let gn=null;
+        if(game&&this.myIndex>=0&&game.players[1-this.myIndex])gn=game.players[1-this.myIndex].name;
+        this.send({type:'start',config:CONFIG,state:game.serialize(),customs:localCustomWords,guestName:gn});
+    },
     cleanup(){if(this.peer){try{this.peer.destroy()}catch(e){}}this.peer=null;this.conn=null;this.connected=false;}
 };
 function genCode(){const a='ABCDEFGHJKMNPQRSTUVWXYZ23456789';let c='';for(let i=0;i<4;i++)c+=a[Math.floor(Math.random()*a.length)];return c}
@@ -2699,14 +2769,43 @@ function setMode(m){
     document.getElementById('online-host-panel').classList.toggle('hidden',m!=='host');
     document.getElementById('online-join-panel').classList.toggle('hidden',m!=='join');
     const sb=document.querySelector('#modal-start .btn-start');
+    if(m==='host'||m==='join'){NET.myName=onlineMyName();renderOnlineSide()}
     if(m==='join'){sb.innerText='⏳ Waiting for host to start…';sb.disabled=true}
     else{sb.innerText='⚡ Start Game';sb.disabled=false;if(m==='host')hostGame()}
 }
-function pickSide(n){
-    NET.myName=n;
-    document.getElementById('side-Keith').classList.toggle('active',n==='Keith');
-    document.getElementById('side-Shawn').classList.toggle('active',n==='Shawn');
-    if(NET.mode==='host')NET.send({type:'side',host:n});
+// v42: online identity — Keith / Shawn / Coco's Guest, BOTH ends pick freely.
+let ONLINE_SIDE={type:'Shawn',guest:"Coco's Guest",picked:false};
+function onlineMyName(){return ONLINE_SIDE.type==='Guest'?ONLINE_SIDE.guest:ONLINE_SIDE.type}
+function validPlayerName(n){n=String(n||'');return (n==='Keith'||n==='Shawn')?n:sanitizeGuestName(n)}
+function announceSide(){
+    NET.myName=onlineMyName();
+    if(NET.mode==='host')NET.send({type:'side',host:NET.myName});
+    else if(NET.mode==='join')NET.send({type:'side',guest:NET.myName});
+}
+function pickSide(t){
+    // accepts a type ('Keith'/'Shawn'/'Guest') or a saved NAME (resume path)
+    if(t==='Keith'||t==='Shawn'||t==='Guest')ONLINE_SIDE.type=t;
+    else{ONLINE_SIDE.type='Guest';ONLINE_SIDE.guest=sanitizeGuestName(t)}
+    ONLINE_SIDE.picked=true;
+    renderOnlineSide();saveSettings();announceSide();
+}
+function onlineGuestChanged(input){
+    ONLINE_SIDE.guest=sanitizeGuestName(input.value);input.value=ONLINE_SIDE.guest;
+    ONLINE_SIDE.picked=true;
+    renderOnlineSide();saveSettings();announceSide();
+}
+function renderOnlineSide(){
+    ['Keith','Shawn','Guest'].forEach(t=>{
+        const a=document.getElementById('side-'+t);if(a)a.classList.toggle('active',ONLINE_SIDE.type===t);
+        const b=document.getElementById('join-'+t);if(b)b.classList.toggle('active',ONLINE_SIDE.type===t);
+    });
+    const isG=ONLINE_SIDE.type==='Guest';
+    const r1=document.getElementById('online-guest-row');if(r1)r1.classList.toggle('hidden',!isG);
+    const r2=document.getElementById('join-guest-row');if(r2)r2.classList.toggle('hidden',!isG);
+    ['online-guest-name','join-guest-name'].forEach(id=>{
+        const i=document.getElementById(id);
+        if(i&&document.activeElement!==i)i.value=ONLINE_SIDE.guest;
+    });
 }
 // ===================== v41: player seats (local) + solo vs Coco =====================
 let SEATS={1:{type:'Keith',guest:"Coco's Guest"},2:{type:'Shawn',guest:"Coco's Guest"}};
@@ -2813,7 +2912,7 @@ function joinGame(){
     peer.on('open',()=>{
         if(NET.peer!==peer)return;
         const conn=peer.connect('spellcoco-'+code,{reliable:true});NET.conn=conn;
-        conn.on('open',()=>{NET.connected=true;document.getElementById('join-status').innerText='✓ Connected! Waiting for host to start…';NET.setPill('🌐','ok','Online: connected');NET.send({type:'customs',words:localCustomWords});NET.send({type:'stats',stats:STATS})});
+        conn.on('open',()=>{NET.connected=true;document.getElementById('join-status').innerText='✓ Connected! Waiting for host to start…';NET.setPill('🌐','ok','Online: connected');NET.send({type:'customs',words:localCustomWords});NET.send({type:'stats',stats:STATS});announceSide()});
         conn.on('data',m=>guestOnData(m));
         conn.on('close',()=>{NET.connected=false;NET.setPill('⚠','bad','Online: disconnected');if(game&&!game.over)game.showToast('⚠ Host disconnected');document.getElementById('join-status').innerText='⚠ Connection closed'});
     });
@@ -2823,6 +2922,7 @@ function hostOnData(m){
     switch(m.type){
         case 'customs':mergeRemoteWords(m.words);break;
         case 'stats':mergeStats(m.stats);break;
+        case 'side':{if(typeof m.guest==='string'){NET.guestName=validPlayerName(m.guest);NET.oppName=NET.guestName;const el=document.getElementById('host-opp-side');if(el)el.innerText=`Opponent is playing as ${NET.guestName}`;}break}
         case 'wordreq':if(typeof m.w==='string'&&/^[A-Z]{2,15}$/.test(m.w))showWordRequest(m.w);break;
         case 'wordok':addCustomWord(m.w,true);if(game){game.showToast(`📖 ${oppName()} approved "${m.w}" — play it!`);game.updateUI()}break;
         case 'wordno':if(game)game.showToast(`🙀 ${oppName()} vetoed "${m.w}"`);break;
@@ -2834,7 +2934,18 @@ function hostOnData(m){
 function guestOnData(m){
     if(!m||typeof m!=='object')return;
     switch(m.type){
-        case 'side':{NET.myName=m.host==='Keith'?'Shawn':'Keith';const el=document.getElementById('join-side');if(el)el.innerText=NET.myName;break}
+        case 'side':{
+            const hn=validPlayerName(m.host);
+            NET.oppName=hn;
+            const el=document.getElementById('join-opp-side');if(el)el.innerText=`Host is playing as ${hn}`;
+            if(!ONLINE_SIDE.picked){
+                // auto-complement the classic pair until the joiner picks explicitly
+                if(hn==='Shawn')ONLINE_SIDE.type='Keith';
+                else if(hn==='Keith')ONLINE_SIDE.type='Shawn';
+                renderOnlineSide();
+            }
+            announceSide();
+            break}
         case 'customs':mergeRemoteWords(m.words);break;
         case 'stats':mergeStats(m.stats);break;
         case 'wordreq':if(typeof m.w==='string'&&/^[A-Z]{2,15}$/.test(m.w))showWordRequest(m.w);break;
@@ -2850,6 +2961,7 @@ function guestOnData(m){
 }
 function guestStart(m){
     CONFIG=normalizeConfig(m.config);
+    if(typeof m.guestName==='string'&&m.guestName)NET.myName=validPlayerName(m.guestName); // v42: final (deduped) identity
     mergeRemoteWords(m.customs);
     soundEnabled=document.getElementById('sound-toggle').checked;
     document.getElementById('btn-mute').innerText=soundEnabled?'🔊':'🔇';
@@ -3168,7 +3280,11 @@ function addWordFromGame(){
     if(NET.mode!=='local'&&NET.open()){proposeWord(r.word);return}
     if(addCustomWord(r.word)){game.showToast(`📖 ${r.word} added to dictionary!`);game.updateUI()}
 }
-function oppName(){return NET.myName==='Keith'?'Shawn':'Keith'}
+function oppName(){
+    // v42: the real opponent, not an assumed Keith/Shawn
+    if(game&&NET.myIndex>=0&&game.players&&game.players[1-NET.myIndex])return game.players[1-NET.myIndex].name;
+    return NET.oppName||(NET.myName==='Keith'?'Shawn':'Keith');
+}
 function proposeWord(w){
     w=String(w||'').trim().toUpperCase();
     if(!/^[A-Z]{2,15}$/.test(w))return;
@@ -3941,8 +4057,9 @@ function startRematch(){
     lsDel('spellcoco.save');
     let opts=null;
     if(NET.mode==='host'){
-        const other=NET.myName==='Keith'?'Shawn':'Keith';
-        const ns=Math.random()<0.5?[NET.myName,other]:[other,NET.myName];
+        // v42: rematch with the same two names (whatever they are), fresh order
+        const gn=(game&&NET.myIndex>=0&&game.players[1-NET.myIndex])?game.players[1-NET.myIndex].name:(NET.guestName||'Keith');
+        const ns=Math.random()<0.5?[NET.myName,gn]:[gn,NET.myName];
         opts={names:ns};NET.myIndex=ns.indexOf(NET.myName);
     } else if(game){
         // v41: rematch keeps the same seats (incl. Coco / guests), fresh order
@@ -3973,6 +4090,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     updateLWPreview();
     restoreSettings();
     renderSeatPickers();
+    renderOnlineSide();
     renderStatsBox();
     renderCustomWordList();
     checkSavedGame();
@@ -4125,8 +4243,11 @@ function launchGame(){
     CONFIG.solo=null;
     let opts=null;
     if(NET.mode==='host'){
-        const other=NET.myName==='Keith'?'Shawn':'Keith';
-        const ns=Math.random()<0.5?[NET.myName,other]:[other,NET.myName];
+        NET.myName=onlineMyName();
+        // v42: opponent = their declared name; fall back to the classic complement
+        let gn=NET.guestName||(NET.myName==='Keith'?'Shawn':NET.myName==='Shawn'?'Keith':'Keith');
+        if(gn===NET.myName)gn=gn.slice(0,12)+' 2';
+        const ns=Math.random()<0.5?[NET.myName,gn]:[gn,NET.myName];
         opts={names:ns};
         NET.myIndex=ns.indexOf(NET.myName);
     } else if(UI_MODE==='solo'){
