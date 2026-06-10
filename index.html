@@ -11,6 +11,23 @@
 
     <!--
     ================================================================
+    SPELLCOCO v38 — CUSTOM WORD CONSENT + EXPORT
+    ================================================================
+
+    CHANGELOG v37 → v38:
+    - ADD: Online custom-word consent. Adding a word while connected
+      now sends a request; the opponent gets an Allow/Refuse modal
+      with a tap-to-define link so they can rule fairly. On Allow,
+      the word is permanently saved on BOTH devices and instantly
+      playable. On Refuse, the proposer gets a 🙀 veto toast.
+      Local pass-and-play keeps instant adds (you're both right
+      there). No global database exists — each pair of players
+      curates only their own shared dictionary.
+    - ADD: "Export my custom words" button downloads the device's
+      custom list as spellcoco-custom-words.txt (for backups, or to
+      merge into the repo's custom_words.txt).
+
+    ================================================================
     SPELLCOCO v37 — QA: DEFINITION LAYERING + BEST-WORD DEFINITIONS
     ================================================================
 
@@ -2145,6 +2162,7 @@
                     <button class="dict-checker-btn" onclick="addCustomWordFromInput()">＋ Add</button>
                 </div>
                 <div id="custom-word-list" class="custom-word-list"></div>
+                <button class="dict-checker-btn" style="margin-top:9px;font-size:0.8rem;padding:5px 12px;" onclick="exportCustomWords()">⬇ Export my custom words</button>
             </div>
         </div>
         <button class="btn-start" onclick="startGame()">⚡ Start Game</button>
@@ -2194,7 +2212,18 @@
     </div>
 </div>
 
-<div id="modal-define" class="modal hidden" style="z-index:200;">
+<div id="modal-wordreq" class="modal hidden" style="z-index:200;">
+    <div class="modal-content" style="width:400px;">
+        <h3 style="margin-bottom:14px;">📖 Word Request</h3>
+        <p id="wordreq-text" style="font-size:1rem;margin-bottom:18px;"></p>
+        <div style="display:flex;gap:10px;justify-content:center;">
+            <button class="btn-clear" style="max-width:none;flex:1;" onclick="answerWordRequest(false)">🙀 Refuse</button>
+            <button class="btn-submit" style="max-width:none;flex:1;" onclick="answerWordRequest(true)">✓ Allow</button>
+        </div>
+    </div>
+</div>
+
+<div id="modal-define" class="modal hidden" style="z-index:210;">
     <div class="modal-content" style="width:400px;">
         <h3 id="define-word" style="margin-bottom:12px;"></h3>
         <div id="define-body" style="font-size:0.95rem;text-align:left;line-height:1.5;"></div>
@@ -2430,6 +2459,9 @@ function hostOnData(m){
     switch(m.type){
         case 'customs':mergeRemoteWords(m.words);break;
         case 'stats':mergeStats(m.stats);break;
+        case 'wordreq':if(typeof m.w==='string'&&/^[A-Z]{2,15}$/.test(m.w))showWordRequest(m.w);break;
+        case 'wordok':addCustomWord(m.w,true);if(game){game.showToast(`📖 ${oppName()} approved "${m.w}" — play it!`);game.updateUI()}break;
+        case 'wordno':if(game)game.showToast(`🙀 ${oppName()} vetoed "${m.w}"`);break;
         case 'addword':addCustomWord(m.w,true);if(game){game.showToast(`📖 ${m.w} added by opponent`);game.updateUI()}break;
         case 'sel':if(game&&game.turnIndex!==NET.myIndex){NET.quiet=true;game.applySelection(m.ids||[]);NET.quiet=false}break;
         case 'act':if(game)game.handleRemoteAction(m);break;
@@ -2441,6 +2473,9 @@ function guestOnData(m){
         case 'side':{NET.myName=m.host==='Keith'?'Shawn':'Keith';const el=document.getElementById('join-side');if(el)el.innerText=NET.myName;break}
         case 'customs':mergeRemoteWords(m.words);break;
         case 'stats':mergeStats(m.stats);break;
+        case 'wordreq':if(typeof m.w==='string'&&/^[A-Z]{2,15}$/.test(m.w))showWordRequest(m.w);break;
+        case 'wordok':addCustomWord(m.w,true);if(game){game.showToast(`📖 ${oppName()} approved "${m.w}" — play it!`);game.updateUI()}break;
+        case 'wordno':if(game)game.showToast(`🙀 ${oppName()} vetoed "${m.w}"`);break;
         case 'addword':addCustomWord(m.w,true);if(game)game.updateUI();break;
         case 'start':guestStart(m);break;
         case 'state':if(game)game.applyState(m.state);break;
@@ -2705,6 +2740,7 @@ function removeCustomWord(w){
 }
 function addCustomWordFromInput(){
     const i=document.getElementById('new-custom-word');
+    if(NET.mode!=='local'&&NET.open()){proposeWord(i.value);i.value='';return}
     if(addCustomWord(i.value)){
         i.value='';
         const st=document.getElementById('custom-status');
@@ -2714,7 +2750,46 @@ function addCustomWordFromInput(){
 function addWordFromGame(){
     if(!game)return;
     const r=game.calculateCurrentScore();
-    if(r.word&&addCustomWord(r.word)){game.showToast(`📖 ${r.word} added to dictionary!`);game.updateUI()}
+    if(!r.word)return;
+    if(NET.mode!=='local'&&NET.open()){proposeWord(r.word);return}
+    if(addCustomWord(r.word)){game.showToast(`📖 ${r.word} added to dictionary!`);game.updateUI()}
+}
+function oppName(){return NET.myName==='Keith'?'Shawn':'Keith'}
+function proposeWord(w){
+    w=String(w||'').trim().toUpperCase();
+    if(!/^[A-Z]{2,15}$/.test(w))return;
+    if(DICTIONARY.has(w)){if(game)game.showToast(`${w} is already a valid word!`);return}
+    NET.send({type:'wordreq',w:w});
+    const msg=`📨 Asked ${oppName()} to allow "${w}"…`;
+    if(game)game.showToast(msg);
+    else{const st=document.getElementById('custom-status');st.innerText=msg;st.style.color='var(--ink-dim)'}
+}
+function showWordRequest(w){
+    NET.pendingWordReq=w;
+    document.getElementById('wordreq-text').innerHTML=
+        `<strong>${oppName()}</strong> wants to add <strong class="definable" onclick="defineWord('${w}')">${w}</strong> to your shared dictionary.<br><span style="font-size:0.82rem;color:var(--ink-dim);">(tap the word to look it up first)</span>`;
+    document.getElementById('modal-wordreq').classList.remove('hidden');
+}
+function answerWordRequest(ok){
+    document.getElementById('modal-wordreq').classList.add('hidden');
+    const w=NET.pendingWordReq;NET.pendingWordReq=null;
+    if(!w)return;
+    if(ok){
+        addCustomWord(w,true);
+        NET.send({type:'wordok',w:w});
+        if(game){game.showToast(`📖 ${w} added for both of you!`);game.updateUI()}
+    } else {
+        NET.send({type:'wordno',w:w});
+    }
+}
+function exportCustomWords(){
+    const st=document.getElementById('custom-status');
+    if(!localCustomWords.length){st.innerText='No custom words to export yet';st.style.color='var(--ink-dim)';return}
+    const blob=new Blob([localCustomWords.join('\n')+'\n'],{type:'text/plain'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);a.download='spellcoco-custom-words.txt';a.click();
+    URL.revokeObjectURL(a.href);
+    st.innerText=`✓ Exported ${localCustomWords.length} word${localCustomWords.length!==1?'s':''}`;st.style.color='var(--pink-hi)';
 }
 
 window.addEventListener('DOMContentLoaded',()=>{buildTrie(BUILT_IN_WORDS);fetch('dictionary.txt').then(r=>{if(r.ok)return r.text();throw new Error}).then(t=>{processDictionaryText(t);dictFileLoaded=true}).catch(()=>console.log('Built-in dict'));fetch('custom_words.txt').then(r=>{if(r.ok)return r.text();throw new Error}).then(t=>{const ws=t.split(/\r?\n/).map(w=>w.trim().toUpperCase()).filter(w=>w.length>=2);if(ws.length){customWords=ws;const st=document.getElementById('custom-status');st.innerText='\u2713 '+ws.length+' custom words (auto)';st.style.color='var(--pink-hi)';rebuildWithCustom()}}).catch(()=>{});});
