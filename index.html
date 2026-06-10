@@ -30,6 +30,9 @@
       Attack row's anatomy: dashing-paw icon · "{name}'s Zoomies!"
       (current player, mirroring the Attack's "{name}'s") · orange
       cost button ("5🐟 ZOOM!"). No more lone pill button + caption.
+    - CHANGE (v40.2): Online, each device shows only its OWN move:
+      the active player sees Zoomies, the opponent sees Coco Attack.
+      Local pass-and-play still shows both rows (shared screen).
     - ADD: Lounging Coco lies along the action zone's top edge —
       drawn from Shawn's reference photos (white blaze, chest bib,
       mittens, faint stripes, plush build; deliberately saturated
@@ -2077,8 +2080,8 @@
                 <button class="btn-ability" id="btn-time" onclick="game.useAbility('time')">⏱ +15s <span class="cost">1<span class="ticon"></span></span></button>
                 <button class="btn-cancel-swap hidden" id="btn-cancel-swap" onclick="game.cancelSwap()">✕ Cancel Swap</button>
             </div>
-            <div class="coco-hairline"></div>
-            <div class="coco-row">
+            <div class="coco-hairline" id="coco-hairline"></div>
+            <div class="coco-row" id="zoomies-zone">
                 <span class="coco-zoom-slot" id="coco-zoom-slot"></span>
                 <div class="coco-info">
                     <div class="coco-title" id="zoomies-title">Coco Zoomies!</div>
@@ -3615,6 +3618,14 @@ class Game{
         if(lounge)lounge.classList.toggle('side-left',this.turnIndex===0);
         cocoBtn.innerHTML=`${CONFIG.cocoAttackCost}${TICON} GO!`;
         document.getElementById('coco-zone').classList.toggle('coco-timer-active',this.cocoTimerActive);
+        // v40.2: online, each device only shows the move that's YOURS to make —
+        // active player gets Zoomies, opponent gets Coco Attack. Local shows both.
+        const isOnline=NET.mode!=='local';
+        const zoomHidden=isOnline&&!myTurn;
+        const attackHidden=!CONFIG.cocoAttackEnabled||(isOnline&&myTurn);
+        document.getElementById('zoomies-zone').classList.toggle('hidden',zoomHidden);
+        document.getElementById('coco-zone').classList.toggle('hidden',attackHidden);
+        document.getElementById('coco-hairline').classList.toggle('hidden',zoomHidden&&attackHidden);
         this.updateTimerDisplay();
         if(!NET.quiet){
             if(NET.mode==='host')NET.send({type:'state',state:this.serialize()});
