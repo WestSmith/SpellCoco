@@ -11,6 +11,23 @@
 
     <!--
     ================================================================
+    SPELLCOCO v37 — QA: DEFINITION LAYERING + BEST-WORD DEFINITIONS
+    ================================================================
+
+    CHANGELOG v36 → v37:
+    - FIX: Definition popup opened BEHIND the score history modal
+      (both z-index 100, DOM order put history on top). The define
+      modal is now z-index 200 — always above history and recap.
+    - ADD: Best words are now tap-to-define everywhere: the "⭐ best:"
+      entries in player history, the "board best:" labels in the
+      recap, and each player's own Best word in the recap stats.
+      Great learning opportunity (Shawn's words).
+    - VERIFIED: Online Coco Attack gating — the ACTIVE player's
+      device has the button disabled (and guests get a friendly
+      refusal even if forced); only the non-active opponent can
+      fire it, host- and guest-side both validated by the host.
+
+    ================================================================
     SPELLCOCO v36 — ONE COCO, MANY PAWS
     ================================================================
 
@@ -2177,7 +2194,7 @@
     </div>
 </div>
 
-<div id="modal-define" class="modal hidden">
+<div id="modal-define" class="modal hidden" style="z-index:200;">
     <div class="modal-content" style="width:400px;">
         <h3 id="define-word" style="margin-bottom:12px;"></h3>
         <div id="define-body" style="font-size:0.95rem;text-align:left;line-height:1.5;"></div>
@@ -3084,7 +3101,7 @@ class Game{
                     Words: <strong>${p.wordsPlayed.length}</strong> ·
                     Treats earned: <strong>${p.totalGems}</strong> ·
                     Treat bonus: <strong>+${p.gemBonus}</strong>
-                    ${best?` · Best: <strong>${best.word}</strong> (${best.score})`:''}
+                    ${best?` · Best: <strong class="definable" onclick="defineWord('${best.word}')">${best.word}</strong> (${best.score})`:''}
                     ${eff!==null?` · Efficiency: <strong>${eff}%</strong> of best possible`:''}
                 </div>`;
 
@@ -3099,7 +3116,7 @@ class Game{
                     const isBest=best&&w===best;
                     const multLabel=w.wordMult>1?` ×${w.wordMult}W`:'';
                     const longLabel=w.longBonus>0?` +${w.longBonus} long`:'';
-                    const bestLabel=w.best?(w.best.score>w.score?` · <span class="best-word-meta">board best: ${w.best.word} (${w.best.score})</span>`:` · <span class="best-word-meta">🏆 best possible</span>`):'';
+                    const bestLabel=w.best?(w.best.score>w.score?` · <span class="best-word-meta">board best: <span class="definable" onclick="defineWord('${w.best.word}')">${w.best.word}</span> (${w.best.score})</span>`:` · <span class="best-word-meta">🏆 best possible</span>`):'';
                     html+=`<div class="recap-word-row">
                         <div class="recap-word-main">
                             <span class="recap-word-name definable${isBest?' best':''}" onclick="defineWord('${w.word}')">${isBest?'⭐ ':''}${w.word}</span>
@@ -3223,7 +3240,7 @@ class Game{
                     if(w.wordMult>1)extras.push(multLabel[w.wordMult===2?'2W':'3W']);
                     if(w.longBonus>0)extras.push(`+${w.longBonus} long`);
                     if(w.gemCount>0)extras.push(`${w.gemCount}${TICON}`);
-                    if(w.best)extras.push(w.best.score>w.score?`⭐ best: ${w.best.word} (${w.best.score})`:'🏆 best possible');
+                    if(w.best)extras.push(w.best.score>w.score?`⭐ best: <span class="definable" onclick="defineWord('${w.best.word}')">${w.best.word}</span> (${w.best.score})`:'🏆 best possible');
                     html+=`<div class="history-word-row">
                         <div>
                             <div class="history-word definable" onclick="defineWord('${w.word}')">${w.word}</div>
