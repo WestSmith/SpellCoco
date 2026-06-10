@@ -12,6 +12,27 @@
 
     <!--
     ================================================================
+    SPELLCOCO v46 — COCO TAKES HIS TIME (AND STEPS ON THE WRONG TILE)
+    ================================================================
+
+    CHANGELOG v45 → v46 (Shawn: "his round ends in under 10 seconds —
+    too quick to even read the word"):
+    - CHANGE: Coco's turn pacing is now per-mood (COCO_PACE) instead of
+      hardcoded 650/300/750ms. He thinks before his first tile, pads
+      between tiles with jitter, and holds the finished word on screen
+      (~1.5–2.8s) before submitting so you can actually read it.
+      Sleepy is slowest, cozy middling, zoomies still the quick one —
+      just no longer instant.
+    - ADD: Missteps. Per word Coco has a mood-scaled chance (zoomies
+      20% … sleepy 45%) of stepping on a wrong tile — always a real
+      NEIGHBOR of his previous tile, so it reads as a paw slip, not a
+      glitch. He pauses ~0.8–1.4s, deselects it (real deselect sound),
+      and continues with the right tile. Long words (5+) can get a
+      rare second slip. The chosen word and final score are unchanged
+      — missteps are theater, not handicap.
+    - Net effect: a 5-letter cozy word now takes ~7–10s instead of ~4.
+
+    ================================================================
     SPELLCOCO v45 — A CALMER FRONT DOOR + A DICTIONARY THAT KNOWS "OK"
     ================================================================
 
@@ -2848,24 +2869,65 @@ function cocoChooseWord(cands,moodKey){
     for(const w of pool){const dd=Math.abs(w.score-target);if(dd<d){d=dd;pick=w}}
     return pick;
 }
+// v46: Coco plays like a cat with paws, not a solver with a wire to the
+// board. He pauses to think, pads from tile to tile at mood speed, and
+// sometimes steps on the WRONG tile — squints at it, backs off, and takes
+// the right one. Pace is per-mood: zoomies is still the quick one, just
+// readable now. The submit pause is deliberately long enough to read the
+// finished word before it scores (Shawn's request, 2026-06-10).
+const COCO_PACE={
+    sleepy: {think:[2600,4400],tile:[760,1240],submit:[2000,2800],oops:0.45},
+    cozy:   {think:[1700,3000],tile:[560,950], submit:[1600,2300],oops:0.35},
+    zoomies:{think:[850,1500], tile:[320,540], submit:[1100,1600],oops:0.20}
+};
+function cocoMs(r){return Math.round(r[0]+Math.random()*(r[1]-r[0]))}
 function cocoTakeTurn(){
     if(!game||game.over||!game.currentPlayer.isCoco)return;
     if(!trieBuilt){setTimeout(cocoTakeTurn,800);return}
+    const moodKey=(CONFIG.solo&&CONFIG.solo.mood)||'cozy';
     const cands=findWordCandidates(game.tiles);
-    const choice=cocoChooseWord(cands,(CONFIG.solo&&CONFIG.solo.mood)||'cozy');
+    const choice=cocoChooseWord(cands,moodKey);
     if(!choice){
         game.showToast('😿 Coco found no word — he curls up and passes');
         setTimeout(()=>{if(game&&!game.over)game.endTurn()},1400);
         return;
     }
+    const pace=COCO_PACE[moodKey]||COCO_PACE.cozy;
+    // Plan 0–2 missteps up front. Never on the first tile: a misstep is a
+    // paw slipping onto a NEIGHBOR of the previous tile, so it needs a
+    // previous tile to slip from.
+    const oops=new Set();
+    if(choice.ids.length>=3&&Math.random()<pace.oops)
+        oops.add(1+Math.floor(Math.random()*(choice.ids.length-1)));
+    if(choice.ids.length>=5&&Math.random()<pace.oops*0.4)
+        oops.add(1+Math.floor(Math.random()*(choice.ids.length-1)));
+    const alive=()=>game&&!game.over&&game.currentPlayer.isCoco;
     game.clearSelection();
     let i=0;
     const step=()=>{
-        if(!game||game.over||!game.currentPlayer.isCoco)return;
-        if(i<choice.ids.length){game.selectTile(game.tiles[choice.ids[i]]);i++;setTimeout(step,300)}
-        else setTimeout(()=>{if(game&&!game.over&&game.currentPlayer.isCoco)game.submitWord()},750);
+        if(!alive())return;
+        if(i>=choice.ids.length){
+            setTimeout(()=>{if(alive())game.submitWord()},cocoMs(pace.submit));
+            return;
+        }
+        if(i>0&&oops.has(i)){
+            oops.delete(i);
+            const wrongs=NEIGHBORS[choice.ids[i-1]].filter(n=>n!==choice.ids[i]&&!game.selection.includes(n));
+            if(wrongs.length){
+                game.selectTile(game.tiles[wrongs[Math.floor(Math.random()*wrongs.length)]]);
+                setTimeout(()=>{ // …Coco squints at the word. That's not right.
+                    if(!alive())return;
+                    const id=game.selection.pop();
+                    if(id!==undefined){game.tiles[id].isSelected=false;SFX.tileDeselect();game.updateUI()}
+                    setTimeout(step,cocoMs(pace.tile)); // resume with the right tile
+                },cocoMs([800,1400]));
+                return;
+            }
+        }
+        game.selectTile(game.tiles[choice.ids[i]]);i++;
+        setTimeout(step,cocoMs(pace.tile));
     };
-    setTimeout(step,650);
+    setTimeout(step,cocoMs(pace.think));
 }
 
 // ===================== v33: networking (PeerJS) =====================
