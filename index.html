@@ -26,6 +26,10 @@
       the neutral ability trio (Shuffle/Swap/Hint), then a hairline,
       then Coco's section — 🌪 Zoomies (current player) and Coco
       Attack (opponent). Orange = "Coco does something."
+    - CHANGE (v40.1): Coco's two rows are twins now — Zoomies got the
+      Attack row's anatomy: dashing-paw icon · "{name}'s Zoomies!"
+      (current player, mirroring the Attack's "{name}'s") · orange
+      cost button ("5🐟 ZOOM!"). No more lone pill button + caption.
     - ADD: Lounging Coco lies along the action zone's top edge —
       drawn from Shawn's reference photos (white blaze, chest bib,
       mittens, faint stripes, plush build; deliberately saturated
@@ -1100,10 +1104,9 @@
             background:rgba(255,61,146,0.12);
             box-shadow:0 3px 0 var(--pink-shadow), 0 0 20px var(--pink-glow);
         }
-        /* v39: Zoomies — orange means "Coco does something" (Attack + Zoomies) */
-        .btn-ability.btn-zoomies{border-color:var(--coco-deep);color:var(--coco)}
-        .btn-ability.btn-zoomies:hover{background:rgba(255,142,60,0.12);border-color:var(--coco);color:var(--ink)}
-        .btn-ability.btn-zoomies:disabled{border-color:var(--bg-border);color:var(--ink-faint)}
+        /* v40.1: Zoomies row mirrors the Attack row — dashing-paw icon slot */
+        .coco-zoom-slot{width:52px;height:38px;flex-shrink:0;line-height:0}
+        .coco-zoom-slot svg{width:100%;height:100%}
         .btn-cancel-swap{
             background:var(--bg-panel);
             color:var(--red);
@@ -2076,14 +2079,18 @@
             </div>
             <div class="coco-hairline"></div>
             <div class="coco-row">
-                <button class="btn-ability btn-zoomies" id="btn-zoomies" onclick="game.useAbility('zoomies')">🌪 Zoomies <span class="cost" id="zoomies-cost-label">5<span class="ticon"></span></span></button>
-                <div class="coco-row-desc">Coco rerolls every letter — your move</div>
+                <span class="coco-zoom-slot" id="coco-zoom-slot"></span>
+                <div class="coco-info">
+                    <div class="coco-title" id="zoomies-title">Coco Zoomies!</div>
+                    <div class="coco-desc">Reroll every letter on the board</div>
+                </div>
+                <button class="btn-coco" id="btn-zoomies" onclick="game.useAbility('zoomies')">5<span class="ticon"></span> ZOOM!</button>
             </div>
             <div class="coco-row" id="coco-zone">
                 <span class="coco-paw-slot" id="coco-paw-slot"></span>
                 <div class="coco-info">
-                    <div class="coco-title">Coco Attack!</div>
-                    <div class="coco-desc">Force opponent's timer: 35s</div>
+                    <div class="coco-title" id="coco-attack-title">Coco Attack!</div>
+                    <div class="coco-desc" id="coco-attack-desc">Force opponent's timer: 35s</div>
                 </div>
                 <button class="btn-coco" id="btn-coco" onclick="game.cocoAttack()">4<span class="ticon"></span> GO!</button>
             </div>
@@ -2842,6 +2849,20 @@ const COCO_LOUNGE=`<svg viewBox="0 0 240 100" xmlns="http://www.w3.org/2000/svg"
 </svg>`;
 const _loungeSlot=document.getElementById('coco-lounge');
 if(_loungeSlot)_loungeSlot.innerHTML=COCO_LOUNGE;
+// v40.1: Zoomies icon — a paw in a hurry
+const COCO_ZOOM=`<svg viewBox="0 0 36 24" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Zoomies — a dashing paw">
+<path d="M2 7 H11" stroke="#f49b3e" stroke-width="2.6" stroke-linecap="round" opacity="0.9"/>
+<path d="M0.5 12.5 H8.5" stroke="#f49b3e" stroke-width="2.6" stroke-linecap="round" opacity="0.6"/>
+<path d="M3 18 H12" stroke="#f49b3e" stroke-width="2.6" stroke-linecap="round" opacity="0.8"/>
+<g transform="rotate(12 26 12)">
+<ellipse cx="20.5" cy="7" rx="2.1" ry="2.7" fill="#f49b3e" stroke="#b05f0a" stroke-width="0.9"/>
+<ellipse cx="26" cy="5.4" rx="2.1" ry="2.7" fill="#f49b3e" stroke="#b05f0a" stroke-width="0.9"/>
+<ellipse cx="31.5" cy="7" rx="2.1" ry="2.7" fill="#f49b3e" stroke="#b05f0a" stroke-width="0.9"/>
+<path d="M26 9.8c-3.9 0-6.6 2.7-6.6 5.6 0 2 1.7 3.3 3.4 3.3 1.2 0 2.1-.5 3.2-.5s2 .5 3.2.5c1.7 0 3.4-1.3 3.4-3.3 0-2.9-2.7-5.6-6.6-5.6z" fill="#f49b3e" stroke="#b05f0a" stroke-width="0.9"/>
+</g>
+</svg>`;
+const _zoomSlot=document.getElementById('coco-zoom-slot');
+if(_zoomSlot)_zoomSlot.innerHTML=COCO_ZOOM;
 
 
 // Sound
@@ -3585,8 +3606,10 @@ class Game{
         timeBtn.disabled=!myTurn||this.pendingSwap||p.gems<CONFIG.costs.time;
         const cocoBtn=document.getElementById('btn-coco');const np=this.nonActivePlayer;
         cocoBtn.disabled=np.gems<CONFIG.cocoAttackCost||this.cocoTimerActive||(NET.mode!=='local'&&this.turnIndex===NET.myIndex);
-        document.querySelector('.coco-title').innerText=`${np.name}'s Coco Attack!`;
-        document.querySelector('.coco-desc').innerText=`Force opponent's timer: ${CONFIG.cocoAttackTime}s`;
+        document.getElementById('zoomies-title').innerText=`${p.name}'s Zoomies!`;
+        document.getElementById('btn-zoomies').innerHTML=`${CONFIG.costs.zoomies||5}${TICON} ZOOM!`;
+        document.getElementById('coco-attack-title').innerText=`${np.name}'s Coco Attack!`;
+        document.getElementById('coco-attack-desc').innerText=`Force opponent's timer: ${CONFIG.cocoAttackTime}s`;
         // v40: Coco lounges on the active player's side of the action zone
         const lounge=document.getElementById('coco-lounge');
         if(lounge)lounge.classList.toggle('side-left',this.turnIndex===0);
@@ -3805,7 +3828,6 @@ function launchGame(){
 
     const zc=parseInt(document.getElementById('cfg-zoomies-cost').value)||5;
     CONFIG.costs.zoomies=Math.max(1,Math.min(10,zc));
-    document.getElementById('zoomies-cost-label').innerHTML=CONFIG.costs.zoomies+'<span class="ticon"></span>';
 
     document.querySelectorAll('.mult-toggle').forEach(label=>{
         const mult=label.dataset.mult;
