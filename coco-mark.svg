@@ -1,0 +1,26 @@
+<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Coco the cat">
+<polygon points="24,48 16,16 48,33" fill="#f49b3e" stroke="#b05f0a" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="96,48 104,16 72,33" fill="#f49b3e" stroke="#b05f0a" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="27,43 22,22 42,34" fill="#ffb9c4"/>
+<polygon points="93,43 98,22 78,34" fill="#ffb9c4"/>
+<ellipse cx="60" cy="68" rx="40" ry="36" fill="#f49b3e" stroke="#b05f0a" stroke-width="2.5"/>
+<path d="M38,38 Q44,30 50,37" stroke="#c96f10" stroke-width="3" fill="none" stroke-linecap="round"/>
+<path d="M70,37 Q76,30 82,38" stroke="#c96f10" stroke-width="3" fill="none" stroke-linecap="round"/>
+<path d="M54,33 Q60,28 66,33" stroke="#c96f10" stroke-width="3" fill="none" stroke-linecap="round"/>
+<path d="M60,44 Q53,62 50,74 Q60,82 70,74 Q67,62 60,44 Z" fill="#fff6ea"/>
+<ellipse cx="60" cy="84" rx="22" ry="15" fill="#fff6ea"/>
+<ellipse cx="42" cy="62" rx="8.5" ry="9.5" fill="#ffffff"/>
+<ellipse cx="78" cy="62" rx="8.5" ry="9.5" fill="#ffffff"/>
+<ellipse cx="43" cy="62.5" rx="5.8" ry="7" fill="#4caf50"/>
+<ellipse cx="77" cy="62.5" rx="5.8" ry="7" fill="#4caf50"/>
+<ellipse cx="43" cy="62" rx="2.4" ry="4.8" fill="#143d16"/>
+<ellipse cx="77" cy="62" rx="2.4" ry="4.8" fill="#143d16"/>
+<circle cx="40.5" cy="59" r="1.8" fill="#ffffff"/>
+<circle cx="74.5" cy="59" r="1.8" fill="#ffffff"/>
+<path d="M55,75 Q60,71.5 65,75 Q63,80 60,80 Q57,80 55,75 Z" fill="#e98a8a"/>
+<path d="M60,80 L60,85 M60,85 Q54,90 49,86 M60,85 Q66,90 71,86" stroke="#c96f10" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+<line x1="14" y1="72" x2="36" y2="76" stroke="#f7e9d8" stroke-width="1.8" stroke-linecap="round"/>
+<line x1="14" y1="82" x2="36" y2="82" stroke="#f7e9d8" stroke-width="1.8" stroke-linecap="round"/>
+<line x1="84" y1="76" x2="106" y2="72" stroke="#f7e9d8" stroke-width="1.8" stroke-linecap="round"/>
+<line x1="84" y1="82" x2="106" y2="82" stroke="#f7e9d8" stroke-width="1.8" stroke-linecap="round"/>
+</svg>
