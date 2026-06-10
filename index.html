@@ -4,8 +4,34 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
     <title>SpellCoco</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1a1549">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <link rel="icon" type="image/png" href="icon-192.png">
 
     <!--
+    ================================================================
+    SPELLCOCO v35 — REMATCH, HINTS & PALETTE 2.0
+    ================================================================
+
+    CHANGELOG v34 → v35:
+    - ADD: Rematch button on game over (local instant; online host
+      re-deals for both; guest sends a rematch request).
+    - ADD: Hint ability (💡, configurable treat cost, default 2):
+      first two letters + length of the board's best word. Online:
+      host validates and deducts; hint shown only to the asker.
+    - ADD: Efficiency % in recap (score vs best-possible words).
+    - ADD: Tap-to-define words (dictionaryapi.dev) in history, recap,
+      and the dictionary checker.
+    - ADD: Online resume — host's unfinished online games autosave
+      and resume when the opponent rejoins a fresh room.
+    - ADD: Synced win tracker — devices merge all-time records on
+      connect.
+    - ADD: PWA manifest + Coco icon (installable on phones).
+    - DESIGN (Palette 2.0): one ginger ramp everywhere; warm amber
+      nebula anchors Coco in the sky; tile faces warmed to his cream
+      chest. 60-30-10: night sky / bi triad / Coco accents.
+
     ================================================================
     SPELLCOCO v34 — COCO BLEND  (ginger accents on the bi-flag base)
     ================================================================
@@ -284,8 +310,8 @@
             --red-deep:#a82020;
 
             /* Tile — cream paper glowing on the cosmos */
-            --tile-face:#f5ede4;
-            --tile-face-alt:#e2d6c5;
+            --tile-face:#fbf2e2;
+            --tile-face-alt:#eee0c8;
             --tile-ink:#0f0b2d;
             --tile-shadow:#4d2577;
 
@@ -375,6 +401,12 @@
             width:30vw;height:30vw;
             background:radial-gradient(ellipse,rgba(180,105,224,0.14),transparent 70%);
             animation-delay:-14s;animation-duration:26s;
+        }
+        .nebula-4{
+            bottom:-12%;left:6%;
+            width:38vw;height:38vw;
+            background:radial-gradient(ellipse,rgba(255,168,69,0.10),transparent 70%);
+            animation-delay:-20s;animation-duration:36s;
         }
         @keyframes nebulaDrift{
             0%{transform:translate(0,0) scale(1)}
@@ -1809,10 +1841,19 @@
             vertical-align:-0.06em;
         }
         .paw{
-            background:transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cellipse cx='6.5' cy='7' rx='2.1' ry='2.7' fill='%23ff9d3c'/%3E%3Cellipse cx='12' cy='5.4' rx='2.1' ry='2.7' fill='%23ff9d3c'/%3E%3Cellipse cx='17.5' cy='7' rx='2.1' ry='2.7' fill='%23ff9d3c'/%3E%3Cpath d='M12 9.8c-3.9 0-6.6 2.7-6.6 5.6 0 2 1.7 3.3 3.4 3.3 1.2 0 2.1-.5 3.2-.5s2 .5 3.2.5c1.7 0 3.4-1.3 3.4-3.3 0-2.9-2.7-5.6-6.6-5.6z' fill='%23ff9d3c'/%3E%3C/svg%3E") center/contain no-repeat !important;
+            background:transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cellipse cx='6.5' cy='7' rx='2.1' ry='2.7' fill='%23ffa845'/%3E%3Cellipse cx='12' cy='5.4' rx='2.1' ry='2.7' fill='%23ffa845'/%3E%3Cellipse cx='17.5' cy='7' rx='2.1' ry='2.7' fill='%23ffa845'/%3E%3Cpath d='M12 9.8c-3.9 0-6.6 2.7-6.6 5.6 0 2 1.7 3.3 3.4 3.3 1.2 0 2.1-.5 3.2-.5s2 .5 3.2.5c1.7 0 3.4-1.3 3.4-3.3 0-2.9-2.7-5.6-6.6-5.6z' fill='%23ffa845'/%3E%3C/svg%3E") center/contain no-repeat !important;
             border-radius:0 !important;
             box-shadow:none !important;
         }
+        .logo-row{display:flex;align-items:center;gap:9px;min-width:0;}
+        .coco-mark-slot{display:inline-block;line-height:0;flex-shrink:0;}
+        .coco-mark-slot svg{width:100%;height:100%;}
+        .mark-sm{width:38px;height:38px;}
+        .mark-md{display:block;width:48px;height:48px;margin:0 auto 6px;}
+        .mark-lg{display:block;width:66px;height:66px;margin:0 auto 8px;}
+        @media(max-width:839px){.mark-sm{width:30px;height:30px;}}
+        .definable{cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px;}
+        .definable:hover{opacity:0.8;}
         /* v34: keep modals inside the viewport at high zoom / narrow widths */
         .modal-content{max-width:min(92vw,560px);}
         .best-word-meta{color:var(--gold-hi);}
@@ -1839,11 +1880,12 @@
 <div class="nebula nebula-1"></div>
 <div class="nebula nebula-2"></div>
 <div class="nebula nebula-3"></div>
+<div class="nebula nebula-4"></div>
 
 <div id="app">
     <div class="side-panel">
         <header>
-            <div><div class="logo">SpellCoco<small>Word Duel · 🐾</small></div></div>
+            <div class="logo-row"><span class="coco-mark-slot mark-sm"></span><div class="logo">SpellCoco<small>Word Duel · 🐾</small></div></div>
             <div class="header-right">
                 <div class="sound-controls">
                     <button class="btn-icon" id="btn-mute" onclick="toggleMute()" title="Toggle Sound">🔇</button>
@@ -1870,6 +1912,7 @@
             <div class="ability-bar">
                 <button class="btn-ability" id="btn-shuffle" onclick="game.useAbility('shuffle')">🔀 Shuffle <span class="cost">1<span class="ticon"></span></span></button>
                 <button class="btn-ability" id="btn-swap" onclick="game.useAbility('swap')">🔄 Swap <span class="cost">3<span class="ticon"></span></span></button>
+                <button class="btn-ability" id="btn-hint" onclick="game.useAbility('hint')">💡 Hint <span class="cost" id="hint-cost-label">2<span class="ticon"></span></span></button>
                 <button class="btn-ability" id="btn-time" onclick="game.useAbility('time')">⏱ +15s <span class="cost">1<span class="ticon"></span></span></button>
                 <button class="btn-cancel-swap hidden" id="btn-cancel-swap" onclick="game.cancelSwap()">✕ Cancel Swap</button>
             </div>
@@ -1939,6 +1982,7 @@
 
 <div id="modal-start" class="modal">
     <div class="modal-content" style="width:460px;">
+        <span class="coco-mark-slot mark-lg"></span>
         <h1>✦ SpellCoco ✦</h1>
         <p style="color:var(--ink-soft);margin-bottom:2px;font-size:1rem;font-weight:700;">Keith vs Shawn</p>
         <p class="coco-tribute">in loving memory of Coco, the very best cat 🐾</p>
@@ -2015,6 +2059,10 @@
             <div class="setting-row">
                 <span>Min Treats on Board</span>
                 <input type="number" class="setting-num" id="cfg-board-gems" value="9" min="1" max="25">
+            </div>
+            <div class="setting-row">
+                <span>Hint Cost</span>
+                <input type="number" class="setting-num" id="cfg-hint-cost" value="2" min="1" max="10">
             </div>
             <div class="setting-hint">Max 25 (treats can share tiles with multipliers)</div>
         </div>
@@ -2103,10 +2151,12 @@
 
 <div id="modal-gameover" class="modal hidden">
     <div class="modal-content" style="width:520px;">
+        <span class="coco-mark-slot mark-md"></span>
         <h1>🏆 Game Over!</h1>
         <div class="winner-banner" id="winner-banner"></div>
         <div class="recap-section" id="recap-section"></div>
-        <button class="btn-start" onclick="location.reload()">🔄 Play Again</button>
+        <button class="btn-start" id="btn-rematch" onclick="startRematch()">🔄 Rematch</button>
+        <button class="btn-clear" style="max-width:none;width:100%;margin-top:10px;" onclick="location.reload()">⚙ Back to Setup</button>
     </div>
 </div>
 
@@ -2130,6 +2180,14 @@
             <button class="btn-clear" style="max-width:none;flex:1;" onclick="closeShuffleConfirm()">Cancel</button>
             <button class="btn-submit" style="max-width:none;flex:1;" onclick="confirmShuffle()">🔀 Shuffle</button>
         </div>
+    </div>
+</div>
+
+<div id="modal-define" class="modal hidden">
+    <div class="modal-content" style="width:400px;">
+        <h3 id="define-word" style="margin-bottom:12px;"></h3>
+        <div id="define-body" style="font-size:0.95rem;text-align:left;line-height:1.5;"></div>
+        <button class="btn-clear" style="max-width:none;width:100%;margin-top:16px;" onclick="document.getElementById('modal-define').classList.add('hidden')">✕ Close</button>
     </div>
 </div>
 
@@ -2159,7 +2217,7 @@ let CONFIG = {
     longWordStack:false,
     boardGemCount:9,
     cocoAttackTime:35, cocoAttackCost:4, cocoAttackEnabled:true,
-    costs:{shuffle:1, swap:3, time:1},
+    costs:{shuffle:1, swap:3, time:1, hint:2},
     enabledMults:{DL:true, TL:true, '2W':true, '3W':true}
 };
 
@@ -2207,6 +2265,7 @@ function saveSettings(){
         cocoEnabled:document.getElementById('cfg-coco-enabled').checked,
         cocoCost:document.getElementById('cfg-coco-cost').value,
         boardGems:document.getElementById('cfg-board-gems').value,
+        hintCost:document.getElementById('cfg-hint-cost').value,
         mults:{},lwPreset:selectedLWPreset,customTiers:customTiers,
         lwStack:document.getElementById('cfg-lw-stack').checked};
     document.querySelectorAll('.mult-toggle').forEach(l=>cfg.mults[l.dataset.mult]=l.querySelector('input').checked);
@@ -2221,6 +2280,7 @@ function restoreSettings(){
         document.getElementById('cfg-coco-enabled').dispatchEvent(new Event('change'));
         if(cfg.cocoCost!==undefined)document.getElementById('cfg-coco-cost').value=cfg.cocoCost;
         if(cfg.boardGems!==undefined)document.getElementById('cfg-board-gems').value=cfg.boardGems;
+        if(cfg.hintCost!==undefined)document.getElementById('cfg-hint-cost').value=cfg.hintCost;
         document.querySelectorAll('.mult-toggle').forEach(l=>{
             const cb=l.querySelector('input');
             if(cfg.mults&&cfg.mults[l.dataset.mult]!==undefined){cb.checked=cfg.mults[l.dataset.mult];l.classList.toggle('active',cb.checked)}
@@ -2286,6 +2346,15 @@ function pickSide(n){
     if(NET.mode==='host')NET.send({type:'side',host:n});
 }
 function mergeRemoteWords(ws){(ws||[]).forEach(w=>{if(typeof w==='string'&&/^[A-Z]{2,15}$/.test(w)){DICTIONARY.add(w);if(trieBuilt)trie.insert(w)}})}
+function mergeStats(r){
+    if(!r||typeof r!=='object')return;
+    let ch=false;
+    ['games','draws'].forEach(k=>{if((r[k]||0)>(STATS[k]||0)){STATS[k]=r[k];ch=true}});
+    ['Keith','Shawn'].forEach(n=>{const rv=(r.wins&&r.wins[n])||0;if(rv>(STATS.wins[n]||0)){STATS.wins[n]=rv;ch=true}});
+    if(r.bestWord&&r.bestWord.word&&(!STATS.bestWord||r.bestWord.score>STATS.bestWord.score)){STATS.bestWord=r.bestWord;ch=true}
+    if(r.longestWord&&r.longestWord.word&&(!STATS.longestWord||r.longestWord.word.length>STATS.longestWord.word.length)){STATS.longestWord=r.longestWord;ch=true}
+    if(ch){lsSet('spellcoco.stats',STATS);renderStatsBox()}
+}
 function hostGame(){
     if(typeof Peer==='undefined'){document.getElementById('host-status').innerText='⚠ Online library failed to load — check internet';return}
     const code=genCode();NET.code=code;
@@ -2307,7 +2376,19 @@ function hostGame(){
             NET.setPill('🌐','ok','Online: connected');
             NET.send({type:'side',host:NET.myName});
             NET.send({type:'customs',words:localCustomWords});
+            NET.send({type:'stats',stats:STATS});
             if(game&&!game.over)NET.sendStart();
+            else if(NET.pendingResume){
+                const sv=NET.pendingResume;NET.pendingResume=null;
+                CONFIG=normalizeConfig(sv.config);
+                populateLwRef();
+                document.getElementById('modal-start').classList.add('hidden');
+                document.getElementById('coco-zone').classList.toggle('hidden',!CONFIG.cocoAttackEnabled);
+                game=Game.fromState(sv.state);
+                NET.myIndex=game.players.findIndex(pl=>pl.name===NET.myName);
+                NET.sendStart();
+                game.showRoundOverlay(`Round ${game.round}`,`Resumed — ${game.currentPlayer.name}'s turn`);
+            }
         });
         conn.on('data',m=>hostOnData(m));
         conn.on('close',()=>{
@@ -2328,7 +2409,7 @@ function joinGame(){
     peer.on('open',()=>{
         if(NET.peer!==peer)return;
         const conn=peer.connect('spellcoco-'+code,{reliable:true});NET.conn=conn;
-        conn.on('open',()=>{NET.connected=true;document.getElementById('join-status').innerText='✓ Connected! Waiting for host to start…';NET.setPill('🌐','ok','Online: connected');NET.send({type:'customs',words:localCustomWords})});
+        conn.on('open',()=>{NET.connected=true;document.getElementById('join-status').innerText='✓ Connected! Waiting for host to start…';NET.setPill('🌐','ok','Online: connected');NET.send({type:'customs',words:localCustomWords});NET.send({type:'stats',stats:STATS})});
         conn.on('data',m=>guestOnData(m));
         conn.on('close',()=>{NET.connected=false;NET.setPill('⚠','bad','Online: disconnected');if(game&&!game.over)game.showToast('⚠ Host disconnected');document.getElementById('join-status').innerText='⚠ Connection closed'});
     });
@@ -2337,9 +2418,10 @@ function hostOnData(m){
     if(!m||typeof m!=='object')return;
     switch(m.type){
         case 'customs':mergeRemoteWords(m.words);break;
+        case 'stats':mergeStats(m.stats);break;
         case 'addword':addCustomWord(m.w,true);if(game){game.showToast(`📖 ${m.w} added by opponent`);game.updateUI()}break;
         case 'sel':if(game&&game.turnIndex!==NET.myIndex){NET.quiet=true;game.applySelection(m.ids||[]);NET.quiet=false}break;
-        case 'act':if(game&&!game.over)game.handleRemoteAction(m);break;
+        case 'act':if(game)game.handleRemoteAction(m);break;
     }
 }
 function guestOnData(m){
@@ -2347,6 +2429,7 @@ function guestOnData(m){
     switch(m.type){
         case 'side':{NET.myName=m.host==='Keith'?'Shawn':'Keith';const el=document.getElementById('join-side');if(el)el.innerText=NET.myName;break}
         case 'customs':mergeRemoteWords(m.words);break;
+        case 'stats':mergeStats(m.stats);break;
         case 'addword':addCustomWord(m.w,true);if(game)game.updateUI();break;
         case 'start':guestStart(m);break;
         case 'state':if(game)game.applyState(m.state);break;
@@ -2356,7 +2439,7 @@ function guestOnData(m){
     }
 }
 function guestStart(m){
-    CONFIG=m.config;
+    CONFIG=normalizeConfig(m.config);
     mergeRemoteWords(m.customs);
     soundEnabled=document.getElementById('sound-toggle').checked;
     document.getElementById('btn-mute').innerText=soundEnabled?'🔊':'🔇';
@@ -2372,20 +2455,30 @@ function guestStart(m){
 }
 
 // ===================== v33: resume after refresh =====================
+function normalizeConfig(c){if(c&&c.costs&&!c.costs.hint)c.costs.hint=2;return c}
 function saveGameState(){
-    if(NET.mode!=='local'||!game||game.over)return;
-    lsSet('spellcoco.save',{config:CONFIG,state:game.serialize(),ts:Date.now()});
+    if(NET.mode==='join'||!game||game.over)return;
+    lsSet('spellcoco.save',{config:CONFIG,state:game.serialize(),ts:Date.now(),online:NET.mode==='host',hostName:NET.myName});
 }
 function checkSavedGame(){
     const sv=lsGet('spellcoco.save',null);if(!sv||!sv.state||!sv.state.players)return;
     document.getElementById('resume-banner').classList.remove('hidden');
     document.getElementById('resume-desc').innerHTML=
-        `<strong>⏸ Unfinished game found</strong> — Round ${sv.state.round}/${sv.config.rounds}: `+
-        sv.state.players.map(p=>`${p.name} ${p.score}`).join(' · ');
+        `<strong>⏸ Unfinished ${sv.online?'online ':''}game found</strong> — Round ${sv.state.round}/${sv.config.rounds}: `+
+        sv.state.players.map(p=>`${p.name} ${p.score}`).join(' · ')+
+        (sv.online?'<br><span style="color:var(--ink-dim);font-size:0.85rem;">Resuming re-opens your room — it continues when your opponent rejoins.</span>':'');
 }
 function resumeSavedGame(){
     const sv=lsGet('spellcoco.save',null);if(!sv)return;
-    CONFIG=sv.config;
+    if(sv.online){
+        document.getElementById('resume-banner').classList.add('hidden');
+        NET.pendingResume=sv;
+        setMode('host');
+        if(sv.hostName)pickSide(sv.hostName);
+        document.getElementById('host-status').innerText='Share the new code — your game resumes when your opponent joins.';
+        return;
+    }
+    CONFIG=normalizeConfig(sv.config);
     soundEnabled=document.getElementById('sound-toggle').checked;
     document.getElementById('btn-mute').innerText=soundEnabled?'🔊':'🔇';
     document.getElementById('btn-mute').classList.toggle('active',soundEnabled);
@@ -2510,6 +2603,36 @@ function createAtmosphere(){
 }
 createAtmosphere();
 
+// v35: the Coco mark — one source of truth, injected wherever a slot appears
+const COCO_MARK=`<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Coco the cat">
+<polygon points="24,48 16,16 48,33" fill="#f49b3e" stroke="#b05f0a" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="96,48 104,16 72,33" fill="#f49b3e" stroke="#b05f0a" stroke-width="2.5" stroke-linejoin="round"/>
+<polygon points="27,43 22,22 42,34" fill="#ffb9c4"/>
+<polygon points="93,43 98,22 78,34" fill="#ffb9c4"/>
+<ellipse cx="60" cy="68" rx="40" ry="36" fill="#f49b3e" stroke="#b05f0a" stroke-width="2.5"/>
+<path d="M38,38 Q44,30 50,37" stroke="#c96f10" stroke-width="3" fill="none" stroke-linecap="round"/>
+<path d="M70,37 Q76,30 82,38" stroke="#c96f10" stroke-width="3" fill="none" stroke-linecap="round"/>
+<path d="M54,33 Q60,28 66,33" stroke="#c96f10" stroke-width="3" fill="none" stroke-linecap="round"/>
+<path d="M60,44 Q53,62 50,74 Q60,82 70,74 Q67,62 60,44 Z" fill="#fff6ea"/>
+<ellipse cx="60" cy="84" rx="22" ry="15" fill="#fff6ea"/>
+<ellipse cx="42" cy="62" rx="8.5" ry="9.5" fill="#ffffff"/>
+<ellipse cx="78" cy="62" rx="8.5" ry="9.5" fill="#ffffff"/>
+<ellipse cx="43" cy="62.5" rx="5.8" ry="7" fill="#4caf50"/>
+<ellipse cx="77" cy="62.5" rx="5.8" ry="7" fill="#4caf50"/>
+<ellipse cx="43" cy="62" rx="2.4" ry="4.8" fill="#143d16"/>
+<ellipse cx="77" cy="62" rx="2.4" ry="4.8" fill="#143d16"/>
+<circle cx="40.5" cy="59" r="1.8" fill="#ffffff"/>
+<circle cx="74.5" cy="59" r="1.8" fill="#ffffff"/>
+<path d="M55,75 Q60,71.5 65,75 Q63,80 60,80 Q57,80 55,75 Z" fill="#e98a8a"/>
+<path d="M60,80 L60,85 M60,85 Q54,90 49,86 M60,85 Q66,90 71,86" stroke="#c96f10" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+<line x1="14" y1="72" x2="36" y2="76" stroke="#f7e9d8" stroke-width="1.8" stroke-linecap="round"/>
+<line x1="14" y1="82" x2="36" y2="82" stroke="#f7e9d8" stroke-width="1.8" stroke-linecap="round"/>
+<line x1="84" y1="76" x2="106" y2="72" stroke="#f7e9d8" stroke-width="1.8" stroke-linecap="round"/>
+<line x1="84" y1="82" x2="106" y2="82" stroke="#f7e9d8" stroke-width="1.8" stroke-linecap="round"/>
+</svg>`;
+document.querySelectorAll('.coco-mark-slot').forEach(el=>{el.innerHTML=COCO_MARK});
+
+
 // Sound
 let audioCtx=null,soundEnabled=false,soundVolume=0.5;
 function initAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==='suspended')audioCtx.resume()}
@@ -2629,7 +2752,7 @@ function checkDictWord(){
         const pts=calcBasePoints(w);
         const lwb=calcLongWordBonus(w.length);
         const bonus=lwb>0?` +${lwb} long`:'';
-        r.innerHTML=`<span class="dict-result-yes">✓ "${w}" is valid — ~${pts} pts (base)${bonus}</span>`;
+        r.innerHTML=`<span class="dict-result-yes">✓ "${w}" is valid — ~${pts} pts (base)${bonus}</span> <span class="definable" style="color:var(--blue-hi);font-size:0.85rem;" onclick="defineWord('${w}')">define</span>`;
     } else {
         const pts=calcBasePoints(w);
         r.innerHTML=`<span class="dict-result-no">✗ "${w}" not found — would be ~${pts} pts (base)</span>`;
@@ -2701,6 +2824,7 @@ class Game{
         this.updateUI();
     }
     handleRemoteAction(m){
+        if(this.over&&m.kind!=='rematchplz')return;
         const guestTurn=this.turnIndex!==NET.myIndex;
         switch(m.kind){
             case 'submit':
@@ -2732,6 +2856,19 @@ class Game{
                 this.timeLeft+=CONFIG.bonusTime;this.updateTimerDisplay();
                 this.showToast('+15 seconds!');this.updateUI();
                 break;}
+            case 'hint':{
+                if(!guestTurn)return;
+                const p=this.currentPlayer,cost=CONFIG.costs.hint||2;
+                if(p.gems<cost)return;
+                const best=findBestWord(this.tiles);
+                if(!best)return;
+                p.gems-=cost;this.logAbility(p,'hint',cost);
+                this.updateUI();
+                NET.send({type:'fx',toast:`💡 Try "${best.word.slice(0,2)}…" — ${best.word.length} letters`});
+                break;}
+            case 'rematchplz':
+                this.showToast(`🔄 ${NET.myIndex>=0?this.players[1-NET.myIndex].name:'Your opponent'} wants a rematch!`);
+                break;
             case 'coco':
                 if(guestTurn)return;
                 this.cocoAttack();
@@ -2930,6 +3067,8 @@ class Game{
 
         let html='<div style="text-align:center;font-size:0.92rem;color:var(--ink-soft);margin-bottom:10px;">🏆 '+statsRecordLine()+'</div>';
         players.forEach((p,pi)=>{
+            const wb=p.wordsPlayed.filter(w=>w.best&&w.best.score>0);
+            const eff=wb.length?Math.round(100*wb.reduce((t,w)=>t+w.score,0)/wb.reduce((t,w)=>t+w.best.score,0)):null;
             const best=p.wordsPlayed.reduce((b,w)=>w.score>(b?.score||0)?w:b,null);
             const rounds={};
             p.wordsPlayed.forEach(w=>{if(!rounds[w.round])rounds[w.round]=[];rounds[w.round].push(w)});
@@ -2944,6 +3083,7 @@ class Game{
                     Treats earned: <strong>${p.totalGems}</strong> ·
                     Treat bonus: <strong>+${p.gemBonus}</strong>
                     ${best?` · Best: <strong>${best.word}</strong> (${best.score})`:''}
+                    ${eff!==null?` · Efficiency: <strong>${eff}%</strong> of best possible`:''}
                 </div>`;
 
             for(let rn=1;rn<=CONFIG.rounds;rn++){
@@ -2960,7 +3100,7 @@ class Game{
                     const bestLabel=w.best?(w.best.score>w.score?` · <span class="best-word-meta">board best: ${w.best.word} (${w.best.score})</span>`:` · <span class="best-word-meta">🏆 best possible</span>`):'';
                     html+=`<div class="recap-word-row">
                         <div class="recap-word-main">
-                            <span class="recap-word-name${isBest?' best':['']}"">${isBest?'⭐ ':''}${w.word}</span>
+                            <span class="recap-word-name definable${isBest?' best':''}" onclick="defineWord('${w.word}')">${isBest?'⭐ ':''}${w.word}</span>
                             <span class="recap-word-score">+${w.score}</span>
                         </div>
                         <div class="recap-word-meta">${w.gemCount}${TICON}${multLabel}${longLabel}${bestLabel}</div>
@@ -2992,12 +3132,13 @@ class Game{
 
     logAbility(player,type,gemCost){
         const r=this.round;
-        if(!player.abilityLog[r])player.abilityLog[r]={shuffles:0,swaps:0,cocos:0,times:0,gemsSpent:0};
+        if(!player.abilityLog[r])player.abilityLog[r]={shuffles:0,swaps:0,cocos:0,times:0,hints:0,gemsSpent:0};
         player.abilityLog[r].gemsSpent+=gemCost;
         if(type==='shuffle')player.abilityLog[r].shuffles++;
         if(type==='swap')player.abilityLog[r].swaps++;
         if(type==='coco')player.abilityLog[r].cocos++;
         if(type==='time')player.abilityLog[r].times++;
+        if(type==='hint')player.abilityLog[r].hints=(player.abilityLog[r].hints||0)+1;
     }
 
     useAbility(type){
@@ -3005,9 +3146,18 @@ class Game{
         const p=this.currentPlayer,cost=CONFIG.costs[type];
         if(p.gems<cost){this.showToast('Not enough treats!');SFX.invalid();return}
         if(NET.mode==='join'&&type==='time'){if(this.cocoTimerActive)NET.send({type:'act',kind:'time'});return}
+        if(type==='hint'){if(NET.mode==='join'){NET.send({type:'act',kind:'hint'});return}this.doHint();return}
         if(type==='shuffle'){document.getElementById('modal-shuffle-confirm').classList.remove('hidden');return}
         else if(type==='swap'){this.pendingSwap=true;this.showToast('Tap a tile to swap (or cancel)')}
         else if(type==='time'){if(!this.cocoTimerActive)return;p.gems-=cost;this.logAbility(p,'time',cost);this.timeLeft+=CONFIG.bonusTime;this.updateTimerDisplay();this.showToast('+15 seconds!')}
+        this.updateUI();
+    }
+    doHint(){
+        const p=this.currentPlayer,cost=CONFIG.costs.hint||2;
+        const best=findBestWord(this.tiles);
+        if(!best){this.showToast('No hint available!',true);return}
+        p.gems-=cost;this.logAbility(p,'hint',cost);
+        this.showToast(`💡 Try "${best.word.slice(0,2)}…" — ${best.word.length} letters`,true);
         this.updateUI();
     }
     cancelSwap(){this.pendingSwap=false;this.showToast('Swap cancelled');this.updateUI()}
@@ -3074,7 +3224,7 @@ class Game{
                     if(w.best)extras.push(w.best.score>w.score?`⭐ best: ${w.best.word} (${w.best.score})`:'🏆 best possible');
                     html+=`<div class="history-word-row">
                         <div>
-                            <div class="history-word">${w.word}</div>
+                            <div class="history-word definable" onclick="defineWord('${w.word}')">${w.word}</div>
                             ${extras.length?`<div class="history-meta">${extras.join(' · ')}</div>`:''}
                         </div>
                         <span class="history-score">+${w.score}</span>
@@ -3086,6 +3236,7 @@ class Game{
                     if(log.swaps)parts.push(`🔄 ${log.swaps} swap${log.swaps>1?'s':''}`);
                     if(log.cocos)parts.push(`🐱 ${log.cocos} Coco`);
                     if(log.times)parts.push(`⏱ ${log.times} +15s`);
+                    if(log.hints)parts.push(`💡 ${log.hints} hint${log.hints>1?'s':''}`);
                     parts.push(`${log.gemsSpent}${TICON} spent`);
                     html+=`<div class="history-ability-row">${parts.join(' · ')}</div>`;
                 }
@@ -3151,6 +3302,7 @@ class Game{
         const p=this.currentPlayer;
         document.getElementById('btn-shuffle').disabled=!myTurn||this.pendingSwap||p.gems<CONFIG.costs.shuffle;
         document.getElementById('btn-swap').disabled=!myTurn||this.pendingSwap||p.gems<CONFIG.costs.swap;
+        document.getElementById('btn-hint').disabled=!myTurn||this.pendingSwap||p.gems<(CONFIG.costs.hint||2);
         document.getElementById('btn-swap').classList.toggle('active-swap',this.pendingSwap);
         document.getElementById('btn-cancel-swap').classList.toggle('hidden',!this.pendingSwap);
         const timeBtn=document.getElementById('btn-time');
@@ -3176,7 +3328,59 @@ class Game{
     showRoundOverlay(t,s,fromNet){if(NET.mode==='host'&&!fromNet)NET.send({type:'fx',overlay:{t:t,s:s}});const o=document.createElement('div');o.className='round-overlay';o.innerHTML=`<span class="round-text">✦ ${t} ✦</span><span class="round-sub">${s||''}</span>`;document.body.appendChild(o);setTimeout(()=>o.remove(),1800)}
 }
 
-function renderGameOver(players){if(game)game.renderRecap(players)}
+const DEF_CACHE={};
+function escHtml(t){return String(t).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))}
+function showDefineModal(w,html){
+    document.getElementById('define-word').innerText='📖 '+w;
+    document.getElementById('define-body').innerHTML=html;
+    document.getElementById('modal-define').classList.remove('hidden');
+}
+function defineWord(w){
+    w=String(w||'').toUpperCase();
+    if(!/^[A-Z]{2,15}$/.test(w))return;
+    if(DEF_CACHE[w]){showDefineModal(w,DEF_CACHE[w]);return}
+    showDefineModal(w,'<span style="color:var(--ink-dim)">Looking it up…</span>');
+    fetch('https://api.dictionaryapi.dev/api/v2/entries/en/'+w.toLowerCase())
+        .then(r=>{if(!r.ok)throw 0;return r.json()})
+        .then(j=>{
+            const out=[];
+            ((j[0]&&j[0].meanings)||[]).slice(0,3).forEach(m=>{
+                const d=m.definitions&&m.definitions[0];
+                if(d)out.push(`<div style="margin-bottom:9px"><em style="color:var(--purple-hi)">${escHtml(m.partOfSpeech)}</em> — ${escHtml(d.definition)}</div>`);
+            });
+            const html=out.length?out.join(''):'No definition found — might be one of yours! 🐾';
+            DEF_CACHE[w]=html;showDefineModal(w,html);
+        })
+        .catch(()=>{
+            const html='No definition found — might be one of yours! 🐾';
+            DEF_CACHE[w]=html;showDefineModal(w,html);
+        });
+}
+
+function renderGameOver(players){
+    const rb=document.getElementById('btn-rematch');
+    if(rb){rb.disabled=false;rb.innerText=NET.mode==='join'?'🔄 Ask for Rematch':'🔄 Rematch'}
+    if(game)game.renderRecap(players);
+}
+function startRematch(){
+    if(NET.mode==='join'){
+        NET.send({type:'act',kind:'rematchplz'});
+        const b=document.getElementById('btn-rematch');
+        b.innerText='⏳ Asked the host for a rematch…';b.disabled=true;
+        return;
+    }
+    document.getElementById('modal-gameover').classList.add('hidden');
+    lsDel('spellcoco.save');
+    let opts=null;
+    if(NET.mode==='host'){
+        const other=NET.myName==='Keith'?'Shawn':'Keith';
+        const ns=Math.random()<0.5?[NET.myName,other]:[other,NET.myName];
+        opts={names:ns};NET.myIndex=ns.indexOf(NET.myName);
+    }
+    game=new Game(opts);
+    if(NET.mode==='host')NET.sendStart();
+    saveGameState();
+}
 
 let game;
 
@@ -3316,6 +3520,10 @@ function launchGame(){
 
     const bg=parseInt(document.getElementById('cfg-board-gems').value)||9;
     CONFIG.boardGemCount=Math.max(1,Math.min(25,bg));
+
+    const hc=parseInt(document.getElementById('cfg-hint-cost').value)||2;
+    CONFIG.costs.hint=Math.max(1,Math.min(10,hc));
+    document.getElementById('hint-cost-label').innerHTML=CONFIG.costs.hint+'<span class="ticon"></span>';
 
     document.querySelectorAll('.mult-toggle').forEach(label=>{
         const mult=label.dataset.mult;
