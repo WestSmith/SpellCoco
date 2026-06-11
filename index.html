@@ -12,6 +12,37 @@
 
     <!--
     ================================================================
+    SPELLCOCO v48 — COCO LEARNS TO SPEND HIS TREATS
+    ================================================================
+
+    CHANGELOG v47 → v48 (Shawn: "can Coco be smart enough to use
+    gems and swap letters? and can the best word factor in swaps?"):
+    - ADD: findBestWordWithSwap — the trie DFS gains a 1-substitution
+      budget. At any step it may follow ANY trie child instead of the
+      tile's real letter, spending the budget and recording
+      {id, from, to}. The substituted tile scores at the NEW letter's
+      value; DL/TL/2W/3W stay put (swap changes the letter, not the
+      tile). Ties prefer the no-swap path so a swap is only reported
+      when it's strictly better.
+    - ADD: Coco can now SWAP (mood-gated, COCO_SWAP). If he can
+      afford it (cost + a mood reserve), the dice agree, and the
+      swap-best beats the board best by the mood's threshold
+      (zoomies ≥6 pts / cozy ≥12 / sleepy never), he pays 3 treats,
+      the tile flips with a toast ("🐾 Coco swaps P→R!") and the
+      swap sound, and he plays the unlocked word at his usual pace —
+      missteps and all. He commits: a swapped turn plays the full
+      swap word, not a mood-degraded one.
+    - ADD: Post-word reveal now includes the swap ceiling. After the
+      existing "⭐ Best possible" toast, a second toast shows
+      "🔄 With a swap: NN pts possible" when a swap beat the board
+      best. SCORE ONLY mid-game — same no-spoiler rule as v39, since
+      unused tiles survive the refill. The post-game recap and word
+      history show the full detail: which letters, which word
+      (definable, like board best).
+    - Efficiency % is UNCHANGED — still measured against the
+      no-swap best, since swaps cost treats (Shawn's call).
+
+    ================================================================
     SPELLCOCO v47 — COCO WAITS FOR THE CURTAIN
     ================================================================
 
@@ -2842,6 +2873,50 @@ function findBestWord(tiles){
     return best;
 }
 
+// v48: swap-aware solver — same trie DFS, plus a 1-substitution budget.
+// At any tile the walk may follow ANY trie child instead of the tile's
+// real letter, spending the budget and recording {id,from,to}. The
+// substituted tile scores at the NEW letter's value; the tile's
+// DL/TL/2W/3W multiplier still applies (a swap changes the letter,
+// not the tile). Ties prefer no-swap, so .swap is only non-null when
+// a swap is STRICTLY better than anything reachable for free.
+function findBestWordWithSwap(tiles){
+    if(!trieBuilt)return null;
+    let best=null;
+    const visited=new Array(25).fill(false),path=[],chars=[],vals=[];
+    function take(id,nx,ch,val,swap){
+        visited[id]=true;path.push(tiles[id]);chars.push(ch);vals.push(val);
+        if(nx.isEnd&&path.length>=2){
+            let bse=0,wm=1;
+            for(let k=0;k<path.length;k++){
+                const t=path[k];let v=vals[k];
+                if(t.multiplier==='DL')v*=2;else if(t.multiplier==='TL')v*=3;
+                bse+=v;
+                if(t.multiplier==='2W')wm*=2;else if(t.multiplier==='3W')wm*=3;
+            }
+            const sc=bse*wm+calcLongWordBonus(path.length);
+            if(!best||sc>best.score||(sc===best.score&&best.swap&&!swap))
+                best={word:chars.join(''),score:sc,ids:path.map(t=>t.id),swap:swap?{id:swap.id,from:swap.from,to:swap.to}:null};
+        }
+        const nbs=NEIGHBORS[id];
+        for(let i=0;i<nbs.length;i++)if(!visited[nbs[i]])dfs(nbs[i],nx,swap);
+        visited[id]=false;path.pop();chars.pop();vals.pop();
+    }
+    function dfs(id,node,swap){
+        const t=tiles[id];
+        const nx=node.children[t.char];
+        if(nx)take(id,nx,t.char,t.baseValue,swap);
+        if(!swap){
+            for(const ch in node.children){
+                if(ch===t.char)continue;
+                take(id,node.children[ch],ch,LETTERS[ch].val,{id:id,from:t.char,to:ch});
+            }
+        }
+    }
+    for(let i=0;i<25;i++)dfs(i,trie.root,null);
+    return best;
+}
+
 // ===================== v41: Coco the player (solo mode) =====================
 // Same trie DFS as findBestWord, but collects EVERY unique word (best-scoring
 // path per word) so Coco's moods can pick from the whole menu.
@@ -2898,13 +2973,35 @@ const COCO_PACE={
     cozy:   {think:[1700,3000],tile:[560,950], submit:[1600,2300],oops:0.35},
     zoomies:{think:[850,1500], tile:[320,540], submit:[1100,1600],oops:0.20}
 };
+// v48: Coco's swap appetite per mood. He only swaps when he can afford
+// cost + reserve (treats are end-game points — he keeps a stash unless
+// he's got the zoomies), the dice say yes, and the swap-best beats the
+// free board best by at least `gain`. Sleepy Coco never swaps: that
+// would require getting up.
+const COCO_SWAP={
+    sleepy: null,
+    cozy:   {chance:0.45,gain:12,reserve:2},
+    zoomies:{chance:0.90,gain:6, reserve:0}
+};
 function cocoMs(r){return Math.round(r[0]+Math.random()*(r[1]-r[0]))}
 function cocoTakeTurn(){
     if(!game||game.over||!game.currentPlayer.isCoco)return;
     if(!trieBuilt){setTimeout(cocoTakeTurn,800);return}
     const moodKey=(CONFIG.solo&&CONFIG.solo.mood)||'cozy';
     const cands=findWordCandidates(game.tiles);
-    const choice=cocoChooseWord(cands,moodKey);
+    let choice=cocoChooseWord(cands,moodKey);
+    // v48: Coco eyes his treat stash — can a swap unlock something tastier?
+    // Mood-gated (COCO_SWAP): he needs cost + reserve, a passed dice roll,
+    // and a swap-best that beats the free board best by the mood's `gain`.
+    // Special case: NO free word at all → any swap-word beats passing, so
+    // the dice roll and reserve are waived (sleepy still won't get up).
+    const cocoP=game.currentPlayer,sCfg=COCO_SWAP[moodKey];
+    let swapPlan=null;
+    if(sCfg&&cocoP.gems>=CONFIG.costs.swap+(choice?sCfg.reserve:0)&&(!choice||Math.random()<sCfg.chance)){
+        const freeBest=cands.length?cands[cands.length-1].score:0;
+        const wb=findBestWordWithSwap(game.tiles);
+        if(wb&&wb.swap&&(!choice||wb.score>=freeBest+sCfg.gain)){swapPlan=wb;choice=wb}
+    }
     if(!choice){
         game.showToast('😿 Coco found no word — he curls up and passes');
         setTimeout(()=>{if(game&&!game.over)game.endTurn()},1400);
@@ -2945,7 +3042,23 @@ function cocoTakeTurn(){
         game.selectTile(game.tiles[choice.ids[i]]);i++;
         setTimeout(step,cocoMs(pace.tile));
     };
-    setTimeout(step,cocoMs(pace.think));
+    // v48: if a swap is planned, Coco pays and flips the tile AFTER his
+    // think pause (so it reads as a decision), then pads off at mood pace.
+    // He commits — a swapped turn plays the full swap word.
+    const begin=()=>{
+        if(!alive())return;
+        if(swapPlan){
+            cocoP.gems-=CONFIG.costs.swap;game.logAbility(cocoP,'swap',CONFIG.costs.swap);
+            const t=game.tiles[swapPlan.swap.id];
+            t.char=swapPlan.swap.to;t.baseValue=LETTERS[swapPlan.swap.to].val;
+            game.showToast(`🐾 Coco swaps ${swapPlan.swap.from}→${swapPlan.swap.to}!`);
+            SFX.swap();game.updateUI();
+            setTimeout(step,cocoMs([1100,1700]));
+            return;
+        }
+        step();
+    };
+    setTimeout(begin,cocoMs(pace.think));
 }
 
 // ===================== v33: networking (PeerJS) =====================
@@ -3855,6 +3968,11 @@ class Game{
         }
         if(NET.mode==='join'){NET.send({type:'act',kind:'submit',sel:[...this.selection]});return}
         const best=findBestWord(this.tiles);
+        // v48: the swap ceiling — what a 3-treat swap could have unlocked.
+        // Only kept when it STRICTLY beats the free board best (the solver
+        // ties prefer no-swap, so .swap is the signal).
+        const wb=findBestWordWithSwap(this.tiles);
+        const swapBest=(wb&&wb.swap&&(!best||wb.score>best.score))?{word:wb.word,score:wb.score,from:wb.swap.from,to:wb.swap.to}:null;
         const p=this.currentPlayer;
         p.score+=r.score;p.gems=Math.min(CONFIG.maxGems,p.gems+r.gemCount);
         p.lastWord=r.word;p.totalGems+=r.gemCount;
@@ -3862,7 +3980,8 @@ class Game{
             word:r.word, score:r.score, round:this.round,
             gemCount:r.gemCount, longBonus:r.longBonus, wordMult:r.wordMult,
             tiles:r.tileData,
-            best:best?{word:best.word,score:best.score}:null
+            best:best?{word:best.word,score:best.score}:null,
+            swapBest:swapBest
         });
 
         if(r.longBonus>0){this.showCelebration(`LONG WORD! +${r.longBonus}`);SFX.longWord()}else{SFX.submit()}
@@ -3871,6 +3990,9 @@ class Game{
             const found=r.score>=best.score;
             setTimeout(()=>{if(!game||game.over)return;this.showToast(found?'🏆 That was the best word on the board!':`⭐ Best possible: ${best.score} pts`)},2600);
         }
+        // v48: score only mid-game — unused tiles survive the refill, so
+        // naming the word (or the letters) would spoil what's still there.
+        if(swapBest)setTimeout(()=>{if(!game||game.over)return;this.showToast(`🔄 With a swap: ${swapBest.score} pts was possible`)},5300);
 
         const used=[...this.selection];
         const mults=[];
@@ -3989,12 +4111,13 @@ class Game{
                     const multLabel=w.wordMult>1?` ×${w.wordMult}W`:'';
                     const longLabel=w.longBonus>0?` +${w.longBonus} long`:'';
                     const bestLabel=w.best?(w.best.score>w.score?` · <span class="best-word-meta">board best: <span class="definable" onclick="defineWord('${w.best.word}')">${w.best.word}</span> (${w.best.score})</span>`:` · <span class="best-word-meta">🏆 best possible</span>`):'';
+                    const swapLabel=w.swapBest?` · <span class="best-word-meta">🔄 swap ${w.swapBest.from}→${w.swapBest.to}: <span class="definable" onclick="defineWord('${w.swapBest.word}')">${w.swapBest.word}</span> (${w.swapBest.score})</span>`:'';
                     html+=`<div class="recap-word-row">
                         <div class="recap-word-main">
                             <span class="recap-word-name definable${isBest?' best':''}" onclick="defineWord('${w.word}')">${isBest?'⭐ ':''}${w.word}</span>
                             <span class="recap-word-score">+${w.score}</span>
                         </div>
-                        <div class="recap-word-meta">${w.gemCount}${TICON}${multLabel}${longLabel}${bestLabel}</div>
+                        <div class="recap-word-meta">${w.gemCount}${TICON}${multLabel}${longLabel}${bestLabel}${swapLabel}</div>
                         <details class="recap-tile-detail">
                             <summary>Tile breakdown</summary>
                             <div class="tile-breakdown">`;
@@ -4127,6 +4250,8 @@ class Game{
                     if(w.longBonus>0)extras.push(`+${w.longBonus} long`);
                     if(w.gemCount>0)extras.push(`${w.gemCount}${TICON}`);
                     if(w.best)extras.push(w.best.score>w.score?(this.over?`⭐ best: <span class="definable" onclick="defineWord('${w.best.word}')">${w.best.word}</span> (${w.best.score})`:`⭐ best possible: ${w.best.score} pts`):'🏆 best possible');
+                    // v48: swap ceiling — word + letters only post-game (no-spoiler rule)
+                    if(w.swapBest)extras.push(this.over?`🔄 swap ${w.swapBest.from}→${w.swapBest.to}: <span class="definable" onclick="defineWord('${w.swapBest.word}')">${w.swapBest.word}</span> (${w.swapBest.score})`:`🔄 with a swap: ${w.swapBest.score} pts`);
                     html+=`<div class="history-word-row">
                         <div>
                             <div class="history-word definable" onclick="defineWord('${w.word}')">${w.word}</div>
