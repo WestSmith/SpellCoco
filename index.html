@@ -12,6 +12,24 @@
 
     <!--
     ================================================================
+    SPELLCOCO v47 — COCO WAITS FOR THE CURTAIN
+    ================================================================
+
+    CHANGELOG v46 → v47 (Shawn: "the move animation is obscured —
+    it happens at the same time as the overlay"):
+    - FIX: Coco's amble to the active player's side was firing in the
+      same tick as showRoundOverlay, so the whole 1.4s walk played
+      behind the full-screen turn banner (90% opaque + blur, fades by
+      ~1.6s). The side-toggle in updateUI is now deferred 1600ms when
+      the side actually changes — banner announces the turn, lifts,
+      and THEN Coco saunters over. First updateUI of a game still
+      snaps him in place instantly (no pointless walk at setup), and
+      the scheduled target is tracked so repeated updateUI calls
+      (tile taps, net sync, Coco AI) can't reset or duplicate the
+      timer. Works for host, guest, and solo alike since the logic
+      lives in updateUI.
+
+    ================================================================
     SPELLCOCO v46 — COCO TAKES HIS TIME (AND STEPS ON THE WRONG TILE)
     ================================================================
 
@@ -4205,9 +4223,24 @@ class Game{
         document.getElementById('btn-zoomies').innerHTML=`${CONFIG.costs.zoomies||5}${TICON} ZOOM!`;
         document.getElementById('coco-attack-title').innerText=`${np.name}'s Coco Attack!`;
         document.getElementById('coco-attack-desc').innerText=`Force opponent's timer: ${CONFIG.cocoAttackTime}s`;
-        // v40: Coco lounges on the active player's side of the action zone
+        // v40: Coco lounges on the active player's side of the action zone.
+        // v47: his side only changes on a turn change, and turn changes always
+        // fire showRoundOverlay (fully faded at ~1.6s) — so defer the amble
+        // until the overlay has lifted instead of walking behind it. Track the
+        // scheduled target so repeated updateUI calls (tile taps, net sync,
+        // Coco AI) don't reset the timer. First call of a game snaps in place.
         const lounge=document.getElementById('coco-lounge');
-        if(lounge)lounge.classList.toggle('side-left',this.turnIndex===0);
+        if(lounge){
+            const wantLeft=this.turnIndex===0;
+            if(this._loungeSide===undefined){
+                this._loungeSide=wantLeft;
+                lounge.classList.toggle('side-left',wantLeft);
+            }else if(this._loungeSide!==wantLeft){
+                this._loungeSide=wantLeft;
+                clearTimeout(this._loungeTimer);
+                this._loungeTimer=setTimeout(()=>lounge.classList.toggle('side-left',wantLeft),1600);
+            }
+        }
         cocoBtn.innerHTML=`${CONFIG.cocoAttackCost}${TICON} GO!`;
         document.getElementById('coco-zone').classList.toggle('coco-timer-active',this.cocoTimerActive);
         // v40.2: online, each device only shows the move that's YOURS to make —
