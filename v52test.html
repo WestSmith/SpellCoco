@@ -3983,7 +3983,7 @@ class Game{
         return {round:this.round,turnIndex:this.turnIndex,
             players:JSON.parse(JSON.stringify(this.players)),
             tiles:this.tiles.map(t=>({char:t.char,mult:t.multiplier,gem:t.hasGem})),
-            cocoTimerActive:this.cocoTimerActive,timeLeft:this.timeLeft,cocoPendingFor:this.cocoPendingFor||null,
+            cocoTimerActive:this.cocoTimerActive,timeLeft:this.timeLeft,cocoPendingFor:(this.cocoPendingFor==null?null:this.cocoPendingFor),
             sel:[...this.selection]};
     }
     static fromState(st){
@@ -3996,14 +3996,14 @@ class Game{
         (st.sel||[]).forEach(id=>{if(g.tiles[id]){g.tiles[id].isSelected=true;g.selection.push(id)}});
         NET.quiet=true;g.updateUI();NET.quiet=false;
         g.setupTouchDrag();
-        g.cocoPending=false;g.cocoPendingFor=st.cocoPendingFor||null;
+        g.cocoPending=false;g.cocoPendingFor=(st.cocoPendingFor==null?null:st.cocoPendingFor);
         g.maybeCoco();g.maybeCocoTimer();
         return g;
     }
     applyState(st){
         this.round=st.round;this.turnIndex=st.turnIndex;
         this.players=st.players;
-        this.cocoTimerActive=st.cocoTimerActive;this.timeLeft=st.timeLeft;this.cocoPendingFor=st.cocoPendingFor||null;
+        this.cocoTimerActive=st.cocoTimerActive;this.timeLeft=st.timeLeft;this.cocoPendingFor=(st.cocoPendingFor==null?null:st.cocoPendingFor);
         this.tiles=st.tiles.map((td,i)=>{const t=new Tile(i,Math.floor(i/5),i%5,td.char);t.multiplier=td.mult;t.hasGem=td.gem;return t});
         const keep=NET.mode==='join'&&this.myTurn;
         const sel=keep?this.selection:(st.sel||[]);
