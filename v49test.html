@@ -3109,12 +3109,14 @@ function joinGameRelay(){
 }
 function relayConnect(role){
     const wsRole=(role==='host')?'host':'guest';
+    if(NET.ws){try{const old=NET.ws;NET.ws=null;old.onopen=old.onmessage=old.onclose=old.onerror=null;old.close()}catch(e){}}
     let ws;
     try{ ws=new WebSocket(RELAY_URL+'/r/'+NET.code+'?role='+wsRole); }
     catch(e){ relayFailed(role); return; }
     NET.ws=ws;NET.transport='relay';
     ws.onopen=()=>{
         if(NET.ws!==ws)return;
+        clearTimeout(NET.reconnectTimer);NET.reconnectTimer=null;
         NET.everConnected=true;NET.reconnectTries=0;
         NET.setPill('🌐','ok','Online: connected');
         if(role==='host')document.getElementById('host-status').innerText='Share this code — waiting for opponent…';
