@@ -3983,7 +3983,7 @@ class Game{
         return {round:this.round,turnIndex:this.turnIndex,
             players:JSON.parse(JSON.stringify(this.players)),
             tiles:this.tiles.map(t=>({char:t.char,mult:t.multiplier,gem:t.hasGem})),
-            cocoTimerActive:this.cocoTimerActive,timeLeft:this.timeLeft,
+            cocoTimerActive:this.cocoTimerActive,timeLeft:this.timeLeft,cocoPendingFor:(this.cocoPendingFor==null?null:this.cocoPendingFor),
             sel:[...this.selection]};
     }
     static fromState(st){
@@ -3996,20 +3996,21 @@ class Game{
         (st.sel||[]).forEach(id=>{if(g.tiles[id]){g.tiles[id].isSelected=true;g.selection.push(id)}});
         NET.quiet=true;g.updateUI();NET.quiet=false;
         g.setupTouchDrag();
-        g.cocoPending=false;
-        g.maybeCoco();
+        g.cocoPending=false;g.cocoPendingFor=(st.cocoPendingFor==null?null:st.cocoPendingFor);
+        g.maybeCoco();g.maybeCocoTimer();
         return g;
     }
     applyState(st){
         this.round=st.round;this.turnIndex=st.turnIndex;
         this.players=st.players;
-        this.cocoTimerActive=st.cocoTimerActive;this.timeLeft=st.timeLeft;
+        this.cocoTimerActive=st.cocoTimerActive;this.timeLeft=st.timeLeft;this.cocoPendingFor=(st.cocoPendingFor==null?null:st.cocoPendingFor);
         this.tiles=st.tiles.map((td,i)=>{const t=new Tile(i,Math.floor(i/5),i%5,td.char);t.multiplier=td.mult;t.hasGem=td.gem;return t});
         const keep=NET.mode==='join'&&this.myTurn;
         const sel=keep?this.selection:(st.sel||[]);
         this.selection=[];
         sel.forEach(id=>{if(this.tiles[id]){this.tiles[id].isSelected=true;this.selection.push(id)}});
         NET.quiet=true;this.updateUI();NET.quiet=false;
+        this.maybeCocoTimer();
     }
     applySelection(ids){
         this.selection.forEach(id=>{if(this.tiles[id])this.tiles[id].isSelected=false});
@@ -4439,6 +4440,20 @@ class Game{
         const p=this.currentPlayer;if(p.gems<CONFIG.costs.swap){this.showToast('Not enough treats!');SFX.invalid();this.pendingSwap=false;document.getElementById('modal-swap').classList.add('hidden');this.updateUI();return}p.gems-=CONFIG.costs.swap;this.logAbility(p,'swap',CONFIG.costs.swap);const t=this.tiles[this.swapTargetId];t.char=ch;t.baseValue=LETTERS[ch].val;document.getElementById('modal-swap').classList.add('hidden');this.pendingSwap=false;this.showToast(`Swapped to ${ch}!`);SFX.swap();this.updateUI()}
 
     cocoAttack(){
+        // v52: async Coco Attack — the attacker isn't the turn authority, so the
+        // SERVER applies the treat cost + marks the opponent's turn ("cocoPendingFor").
+        // The countdown then fires on the victim's client whenever it's their turn
+        // and they're present — live if online now, on rejoin if they were away.
+        if(NET.async){
+            if(this.turnIndex===NET.myIndex){this.showToast('Coco pounces on your opponent — use it on their turn!');return}
+            const attacker=this.nonActivePlayer;
+            if(attacker.gems<CONFIG.cocoAttackCost){this.showToast(`${attacker.name} needs ${CONFIG.cocoAttackCost} treats!`);SFX.invalid();return}
+            if(this.cocoTimerActive||this.cocoPendingFor!=null){this.showToast('Coco is already on the prowl!');return}
+            NET.send({type:'__a',op:'coco',cost:CONFIG.cocoAttackCost});
+            SFX.cocoAttack();
+            this.showToast(`🐾 Coco sent after ${this.currentPlayer.name}!${NET.connected?'':' (begins when they’re back)'}`);
+            return;
+        }
         if(NET.mode==='join'){
             if(this.turnIndex===NET.myIndex){this.showToast('Coco attacks the active player — use it on your opponent\'s turn!');return}
             NET.send({type:'act',kind:'coco'});return;
@@ -4446,13 +4461,38 @@ class Game{
         const attacker=this.nonActivePlayer;
         if(attacker.gems<CONFIG.cocoAttackCost){this.showToast(`${attacker.name} needs ${CONFIG.cocoAttackCost} treats!`);SFX.invalid();return}
         if(this.cocoTimerActive){this.showToast('Timer already active!');return}
-        attacker.gems-=CONFIG.cocoAttackCost;this.logAbility(attacker,'coco',CONFIG.cocoAttackCost);this.cocoTimerActive=true;this.timeLeft=CONFIG.cocoAttackTime;
+        attacker.gems-=CONFIG.cocoAttackCost;this.logAbility(attacker,'coco',CONFIG.cocoAttackCost);
+        this.timeLeft=CONFIG.cocoAttackTime;
+        this.startCocoTimer();
+        this.updateUI();
+    }
+    // The countdown itself. Runs on the player under attack (the current player).
+    // In async, pushes state each tick so the attacker watches the clock too.
+    startCocoTimer(){
+        this.cocoTimerActive=true;
+        if(!this.timeLeft||this.timeLeft<=0)this.timeLeft=CONFIG.cocoAttackTime;
         SFX.cocoAttack();this.showCocoOverlay();
-        this.showToast(`🐾 Coco Attack! ${this.currentPlayer.name} has ${CONFIG.cocoAttackTime}s!`);
+        this.showToast(`🐾 Coco Attack! ${this.currentPlayer.name} has ${this.timeLeft}s!`);
         this.updateTimerDisplay();
         if(this.timerInterval)clearInterval(this.timerInterval);
-        this.timerInterval=setInterval(()=>{this.timeLeft--;this.updateTimerDisplay();if(NET.mode==='host')NET.send({type:'timer',on:true,t:this.timeLeft});if(this.timeLeft<=5&&this.timeLeft>0)SFX.timerWarn();if(this.timeLeft<=0){clearInterval(this.timerInterval);this.cocoTimerActive=false;if(NET.mode==='host')NET.send({type:'timer',on:false,t:0});this.clearSelection();this.showToast("🐾 Coco says time's up!");setTimeout(()=>this.endTurn(),800)}},1000);
-        this.updateUI();
+        this.timerInterval=setInterval(()=>{
+            this.timeLeft--;this.updateTimerDisplay();
+            if(NET.async){if(this.turnIndex===NET.myIndex)NET.send({type:'__a',op:'move',state:this.serialize()});}
+            else if(NET.mode==='host')NET.send({type:'timer',on:true,t:this.timeLeft});
+            if(this.timeLeft<=5&&this.timeLeft>0)SFX.timerWarn();
+            if(this.timeLeft<=0){clearInterval(this.timerInterval);this.cocoTimerActive=false;if(NET.mode==='host'&&!NET.async)NET.send({type:'timer',on:false,t:0});this.clearSelection();this.showToast("🐾 Coco says time's up!");setTimeout(()=>this.endTurn(),800)}
+        },1000);
+    }
+    // Victim side: if it's my turn and a Coco attack is pending on me, start the
+    // countdown now and clear the mark (pushes the cleared state out).
+    maybeCocoTimer(){
+        if(!NET.async)return;
+        if(this.cocoPendingFor===NET.myIndex&&this.turnIndex===NET.myIndex&&!this.cocoTimerActive&&!this.over){
+            this.cocoPendingFor=null;
+            this.timeLeft=CONFIG.cocoAttackTime;
+            this.startCocoTimer();
+            this.updateUI();
+        }
     }
 
     showPlayerHistory(playerIndex){
@@ -4605,7 +4645,7 @@ class Game{
         // v41: solo behaves like online for Zoomies (only on YOUR turn);
         // Coco Attack is hidden entirely — Coco won't attack himself.
         const zoomHidden=(isOnline||solo)&&!myTurn;
-        const attackHidden=!CONFIG.cocoAttackEnabled||(isOnline&&myTurn)||solo||NET.async;
+        const attackHidden=!CONFIG.cocoAttackEnabled||(isOnline&&myTurn)||solo;
         document.getElementById('zoomies-zone').classList.toggle('hidden',zoomHidden);
         document.getElementById('coco-zone').classList.toggle('hidden',attackHidden);
         document.getElementById('coco-hairline').classList.toggle('hidden',zoomHidden&&attackHidden);
