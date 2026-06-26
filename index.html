@@ -3065,10 +3065,10 @@ function cocoTakeTurn(){
 
 // ===================== v33: networking (PeerJS) =====================
 const NET={
-    mode:'local',peer:null,conn:null,myIndex:-1,myName:'Shawn',code:'',connected:false,quiet:false,
+    mode:'local',peer:null,conn:null,ws:null,transport:'p2p',useRelay:true,useAsync:true,async:false,seat:null,everConnected:false,reconnectTries:0,reconnectTimer:null,myIndex:-1,myName:'Shawn',code:'',connected:false,quiet:false,
     guestName:null,oppName:null, // v42: joiner's declared name (host side) / opponent's announced name
-    open(){return !!(this.conn&&this.conn.open)},
-    send(m){if(this.open()){try{this.conn.send(m)}catch(e){}}},
+    open(){return this.transport==='relay' ? !!(this.ws&&this.ws.readyState===1&&this.connected) : !!(this.conn&&this.conn.open)},
+    send(m){if(this.transport==='relay'){if(this.ws&&this.ws.readyState===1){try{this.ws.send(JSON.stringify(m))}catch(e){}}return}if(this.open()){try{this.conn.send(m)}catch(e){}}},
     setPill(icon,cls,label){const p=document.getElementById('net-pill');if(!p)return;
         if(!icon){p.classList.add('hidden');return}
         p.className='net-pill '+(cls||'');p.innerText=icon;
@@ -3077,11 +3077,227 @@ const NET={
         // v42: tell the joiner their FINAL (possibly deduped) identity
         let gn=null;
         if(game&&this.myIndex>=0&&game.players[1-this.myIndex])gn=game.players[1-this.myIndex].name;
+        if(this.async){this.send({type:'__a',op:'newgame',state:game.serialize(),config:CONFIG});return}
         this.send({type:'start',config:CONFIG,state:game.serialize(),customs:localCustomWords,guestName:gn});
     },
-    cleanup(){if(this.peer){try{this.peer.destroy()}catch(e){}}this.peer=null;this.conn=null;this.connected=false;}
+    cleanup(){if(this.peer){try{this.peer.destroy()}catch(e){}}this.peer=null;this.conn=null;if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.reconnectTries=0;this.transport=this.useRelay?'relay':'p2p';this.everConnected=false;this.connected=false;}
 };
 function genCode(){const a='ABCDEFGHJKMNPQRSTUVWXYZ23456789';let c='';for(let i=0;i<4;i++)c+=a[Math.floor(Math.random()*a.length)];return c}
+
+// ===================== v49: relay transport (Cloudflare Worker) =====================
+// Online play routes through a tiny WebSocket "room" so each player keeps ONE stable
+// connection to a server instead of a fragile phone-to-phone link. The host stays
+// authoritative; the relay just forwards messages. Auto-reconnect survives brief drops
+// (subways, tunnels). If the relay can't be reached on the first try, we fall back to
+// classic PeerJS so online still works.
+const RELAY_URL='wss://spellcoco-relay.spellcoco.workers.dev';
+
+function hostGame(){ if(NET.useAsync){hostGameAsync();return} if(NET.useRelay){hostGameRelay();return} _hostGameP2P(); }
+function joinGame(){ if(NET.useAsync){joinGameAsync();return} if(NET.useRelay){joinGameRelay();return} _joinGameP2P(); }
+
+function hostGameRelay(){
+    const code=genCode();NET.code=code;NET.connected=false;NET.everConnected=false;
+    document.getElementById('room-code').innerText=code;
+    document.getElementById('host-status').innerText='Connecting to server…';
+    relayConnect('host');
+}
+function joinGameRelay(){
+    const code=(document.getElementById('join-code').value||'').trim().toUpperCase();
+    if(code.length!==4){document.getElementById('join-status').innerText='Enter the 4-character code';return}
+    NET.cleanup();NET.mode='join';NET.code=code;NET.connected=false;NET.everConnected=false;
+    document.getElementById('join-status').innerText='Connecting to server…';
+    relayConnect('join');
+}
+function relayConnect(role){
+    const wsRole=(role==='host')?'host':'guest';
+    if(NET.ws){try{const old=NET.ws;NET.ws=null;old.onopen=old.onmessage=old.onclose=old.onerror=null;old.close()}catch(e){}}
+    let ws;
+    try{ ws=new WebSocket(RELAY_URL+'/r/'+NET.code+'?role='+wsRole); }
+    catch(e){ relayFailed(role); return; }
+    NET.ws=ws;NET.transport='relay';
+    ws.onopen=()=>{
+        if(NET.ws!==ws)return;
+        clearTimeout(NET.reconnectTimer);NET.reconnectTimer=null;
+        NET.everConnected=true;NET.reconnectTries=0;
+        NET.setPill('🌐','ok','Online: connected');
+        if(role==='host')document.getElementById('host-status').innerText='Share this code — waiting for opponent…';
+        else document.getElementById('join-status').innerText='✓ On the server — waiting for host…';
+    };
+    ws.onmessage=(ev)=>{
+        if(NET.ws!==ws)return;
+        let m;try{m=JSON.parse(ev.data)}catch(e){return}
+        if(m&&m.type==='__relay'){
+            if(m.event==='peer'){
+                if(m.present){NET.connected=true;(role==='host')?hostRelayOpen():guestRelayOpen()}
+                else{NET.connected=false;(role==='host')?hostRelayPeerLeft():guestRelayPeerLeft()}
+            }
+            return;
+        }
+        (role==='host')?hostOnData(m):guestOnData(m);
+    };
+    ws.onclose=()=>{
+        if(NET.ws!==ws)return;
+        NET.connected=false;
+        if(!NET.everConnected){relayFailed(role);return}
+        NET.setPill('⚠','bad','Online: reconnecting…');
+        if(game&&!game.over)game.showToast('⚠ Connection dropped — reconnecting…');
+        relayScheduleReconnect(role);
+    };
+    ws.onerror=()=>{};
+}
+function relayScheduleReconnect(role){
+    if(NET.transport!=='relay')return;
+    if(NET.mode!=='host'&&NET.mode!=='join')return;
+    NET.reconnectTries=(NET.reconnectTries||0)+1;
+    const delay=Math.min(800*Math.pow(1.7,NET.reconnectTries),8000);
+    clearTimeout(NET.reconnectTimer);
+    NET.reconnectTimer=setTimeout(()=>{if(NET.transport==='relay')relayConnect(role)},delay);
+}
+function relayFailed(role){
+    NET.transport='p2p';
+    if(NET.ws){try{NET.ws.onclose=null;NET.ws.onmessage=null;NET.ws.onerror=null;NET.ws.close()}catch(e){}NET.ws=null}
+    if(role==='host'){document.getElementById('host-status').innerText='⚠ Server unreachable — using classic connection';_hostGameP2P()}
+    else{document.getElementById('join-status').innerText='⚠ Server unreachable — using classic connection';_joinGameP2P()}
+}
+// Host side: opponent present (first connect OR after a reconnect) → (re)sync them.
+function hostRelayOpen(){
+    document.getElementById('host-status').innerText='✓ Opponent connected! Press Start when ready.';
+    NET.setPill('🌐','ok','Online: connected');
+    NET.send({type:'side',host:NET.myName});
+    NET.send({type:'customs',words:localCustomWords});
+    NET.send({type:'stats',stats:STATS});
+    if(game&&!game.over)NET.sendStart();
+    else if(NET.pendingResume){
+        const sv=NET.pendingResume;NET.pendingResume=null;
+        CONFIG=normalizeConfig(sv.config);
+        populateLwRef();
+        document.getElementById('modal-start').classList.add('hidden');
+        document.getElementById('coco-zone').classList.toggle('hidden',!CONFIG.cocoAttackEnabled);
+        game=Game.fromState(sv.state);
+        NET.myIndex=game.players.findIndex(pl=>pl.name===NET.myName);
+        NET.sendStart();
+        game.showRoundOverlay(`Round ${game.round}`,`Resumed — ${game.currentPlayer.name}'s turn`);
+    }
+}
+function hostRelayPeerLeft(){
+    if(game&&!game.over)game.showToast('⚠ Opponent disconnected — they can rejoin with the same code');
+    else document.getElementById('host-status').innerText='Opponent left — waiting for someone to join…';
+}
+// Guest side: host present.
+function guestRelayOpen(){
+    document.getElementById('join-status').innerText='✓ Connected! Waiting for host to start…';
+    NET.setPill('🌐','ok','Online: connected');
+    NET.send({type:'customs',words:localCustomWords});
+    NET.send({type:'stats',stats:STATS});
+    announceSide();
+}
+function guestRelayPeerLeft(){
+    if(game&&!game.over)game.showToast('⚠ Host disconnected — reconnecting when they return…');
+}
+
+// ===================== v50: async game-server transport =====================
+// True correspondence play. The Cloudflare DO HOLDS the game, so either player
+// can move on their turn and the other picks it up later. Whoever's turn it is
+// runs the normal move logic locally — NET.mode is 'host' for BOTH async players,
+// so the existing host-execution path is reused — and pushes the full serialized
+// state. The server persists it (turn-checked) and forwards to the other player.
+// Access is gated only by the unguessable room code / private link.
+const ASYNC_URL = RELAY_URL.replace('spellcoco-relay','spellcoco-async');
+function genLongCode(){const a='ABCDEFGHJKMNPQRSTUVWXYZ23456789';let c='';for(let i=0;i<14;i++)c+=a[Math.floor(Math.random()*a.length)];return c}
+
+function hostGameAsync(){
+    const code=genLongCode();NET.code=code;
+    const rc=document.getElementById('room-code');if(rc)rc.innerText=code;
+    const hs=document.getElementById('host-status');if(hs)hs.innerText='Connecting…';
+    asyncEnter(code);
+}
+function joinGameAsync(){
+    const code=(document.getElementById('join-code').value||'').trim().toUpperCase();
+    if(code.length<4){const js=document.getElementById('join-status');if(js)js.innerText='Enter the room code';return}
+    NET.code=code;
+    const js=document.getElementById('join-status');if(js)js.innerText='Connecting…';
+    asyncEnter(code);
+}
+function asyncEnter(code){
+    NET.cleanup();
+    NET.async=true;NET.mode='host';NET.transport='relay';NET.seat=null;NET.connected=false;NET.everConnected=false;
+    NET.myName=onlineMyName();NET.code=code;
+    connectAsync(code);
+}
+function connectAsync(code){
+    let ws;try{ws=new WebSocket(ASYNC_URL+'/r/'+code);}catch(e){asyncFail();return}
+    NET.ws=ws;
+    ws.onopen=()=>{if(NET.ws!==ws)return;clearTimeout(NET.reconnectTimer);NET.reconnectTimer=null;NET.everConnected=true;NET.reconnectTries=0;
+        NET.setPill('🌐','ok','Online: connected');NET.send({type:'__a',op:'hello',name:NET.myName});};
+    ws.onmessage=(ev)=>{if(NET.ws!==ws)return;let m;try{m=JSON.parse(ev.data)}catch(e){return}if(m&&m.type==='__a')asyncOnMessage(m);};
+    ws.onclose=()=>{if(NET.ws!==ws)return;NET.connected=false;
+        if(!NET.everConnected){asyncFail();return}
+        NET.setPill('⚠','bad','Online: reconnecting…');
+        NET.reconnectTries=(NET.reconnectTries||0)+1;
+        const d=Math.min(800*Math.pow(1.7,NET.reconnectTries),8000);
+        clearTimeout(NET.reconnectTimer);NET.reconnectTimer=setTimeout(()=>{if(NET.async)connectAsync(code)},d);};
+    ws.onerror=()=>{};
+}
+function asyncFail(){
+    const el=document.getElementById(UI_MODE==='join'?'join-status':'host-status');
+    if(el)el.innerText='⚠ Couldn’t reach the game server — check your connection';
+    NET.setPill('⚠','bad','Online: offline');
+}
+function asyncOnMessage(m){
+    switch(m.op){
+        case 'welcome':asyncWelcome(m);break;
+        case 'state':if(game){game.applyState(m.state);asyncTurnHint();}break;
+        case 'newgame':asyncLoadGame(m.state,m.config);break;
+        case 'gameover':if(game)game.over=true;recordGameStats(m.players);renderGameOver(m.players);break;
+        case 'peer':asyncPeer(m);break;
+        case 'reject':if(game)game.showToast('⏳ Hang on — not your turn yet');break;
+    }
+}
+function asyncWelcome(m){
+    if(m.full){const el=document.getElementById(UI_MODE==='join'?'join-status':'host-status');if(el)el.innerText='⚠ This game already has two players';NET.cleanup();return;}
+    NET.seat=m.seat;NET.myIndex=m.seat;NET.connected=true;
+    NET.oppName=(m.names&&m.names[1-m.seat])||null;
+    if(m.state){asyncLoadGame(m.state,m.config);}
+    else{
+        const hs=document.getElementById('host-status');if(hs)hs.innerText='✓ Connected — press Start to begin, and share the code with '+(NET.oppName||'your opponent')+'.';
+        const js=document.getElementById('join-status');if(js)js.innerText='✓ Connected — waiting for the game to start…';
+        const sb=document.querySelector('#modal-start .btn-start');
+        if(sb){if(m.seat===0){sb.innerText='⚡ Start Game';sb.disabled=false;}else{sb.innerText='⏳ Waiting for opponent to start…';sb.disabled=true;}}
+    }
+}
+function asyncLoadGame(state,config){
+    if(config)CONFIG=normalizeConfig(config);
+    soundEnabled=document.getElementById('sound-toggle').checked;
+    document.getElementById('btn-mute').innerText=soundEnabled?'🔊':'🔇';
+    if(soundEnabled)initAudio();
+    populateLwRef();
+    document.getElementById('modal-start').classList.add('hidden');
+    document.getElementById('modal-gameover').classList.add('hidden');
+    document.getElementById('coco-zone').classList.toggle('hidden',!CONFIG.cocoAttackEnabled);
+    game=Game.fromState(state);
+    NET.myIndex=NET.seat;
+    asyncTurnHint(true);
+}
+function asyncTurnHint(overlay){
+    if(!game)return;
+    const mine=game.turnIndex===NET.myIndex;
+    if(overlay)game.showRoundOverlay(`Round ${game.round}`,mine?'Your turn':`Waiting for ${game.currentPlayer.name}…`,true);
+}
+function asyncPeer(m){
+    if(!game)return;
+    if(m.present)game.showToast(`🌐 ${m.name||'Opponent'} is online`);
+    else game.showToast('🌐 Opponent went offline — your move still saves');
+}
+// Private link: opening westsmith.github.io/SpellCoco/?game=<code> auto-joins that room.
+function asyncCheckUrl(){
+    try{const q=new URLSearchParams(location.search);const c=q.get('game');const me=q.get('me');
+        if(c&&/^[A-Z0-9]{4,40}$/i.test(c)){
+            if(me&&/^[A-Za-z0-9 '\-]{1,14}$/.test(me))pickSide(me);
+            UI_MODE='join';NET.mode='join';asyncEnter(c.toUpperCase());return true;
+        }
+    }catch(e){}
+    return false;
+}
 let UI_MODE='local'; // v41: 'local' | 'solo' | 'host' | 'join' — NET.mode stays networking-only
 function setMode(m){
     NET.cleanup();UI_MODE=m;NET.mode=(m==='host'||m==='join')?m:'local';NET.setPill('');
@@ -3180,7 +3396,7 @@ function mergeStats(r){
     if(r.longestWord&&r.longestWord.word&&(!STATS.longestWord||r.longestWord.word.length>STATS.longestWord.word.length)){STATS.longestWord=r.longestWord;ch=true}
     if(ch){lsSet('spellcoco.stats',STATS);renderStatsBox()}
 }
-function hostGame(){
+function _hostGameP2P(){
     if(typeof Peer==='undefined'){document.getElementById('host-status').innerText='⚠ Online library failed to load — check internet';return}
     const code=genCode();NET.code=code;
     document.getElementById('room-code').innerText='····';
@@ -3189,7 +3405,7 @@ function hostGame(){
     peer.on('open',()=>{if(NET.peer!==peer)return;document.getElementById('room-code').innerText=code;document.getElementById('host-status').innerText='Share this code — waiting for opponent…'});
     peer.on('error',err=>{
         if(NET.peer!==peer)return;
-        if(err.type==='unavailable-id'){hostGame();return}
+        if(err.type==='unavailable-id'){_hostGameP2P();return}
         document.getElementById('host-status').innerText='⚠ Connection error: '+err.type;
     });
     peer.on('connection',conn=>{
@@ -3223,7 +3439,7 @@ function hostGame(){
         });
     });
 }
-function joinGame(){
+function _joinGameP2P(){
     if(typeof Peer==='undefined'){document.getElementById('join-status').innerText='⚠ Online library failed to load — check internet';return}
     const code=(document.getElementById('join-code').value||'').trim().toUpperCase();
     if(code.length!==4){document.getElementById('join-status').innerText='Enter the 4-character code';return}
@@ -3301,7 +3517,7 @@ function guestStart(m){
 // ===================== v33: resume after refresh =====================
 function normalizeConfig(c){if(c&&c.costs&&!c.costs.hint)c.costs.hint=2;if(c&&c.costs&&!c.costs.zoomies)c.costs.zoomies=5;return c}
 function saveGameState(){
-    if(NET.mode==='join'||!game||game.over)return;
+    if(NET.mode==='join'||NET.async||!game||game.over)return;
     lsSet('spellcoco.save',{config:CONFIG,state:game.serialize(),ts:Date.now(),online:NET.mode==='host',hostName:NET.myName});
 }
 function checkSavedGame(){
@@ -4072,7 +4288,7 @@ class Game{
         this.over=true;
         lsDel('spellcoco.save');
         recordGameStats(this.players);
-        if(NET.mode==='host')NET.send({type:'gameover',players:JSON.parse(JSON.stringify(this.players))});
+        if(NET.async)NET.send({type:'__a',op:'gameover',players:JSON.parse(JSON.stringify(this.players))});else if(NET.mode==='host')NET.send({type:'gameover',players:JSON.parse(JSON.stringify(this.players))});
         renderGameOver(this.players);
     }
 
@@ -4382,7 +4598,7 @@ class Game{
         document.getElementById('coco-hairline').classList.toggle('hidden',zoomHidden&&attackHidden);
         this.updateTimerDisplay();
         if(!NET.quiet){
-            if(NET.mode==='host')NET.send({type:'state',state:this.serialize()});
+            if(NET.async)NET.send({type:'__a',op:'move',state:this.serialize()});else if(NET.mode==='host')NET.send({type:'state',state:this.serialize()});
             else if(NET.mode==='join'&&myTurn)NET.send({type:'sel',ids:[...this.selection]});
             else if(NET.mode==='local')saveGameState();
         }
@@ -4476,6 +4692,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     renderStatsBox();
     renderCustomWordList();
     checkSavedGame();
+    asyncCheckUrl();
 });
 
 let selectedLWPreset = 'keith';
@@ -4627,11 +4844,12 @@ function launchGame(){
     if(NET.mode==='host'){
         NET.myName=onlineMyName();
         // v42: opponent = their declared name; fall back to the classic complement
-        let gn=NET.guestName||(NET.myName==='Keith'?'Shawn':NET.myName==='Shawn'?'Keith':'Keith');
+        let gn=NET.oppName||NET.guestName||(NET.myName==='Keith'?'Shawn':NET.myName==='Shawn'?'Keith':'Keith');
         if(gn===NET.myName)gn=gn.slice(0,12)+' 2';
-        const ns=Math.random()<0.5?[NET.myName,gn]:[gn,NET.myName];
+        let ns;
+        if(NET.async){ns=[];ns[NET.seat]=NET.myName;ns[1-NET.seat]=gn;NET.myIndex=NET.seat;}
+        else{ns=Math.random()<0.5?[NET.myName,gn]:[gn,NET.myName];NET.myIndex=ns.indexOf(NET.myName);}
         opts={names:ns};
-        NET.myIndex=ns.indexOf(NET.myName);
     } else if(UI_MODE==='solo'){
         CONFIG.solo={active:true,mood:SOLO.mood};
         const you={name:SOLO.you==='Guest'?SOLO.guest:SOLO.you};
