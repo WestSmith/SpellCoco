@@ -2491,6 +2491,7 @@
                 </div>
                 <p class="net-status" id="host-opp-side"></p>
                 <div class="room-code-box"><span id="room-code">····</span></div>
+                <button class="dict-checker-btn" id="copy-link-btn" onclick="copyAsyncLink()" style="margin-top:8px;width:100%;">🔗 Copy invite link</button>
                 <p class="net-status" id="host-status">Creating room…</p>
             </div>
             <div id="online-join-panel" class="online-panel hidden">
@@ -3229,7 +3230,7 @@ function connectAsync(code){
     NET.ws=ws;
     ws.onopen=()=>{if(NET.ws!==ws)return;clearTimeout(NET.reconnectTimer);NET.reconnectTimer=null;NET.everConnected=true;NET.reconnectTries=0;
         NET.setPill('🌐','ok','Online: connected');NET.send({type:'__a',op:'hello',name:NET.myName});};
-    ws.onmessage=(ev)=>{if(NET.ws!==ws)return;let m;try{m=JSON.parse(ev.data)}catch(e){return}if(m&&m.type==='__a')asyncOnMessage(m);};
+    ws.onmessage=(ev)=>{if(NET.ws!==ws)return;let m;try{m=JSON.parse(ev.data)}catch(e){return}if(m&&m.type==='__a')asyncOnMessage(m);else if(m&&m.type==='fx')asyncFx(m);};
     ws.onclose=()=>{if(NET.ws!==ws)return;NET.connected=false;
         if(!NET.everConnected){asyncFail();return}
         NET.setPill('⚠','bad','Online: reconnecting…');
@@ -3298,6 +3299,18 @@ function asyncCheckUrl(){
     }catch(e){}
     return false;
 }
+// One-click: copy a private invite link (carrying the opponent's name so they
+// open it as themselves) to send to your opponent.
+function copyAsyncLink(){
+    if(!NET.code){const hs=document.getElementById('host-status');if(hs)hs.innerText='Pick "Host Online" first to get a link.';return}
+    const opp=NET.oppName||(NET.myName==='Keith'?'Shawn':'Keith');
+    const link=location.origin+location.pathname+'?game='+NET.code+'&me='+encodeURIComponent(opp);
+    const done=()=>{const b=document.getElementById('copy-link-btn');if(b){b.innerText='✓ Copied! Send it to '+opp;setTimeout(()=>b.innerText='🔗 Copy invite link',2800);}};
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(link).then(done).catch(()=>{window.prompt('Copy this link to send '+opp+':',link)});}
+    else{window.prompt('Copy this link to send '+opp+':',link);}
+}
+// Live pop-ups (toasts, celebrations) — shown when both players are online.
+function asyncFx(m){if(!game)return;if(m.toast)game.showToast(m.toast,true);if(m.overlay)game.showRoundOverlay(m.overlay.t,m.overlay.s,true);if(m.celebrate)game.showCelebration(m.celebrate,true);if(m.sfx&&SFX[m.sfx])SFX[m.sfx]();}
 let UI_MODE='local'; // v41: 'local' | 'solo' | 'host' | 'join' — NET.mode stays networking-only
 function setMode(m){
     NET.cleanup();UI_MODE=m;NET.mode=(m==='host'||m==='join')?m:'local';NET.setPill('');
@@ -4592,7 +4605,7 @@ class Game{
         // v41: solo behaves like online for Zoomies (only on YOUR turn);
         // Coco Attack is hidden entirely — Coco won't attack himself.
         const zoomHidden=(isOnline||solo)&&!myTurn;
-        const attackHidden=!CONFIG.cocoAttackEnabled||(isOnline&&myTurn)||solo;
+        const attackHidden=!CONFIG.cocoAttackEnabled||(isOnline&&myTurn)||solo||NET.async;
         document.getElementById('zoomies-zone').classList.toggle('hidden',zoomHidden);
         document.getElementById('coco-zone').classList.toggle('hidden',attackHidden);
         document.getElementById('coco-hairline').classList.toggle('hidden',zoomHidden&&attackHidden);
