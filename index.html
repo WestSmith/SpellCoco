@@ -4487,12 +4487,27 @@ class Game{
     // countdown now and clear the mark (pushes the cleared state out).
     maybeCocoTimer(){
         if(!NET.async)return;
-        if(this.cocoPendingFor===NET.myIndex&&this.turnIndex===NET.myIndex&&!this.cocoTimerActive&&!this.over){
+        if(this.cocoPendingFor!==NET.myIndex||this.turnIndex!==NET.myIndex||this.cocoTimerActive||this.over)return;
+        if(this._cocoArming)return; // already waiting to arm
+        // Don't start the clock until the board is fully ready to play (dictionary
+        // + trie loaded), so a slow cold load can't eat into the victim's time.
+        const ready=()=>(typeof dictFileLoaded!=='undefined'&&dictFileLoaded&&typeof trieBuilt!=='undefined'&&trieBuilt);
+        const arm=()=>{
+            this._cocoArming=false;
+            if(!game||game!==this||this.over)return;
+            if(this.cocoPendingFor!==NET.myIndex||this.turnIndex!==NET.myIndex||this.cocoTimerActive)return;
             this.cocoPendingFor=null;
             this.timeLeft=CONFIG.cocoAttackTime;
             this.startCocoTimer();
             this.updateUI();
-        }
+        };
+        if(ready()){arm();return;}
+        this._cocoArming=true;
+        const wait=()=>{
+            if(!game||game!==this){this._cocoArming=false;return;}
+            if(ready())arm();else setTimeout(wait,300);
+        };
+        setTimeout(wait,300);
     }
 
     showPlayerHistory(playerIndex){
