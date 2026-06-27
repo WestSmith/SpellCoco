@@ -2174,12 +2174,23 @@
         .room-code-box{
             text-align:center;margin:10px 0 4px;padding:10px;
             background:var(--bg-input);border-radius:10px;border:1px solid var(--bg-border);
+            cursor:pointer;-webkit-user-select:none;user-select:none;position:relative;
+            transition:background .15s,border-color .15s;
         }
+        .room-code-box:hover{border-color:var(--pink-hi);}
+        .room-code-box:active{background:rgba(255,255,255,0.06);}
+        .room-code-box.copied{border-color:var(--coco-eyes-hi);}
         .room-code-box span{
+            display:inline-block;white-space:nowrap;
             font-size:2rem;font-weight:900;letter-spacing:0.45em;
             color:var(--pink-hi);font-family:'Fredoka','Atkinson Hyperlegible',sans-serif;
             margin-right:-0.45em;
         }
+        .room-code-hint{
+            font-size:0.72rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;
+            color:var(--ink-dim);margin-top:5px;
+        }
+        .room-code-box.copied .room-code-hint{color:var(--coco-eyes-hi);}
         .net-status{font-size:0.86rem;color:var(--ink-dim);margin-top:6px;text-align:center;}
         .side-toggle{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
         .side-btn{
@@ -2215,6 +2226,32 @@
         }
         .net-pill.ok{border-color:#3dbf6e;color:#7fe3a8;}
         .net-pill.bad{border-color:var(--red,#ff5252);color:#ff9c9c;}
+        /* v54: in-game room code (always visible online) + rejoin prompt on partner drop */
+        .ingame-room{
+            display:flex;align-items:center;justify-content:center;gap:6px 10px;flex-wrap:wrap;
+            margin:2px auto 7px;padding:5px 14px;max-width:100%;box-sizing:border-box;
+            border-radius:999px;cursor:pointer;user-select:none;
+            border:2px solid var(--bg-border);background:var(--bg-input);
+        }
+        .ingame-room:hover{border-color:var(--pink);}
+        .ingame-room.copied{border-color:#3dbf6e;}
+        .ingame-room .ir-label{font-weight:800;color:#ffc37d;font-size:0.9rem;white-space:nowrap;}
+        .ingame-room .ir-code{font-weight:800;letter-spacing:0.1em;color:#fff;white-space:nowrap;max-width:100%;overflow:hidden;}
+        .ingame-room .ir-hint{font-size:0.72rem;color:var(--ink-soft);white-space:nowrap;}
+        .ingame-room.copied .ir-hint{color:#8be3a4;}
+        .ingame-rejoin{
+            display:flex;align-items:center;justify-content:center;gap:6px 10px;flex-wrap:wrap;
+            margin:0 auto 8px;padding:6px 14px;max-width:100%;box-sizing:border-box;border-radius:14px;
+            border:2px solid #ff9c9c;background:rgba(255,82,82,0.10);
+        }
+        .ingame-rejoin .ir-msg{font-weight:700;color:#ff9c9c;font-size:0.85rem;text-align:center;}
+        .ingame-rejoin .ir-btn{
+            padding:5px 13px;border-radius:999px;font-weight:800;font-family:inherit;cursor:pointer;
+            border:2px solid #ffa845;background:rgba(255,168,69,0.15);color:#ffc37d;font-size:0.85rem;
+        }
+        .ingame-rejoin .ir-btn:hover{background:rgba(255,168,69,0.28);}
+        .ingame-rejoin.copied .ir-btn{border-color:#3dbf6e;color:#8be3a4;}
+        .side-btn:disabled,.side-btn.seat-taken{opacity:0.4;cursor:not-allowed;text-decoration:line-through;}
         .ticon{
             display:inline-block;width:0.95em;height:0.88em;
             background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 22'%3E%3Cpath d='M7 1.5h10l5.5 7L12 20.5 1.5 8.5z' fill='%23ce92ee' stroke='%234d2577' stroke-width='1.8' stroke-linejoin='round'/%3E%3Cpath d='M2.4 8.5h19.2M7.4 2.2l4.6 6 4.6-6M12 8.8V19.6' stroke='%23ffffff' stroke-width='1.2' fill='none' opacity='0.7'/%3E%3C/svg%3E") center/contain no-repeat;
@@ -2317,6 +2354,16 @@
                 <div id="net-pill" class="net-pill hidden">🌐</div>
             </div>
         </header>
+        <!-- v54: room code stays visible during online play so a dropped partner can rejoin -->
+        <div id="ingame-room" class="ingame-room hidden" onclick="copyInGameCode()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();copyInGameCode()}" title="Tap to copy the room code" role="button" tabindex="0" aria-label="Room code — tap to copy">
+            <span class="ir-label">🔑 Room</span>
+            <span id="ingame-room-code" class="ir-code">····</span>
+            <span class="ir-hint" id="ingame-room-hint">tap to copy</span>
+        </div>
+        <div id="ingame-rejoin" class="ingame-rejoin hidden">
+            <span class="ir-msg" id="ingame-rejoin-msg">Opponent went offline</span>
+            <button class="ir-btn" onclick="copyRejoinLink(this)">🔗 Send rejoin link</button>
+        </div>
         <div class="round-indicator-row">
             <div id="round-indicator">✦ ROUND 1 / 5 ✦</div>
             <div class="round-pips" id="round-pips"></div>
@@ -2490,7 +2537,7 @@
                     <input type="text" class="dict-checker-input" id="online-guest-name" value="Coco's Guest" maxlength="14" style="text-transform:none;letter-spacing:0.02em;" onchange="onlineGuestChanged(this)">
                 </div>
                 <p class="net-status" id="host-opp-side"></p>
-                <div class="room-code-box"><span id="room-code">····</span></div>
+                <div class="room-code-box" onclick="copyRoomCode()" title="Tap to copy the room code"><span id="room-code">····</span><div class="room-code-hint" id="room-code-hint">tap to copy</div></div>
                 <button class="dict-checker-btn" id="copy-link-btn" onclick="copyAsyncLink()" style="margin-top:8px;width:100%;">🔗 Copy invite link</button>
                 <p class="net-status" id="host-status">Creating room…</p>
             </div>
@@ -2509,7 +2556,7 @@
                 </div>
                 <p class="net-status" id="join-opp-side"></p>
                 <div class="dict-checker-row" style="margin-top:8px;">
-                    <input type="text" class="dict-checker-input" id="join-code" placeholder="Room code" maxlength="4" style="text-transform:uppercase;" onkeydown="if(event.key==='Enter')joinGame()">
+                    <input type="text" class="dict-checker-input" id="join-code" placeholder="Room code" maxlength="20" style="text-transform:uppercase;" onkeydown="if(event.key==='Enter')joinGame()">
                     <button class="dict-checker-btn" onclick="joinGame()">Join</button>
                 </div>
                 <p class="net-status" id="join-status"></p>
@@ -3098,7 +3145,7 @@ function joinGame(){ if(NET.useAsync){joinGameAsync();return} if(NET.useRelay){j
 
 function hostGameRelay(){
     const code=genCode();NET.code=code;NET.connected=false;NET.everConnected=false;
-    document.getElementById('room-code').innerText=code;
+    document.getElementById('room-code').innerText=code;requestAnimationFrame(fitRoomCode);
     document.getElementById('host-status').innerText='Connecting to server…';
     relayConnect('host');
 }
@@ -3208,7 +3255,7 @@ function genLongCode(){const a='ABCDEFGHJKMNPQRSTUVWXYZ23456789';let c='';for(le
 
 function hostGameAsync(){
     const code=genLongCode();NET.code=code;
-    const rc=document.getElementById('room-code');if(rc)rc.innerText=code;
+    const rc=document.getElementById('room-code');if(rc){rc.innerText=code;requestAnimationFrame(fitRoomCode);}
     const hs=document.getElementById('host-status');if(hs)hs.innerText='Connecting…';
     asyncEnter(code);
 }
@@ -3223,6 +3270,7 @@ function asyncEnter(code){
     NET.cleanup();
     NET.async=true;NET.mode='host';NET.transport='relay';NET.seat=null;NET.connected=false;NET.everConnected=false;
     NET.myName=onlineMyName();NET.code=code;
+    rememberId(code,NET.myName);   // v54: remember this device's identity for this room
     connectAsync(code);
 }
 function connectAsync(code){
@@ -3230,7 +3278,7 @@ function connectAsync(code){
     NET.ws=ws;
     ws.onopen=()=>{if(NET.ws!==ws)return;clearTimeout(NET.reconnectTimer);NET.reconnectTimer=null;NET.everConnected=true;NET.reconnectTries=0;
         NET.setPill('🌐','ok','Online: connected');NET.send({type:'__a',op:'hello',name:NET.myName});};
-    ws.onmessage=(ev)=>{if(NET.ws!==ws)return;let m;try{m=JSON.parse(ev.data)}catch(e){return}if(m&&m.type==='__a')asyncOnMessage(m);else if(m&&m.type==='fx')asyncFx(m);};
+    ws.onmessage=(ev)=>{if(NET.ws!==ws)return;let m;try{m=JSON.parse(ev.data)}catch(e){return}if(m&&m.type==='__a')asyncOnMessage(m);else if(m&&m.type==='fx')asyncFx(m);else asyncOnData(m);};
     ws.onclose=()=>{if(NET.ws!==ws)return;NET.connected=false;
         if(!NET.everConnected){asyncFail();return}
         NET.setPill('⚠','bad','Online: reconnecting…');
@@ -3250,14 +3298,32 @@ function asyncOnMessage(m){
         case 'state':if(game){game.applyState(m.state);asyncTurnHint();}break;
         case 'newgame':asyncLoadGame(m.state,m.config);break;
         case 'gameover':if(game)game.over=true;recordGameStats(m.players);renderGameOver(m.players);break;
-        case 'peer':asyncPeer(m);break;
+        case 'peer':if(m.present)asyncSyncWords();asyncPeer(m);break;
         case 'reject':if(game)game.showToast('⏳ Hang on — not your turn yet');break;
     }
 }
+// v54: in async, BOTH players are 'host' and the server simply FORWARDS any
+// non-'__a' message — so the custom-word consent + dictionary sync the old
+// host/guest handlers owned never ran online. Route those here. wordreq =
+// opponent asks to add a word (Allow/Refuse modal); wordok/addword = approved.
+function asyncOnData(m){
+    if(!m||typeof m!=='object')return;
+    switch(m.type){
+        case 'customs':mergeRemoteWords(m.words);break;
+        case 'stats':mergeStats(m.stats);break;
+        case 'side':{const nm=validPlayerName(m.host||m.guest||'');if(nm)NET.oppName=nm;break;}
+        case 'wordreq':if(typeof m.w==='string'&&/^[A-Z]{2,15}$/.test(m.w))showWordRequest(m.w);break;
+        case 'wordok':addCustomWord(m.w,true);if(game){game.showToast(`📖 ${oppName()} approved "${m.w}" — play it!`);game.updateUI()}break;
+        case 'wordno':if(game)game.showToast(`🙀 ${oppName()} vetoed "${m.w}"`);break;
+        case 'addword':addCustomWord(m.w,true);if(game){game.showToast(`📖 ${m.w} added by ${oppName()}`);game.updateUI()}break;
+    }
+}
+function asyncSyncWords(){if(localCustomWords&&localCustomWords.length)NET.send({type:'customs',words:localCustomWords});}
 function asyncWelcome(m){
     if(m.full){const el=document.getElementById(UI_MODE==='join'?'join-status':'host-status');if(el)el.innerText='⚠ This game already has two players';NET.cleanup();return;}
     NET.seat=m.seat;NET.myIndex=m.seat;NET.connected=true;
     NET.oppName=(m.names&&m.names[1-m.seat])||null;
+    asyncSyncWords();   // v54: share custom words on connect (consent + dictionary sync)
     if(m.state){asyncLoadGame(m.state,m.config);}
     else{
         const hs=document.getElementById('host-status');if(hs)hs.innerText='✓ Connected — press Start to begin, and share the code with '+(NET.oppName||'your opponent')+'.';
@@ -3277,6 +3343,7 @@ function asyncLoadGame(state,config){
     document.getElementById('coco-zone').classList.toggle('hidden',!CONFIG.cocoAttackEnabled);
     game=Game.fromState(state);
     NET.myIndex=NET.seat;
+    showInGameRoom();   // v54: surface the room code in-game for easy reconnect
     asyncTurnHint(true);
 }
 function asyncTurnHint(overlay){
@@ -3286,34 +3353,170 @@ function asyncTurnHint(overlay){
 }
 function asyncPeer(m){
     if(!game)return;
-    if(m.present)game.showToast(`🌐 ${m.name||'Opponent'} is online`);
-    else game.showToast('🌐 Opponent went offline — your move still saves');
+    const opp=m.name||NET.oppName||(NET.myName==='Keith'?'Shawn':'Keith');
+    const rb=document.getElementById('ingame-rejoin');
+    if(m.present){
+        game.showToast(`🌐 ${opp} is online`);
+        if(rb)rb.classList.add('hidden');
+    }else{
+        game.showToast('🌐 Opponent went offline — your move still saves');
+        const msg=document.getElementById('ingame-rejoin-msg');if(msg)msg.textContent=`${opp} went offline`;
+        if(rb)rb.classList.remove('hidden');
+    }
 }
-// Private link: opening westsmith.github.io/SpellCoco/?game=<code> auto-joins that room.
+// Shared link: opening westsmith.github.io/SpellCoco/?game=<code> joins that room.
+// v54: ONE nameless link works for both players. Identity is resolved per device:
+//   1) explicit ?me=<name> (back-compat with older invite links)
+//   2) this device's remembered identity for this room (auto-rejoin as self)
+//   3) otherwise show the Join panel and let the player tap who they are
+//      (a server peek pre-selects the open seat when the server supports it).
 function asyncCheckUrl(){
-    try{const q=new URLSearchParams(location.search);const c=q.get('game');const me=q.get('me');
-        if(c&&/^[A-Z0-9]{4,40}$/i.test(c)){
-            if(me&&/^[A-Za-z0-9 '\-]{1,14}$/.test(me))pickSide(me);
-            UI_MODE='join';NET.mode='join';asyncEnter(c.toUpperCase());return true;
-        }
+    try{
+        const q=new URLSearchParams(location.search);
+        const c=q.get('game'),me=q.get('me');
+        if(!(c&&/^[A-Z0-9]{4,40}$/i.test(c)))return false;
+        const code=c.toUpperCase();
+        UI_MODE='join';NET.mode='join';
+        if(me&&/^[A-Za-z0-9 '\-]{1,14}$/.test(me)){pickSide(me);asyncEnter(code);return true;}
+        const known=recallId(code);
+        if(known){pickSide(known);asyncEnter(code);return true;}
+        promptJoinIdentity(code);
+        return true;
     }catch(e){}
     return false;
 }
-// One-click: copy a private invite link (carrying the opponent's name so they
-// open it as themselves) to send to your opponent.
+// One-click: copy ONE shared invite link (nameless ?game=CODE). Each device that
+// opens it joins as itself — the sender no longer hand-edits a me= name.
 function copyAsyncLink(){
     if(!NET.code){const hs=document.getElementById('host-status');if(hs)hs.innerText='Pick "Host Online" first to get a link.';return}
-    const opp=NET.oppName||(NET.myName==='Keith'?'Shawn':'Keith');
-    const link=location.origin+location.pathname+'?game='+NET.code+'&me='+encodeURIComponent(opp);
-    const done=()=>{const b=document.getElementById('copy-link-btn');if(b){b.innerText='✓ Copied! Send it to '+opp;setTimeout(()=>b.innerText='🔗 Copy invite link',2800);}};
-    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(link).then(done).catch(()=>{window.prompt('Copy this link to send '+opp+':',link)});}
-    else{window.prompt('Copy this link to send '+opp+':',link);}
+    const link=buildShareLink();
+    const done=()=>{const b=document.getElementById('copy-link-btn');if(b){b.innerText='✓ Copied — send to your opponent';setTimeout(()=>b.innerText='🔗 Copy invite link',2800);}};
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(link).then(done).catch(()=>{window.prompt('Copy this link to send your opponent:',link)});}
+    else{window.prompt('Copy this link to send your opponent:',link);}
+}
+function buildShareLink(){return location.origin+location.pathname+'?game='+(NET.code||'');}
+// v54: this device remembers which player it is in a given room, so the SAME
+// nameless link (?game=CODE) opens as the right person on each device — no me= editing.
+function rememberId(code,name){if(code&&name)lsSet('spellcoco.id.'+code,name);}
+function recallId(code){const n=lsGet('spellcoco.id.'+code,null);return (typeof n==='string'&&n)?validPlayerName(n):null;}
+// Unknown identity on a shared link → show the Join panel, prefilled, and (best effort)
+// ask the server who's already here so we can pre-pick the OPEN seat.
+function promptJoinIdentity(code){
+    setMode('join');
+    const inp=document.getElementById('join-code');if(inp)inp.value=code;
+    const js=document.getElementById('join-status');if(js)js.innerText='Tap who you are, then Join.';
+    asyncPeek(code,(roster)=>{if(roster)applyRosterToJoinPanel(roster);});
+}
+function applyRosterToJoinPanel(roster){
+    const names=(roster.names||[]).filter(Boolean);
+    if(!names.length)return;
+    const taken=new Set(names);
+    const full=!!roster.full||names.length>=2;
+    const openCanon=['Keith','Shawn'].filter(t=>!taken.has(t));
+    ['Keith','Shawn'].forEach(t=>{
+        const b=document.getElementById('join-'+t);if(!b)return;
+        const block=taken.has(t)&&!full;            // only block if an alternative seat is open
+        b.disabled=block;b.classList.toggle('seat-taken',block);
+        b.title=block?(t+' is already in this game'):'';
+    });
+    const js=document.getElementById('join-status');
+    if(openCanon.length===1&&!full){
+        pickSide(openCanon[0]);
+        if(js)js.innerText=`${[...taken][0]} is already in — you’re ${openCanon[0]}. Tap Join.`;
+    }else if(js){js.innerText='Someone’s already in this game. Pick who you are, then Join.';}
+}
+// Read-only roster peek: a throwaway socket that NEVER sends hello, so it claims no
+// seat. Falls back silently (null) on older servers that don't answer 'peek'.
+function asyncPeek(code,cb){
+    let done=false,ws;
+    const finish=(r)=>{if(done)return;done=true;clearTimeout(to);try{if(ws){ws.onopen=ws.onmessage=ws.onerror=ws.onclose=null;ws.close();}}catch(e){}cb(r);};
+    const to=setTimeout(()=>finish(null),1600);
+    try{ws=new WebSocket(ASYNC_URL+'/r/'+code);}catch(e){finish(null);return;}
+    ws.onopen=()=>{try{ws.send(JSON.stringify({type:'__a',op:'peek'}))}catch(e){finish(null)}};
+    ws.onmessage=(ev)=>{let m;try{m=JSON.parse(ev.data)}catch(e){return}if(m&&m.type==='__a'&&m.op==='roster')finish(m);};
+    ws.onerror=()=>finish(null);
+    ws.onclose=()=>finish(null);
+}
+// v53: the async room code is 14 chars — auto-fit it to ONE line so it never
+// clips or wraps (a wrapped code invites half-selection), and make the whole box
+// tap-to-copy so nobody has to hand-select it. Long codes get tighter spacing so
+// glyphs stay as large as the width allows (Keith reads at high zoom).
+function fitRoomCode(){
+    const span=document.getElementById('room-code');if(!span)return;
+    const box=span.closest('.room-code-box');if(!box)return;
+    const hint=document.getElementById('room-code-hint');
+    const txt=(span.textContent||'').trim();
+    const placeholder=!txt||/^[·.]+$/.test(txt);
+    if(hint)hint.style.visibility=placeholder?'hidden':'visible';
+    const ls=txt.length>6?0.12:0.45;            // tighter letters for long codes
+    span.style.letterSpacing=ls+'em';
+    span.style.marginRight=(-ls)+'em';          // cancel trailing spacing so it stays centred
+    const avail=box.clientWidth-20;             // box padding is 10px each side
+    if(avail<=0)return;                         // panel hidden — nothing to measure yet
+    let size=32;                                // 2rem ceiling, shrink only as needed
+    span.style.fontSize=size+'px';
+    let guard=0;
+    while(span.scrollWidth>avail&&size>12&&guard<48){size--;span.style.fontSize=size+'px';guard++;}
+}
+if(!window.__rcFitBound){window.__rcFitBound=true;window.addEventListener('resize',()=>{fitRoomCode();const s=document.getElementById('ingame-room-code'),b=document.getElementById('ingame-room');if(s&&b&&!b.classList.contains('hidden'))fitCodeText(s,b);});}
+// v54: in-game room-code bar — visible the whole online game so a dropped partner can rejoin.
+function fitCodeText(span,box){
+    if(!span||!box)return;
+    const txt=(span.textContent||'').trim();
+    if(!txt||/^[·.]+$/.test(txt))return;
+    const avail=box.clientWidth-28;if(avail<=0)return;
+    let size=22;span.style.fontSize=size+'px';
+    let g=0;while(span.scrollWidth>avail&&size>11&&g<40){size--;span.style.fontSize=size+'px';g++;}
+}
+function showInGameRoom(){
+    const bar=document.getElementById('ingame-room');if(!bar)return;
+    if(!(NET.async&&NET.code)){bar.classList.add('hidden');return;}
+    const c=document.getElementById('ingame-room-code');if(c)c.textContent=NET.code;
+    bar.classList.remove('hidden');
+    requestAnimationFrame(()=>fitCodeText(document.getElementById('ingame-room-code'),bar));
+}
+function hideInGameRoom(){
+    const b=document.getElementById('ingame-room');if(b)b.classList.add('hidden');
+    const r=document.getElementById('ingame-rejoin');if(r)r.classList.add('hidden');
+}
+function copyInGameCode(){
+    const code=(typeof NET!=='undefined'&&NET.code)||'';if(!code)return;
+    const bar=document.getElementById('ingame-room'),hint=document.getElementById('ingame-room-hint');
+    const done=()=>{if(bar)bar.classList.add('copied');if(hint)hint.textContent='✓ Copied!';setTimeout(()=>{if(bar)bar.classList.remove('copied');if(hint)hint.textContent='tap to copy';},2000);};
+    if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(code).then(done).catch(()=>window.prompt('Room code:',code));
+    else window.prompt('Room code:',code);
+}
+// One shared rejoin link for BOTH players — each device opens it as itself.
+function copyRejoinLink(btn){
+    if(!NET.code)return;
+    const link=buildShareLink();
+    const orig=btn?btn.textContent:'';
+    const bar=document.getElementById('ingame-rejoin');
+    const done=()=>{if(bar)bar.classList.add('copied');if(btn)btn.textContent='✓ Link copied!';setTimeout(()=>{if(bar)bar.classList.remove('copied');if(btn)btn.textContent=orig;},2800);};
+    if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(link).then(done).catch(()=>window.prompt('Send your partner this link to rejoin:',link));
+    else window.prompt('Send your partner this link to rejoin:',link);
+}
+function copyRoomCode(){
+    const span=document.getElementById('room-code');
+    const code=((typeof NET!=='undefined'&&NET.code)||(span&&span.textContent)||'').trim();
+    if(!code||/^[·.]+$/.test(code))return;      // no real code yet
+    const box=span&&span.closest('.room-code-box');
+    const hint=document.getElementById('room-code-hint');
+    const done=()=>{
+        if(box)box.classList.add('copied');
+        if(hint)hint.textContent='✓ Copied!';
+        setTimeout(()=>{if(box)box.classList.remove('copied');if(hint)hint.textContent='tap to copy';},2200);
+    };
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+        navigator.clipboard.writeText(code).then(done).catch(()=>window.prompt('Copy this room code:',code));
+    }else{window.prompt('Copy this room code:',code);}
 }
 // Live pop-ups (toasts, celebrations) — shown when both players are online.
 function asyncFx(m){if(!game)return;if(m.toast)game.showToast(m.toast,true);if(m.overlay)game.showRoundOverlay(m.overlay.t,m.overlay.s,true);if(m.celebrate)game.showCelebration(m.celebrate,true);if(m.sfx&&SFX[m.sfx])SFX[m.sfx]();}
 let UI_MODE='local'; // v41: 'local' | 'solo' | 'host' | 'join' — NET.mode stays networking-only
 function setMode(m){
     NET.cleanup();UI_MODE=m;NET.mode=(m==='host'||m==='join')?m:'local';NET.setPill('');
+    hideInGameRoom();   // v54: code bar only shows during an active online game
     ['local','solo','host','join'].forEach(x=>{const b=document.getElementById('mode-'+x);if(b)b.classList.toggle('active',x===m)});
     document.getElementById('local-players-panel').classList.toggle('hidden',m!=='local');
     document.getElementById('solo-panel').classList.toggle('hidden',m!=='solo');
@@ -3412,10 +3615,10 @@ function mergeStats(r){
 function _hostGameP2P(){
     if(typeof Peer==='undefined'){document.getElementById('host-status').innerText='⚠ Online library failed to load — check internet';return}
     const code=genCode();NET.code=code;
-    document.getElementById('room-code').innerText='····';
+    document.getElementById('room-code').innerText='····';requestAnimationFrame(fitRoomCode);
     document.getElementById('host-status').innerText='Creating room…';
     const peer=new Peer('spellcoco-'+code);NET.peer=peer;
-    peer.on('open',()=>{if(NET.peer!==peer)return;document.getElementById('room-code').innerText=code;document.getElementById('host-status').innerText='Share this code — waiting for opponent…'});
+    peer.on('open',()=>{if(NET.peer!==peer)return;document.getElementById('room-code').innerText=code;requestAnimationFrame(fitRoomCode);document.getElementById('host-status').innerText='Share this code — waiting for opponent…'});
     peer.on('error',err=>{
         if(NET.peer!==peer)return;
         if(err.type==='unavailable-id'){_hostGameP2P();return}
