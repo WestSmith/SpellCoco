@@ -12,6 +12,33 @@
 
     <!--
     ================================================================
+    SPELLCOCO v55 — FAIR SEATS, FAIR START
+    ================================================================
+
+    CHANGELOG v54 → v55 (Shawn reported: both players ended up "Shawn"
+    when joining by link; only the joiner saw the in-game room code;
+    and the host always went first):
+    - FIX (identity): the relay seats by NAME, so when a joiner's device
+      defaulted to "Shawn" it collided onto the host's seat 0 — both
+      controlled Shawn, nobody held Keith. A JOIN-mode client that lands
+      on seat 0 now detects the collision and re-claims the OPEN seat
+      (the host reopening the shared link is exempted via remembered
+      identity). Identity is no longer stamped until the relay confirms
+      the seat, so the guard can't be fooled by an unconfirmed default.
+    - ADD (identity lock): once BOTH seats are filled, each player's name
+      is locked to their seat — a later disconnect/rejoin can't switch it
+      (e.g. a "Shawn" can't become a guest). The seat picker collapses to
+      your locked identity; the host's Start screen names the confirmed
+      opponent.
+    - FIX (first player): online games randomize who opens instead of
+      always the host. Implemented as a serialized startIndex with a
+      round = one full cycle from the opener (backward-compatible with
+      v54 saves, which open at seat 0). Applies to new games and rematch.
+    - FIX (room code): the host now also sees the always-visible in-game
+      room-code bar (previously only the joiner did).
+    - All changes are client-side; the relay is unchanged.
+
+    ================================================================
     SPELLCOCO v48 — COCO LEARNS TO SPEND HIS TREATS
     ================================================================
 
@@ -2252,6 +2279,9 @@
         .ingame-rejoin .ir-btn:hover{background:rgba(255,168,69,0.28);}
         .ingame-rejoin.copied .ir-btn{border-color:#3dbf6e;color:#8be3a4;}
         .side-btn:disabled,.side-btn.seat-taken{opacity:0.4;cursor:not-allowed;text-decoration:line-through;}
+        /* v55: once identity is locked, show only the player's own seat as a static pill */
+        .side-btn.seat-locked{opacity:1;cursor:default;text-decoration:none;}
+        .side-btn.seat-locked:not(.active){display:none;}
         .ticon{
             display:inline-block;width:0.95em;height:0.88em;
             background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 22'%3E%3Cpath d='M7 1.5h10l5.5 7L12 20.5 1.5 8.5z' fill='%23ce92ee' stroke='%234d2577' stroke-width='1.8' stroke-linejoin='round'/%3E%3Cpath d='M2.4 8.5h19.2M7.4 2.2l4.6 6 4.6-6M12 8.8V19.6' stroke='%23ffffff' stroke-width='1.2' fill='none' opacity='0.7'/%3E%3C/svg%3E") center/contain no-repeat;
@@ -3125,7 +3155,7 @@ const NET={
         // v42: tell the joiner their FINAL (possibly deduped) identity
         let gn=null;
         if(game&&this.myIndex>=0&&game.players[1-this.myIndex])gn=game.players[1-this.myIndex].name;
-        if(this.async){this.send({type:'__a',op:'newgame',state:game.serialize(),config:CONFIG});return}
+        if(this.async){this.send({type:'__a',op:'newgame',state:game.serialize(),config:CONFIG});showInGameRoom();return}
         this.send({type:'start',config:CONFIG,state:game.serialize(),customs:localCustomWords,guestName:gn});
     },
     cleanup(){if(this.peer){try{this.peer.destroy()}catch(e){}}this.peer=null;this.conn=null;if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.reconnectTries=0;this.transport=this.useRelay?'relay':'p2p';this.everConnected=false;this.connected=false;}
@@ -3269,8 +3299,10 @@ function joinGameAsync(){
 function asyncEnter(code){
     NET.cleanup();
     NET.async=true;NET.mode='host';NET.transport='relay';NET.seat=null;NET.connected=false;NET.everConnected=false;
+    NET.__reseat=false;NET.__rehello=false;   // v55: clear identity-resolution flags for a fresh attempt
     NET.myName=onlineMyName();NET.code=code;
-    rememberId(code,NET.myName);   // v54: remember this device's identity for this room
+    // v55: DON'T stamp identity here — an unconfirmed default (e.g. "Shawn") would
+    // defeat the collision guard. We remember the seat only once the relay confirms it.
     connectAsync(code);
 }
 function connectAsync(code){
@@ -3311,7 +3343,14 @@ function asyncOnData(m){
     switch(m.type){
         case 'customs':mergeRemoteWords(m.words);break;
         case 'stats':mergeStats(m.stats);break;
-        case 'side':{const nm=validPlayerName(m.host||m.guest||'');if(nm)NET.oppName=nm;break;}
+        case 'side':{
+            const nm=validPlayerName(m.host||m.guest||'');
+            if(nm&&nm!==NET.myName){           // ignore an opponent still sharing our name (they'll auto-correct)
+                NET.oppName=nm;reflectOpponentName();
+                if(!game)lockIdentity(NET.myName);   // v55: both identities now set → lock ours
+            }
+            break;
+        }
         case 'wordreq':if(typeof m.w==='string'&&/^[A-Z]{2,15}$/.test(m.w))showWordRequest(m.w);break;
         case 'wordok':addCustomWord(m.w,true);if(game){game.showToast(`📖 ${oppName()} approved "${m.w}" — play it!`);game.updateUI()}break;
         case 'wordno':if(game)game.showToast(`🙀 ${oppName()} vetoed "${m.w}"`);break;
@@ -3320,9 +3359,36 @@ function asyncOnData(m){
 }
 function asyncSyncWords(){if(localCustomWords&&localCustomWords.length)NET.send({type:'customs',words:localCustomWords});}
 function asyncWelcome(m){
-    if(m.full){const el=document.getElementById(UI_MODE==='join'?'join-status':'host-status');if(el)el.innerText='⚠ This game already has two players';NET.cleanup();return;}
+    // v55: room already holds two OTHER players and we aren't one of them. If this
+    // device remembers being one of them, re-hello as that identity; else explain.
+    if(m.full){
+        const known=recallId(NET.code);
+        if(known&&m.names&&m.names.indexOf(known)>=0&&!NET.__rehello){NET.__rehello=true;ONLINE_LOCKED=false;NET.myName=known;pickSide(known);try{NET.send({type:'__a',op:'hello',name:NET.myName});}catch(e){}return;}
+        const el=document.getElementById(UI_MODE==='join'?'join-status':'host-status');if(el)el.innerText='⚠ This game already has two players';NET.cleanup();return;
+    }
+    // v55: identity-collision guard. The relay seats by NAME, so a JOIN-mode client
+    // that lands on seat 0 has matched the HOST's name — take the open seat instead.
+    // BUT skip when THIS device remembers being seat 0 (the real host reopening the
+    // shared link is also UI_MODE 'join' and legitimately holds seat 0).
+    if(UI_MODE==='join'&&m.seat===0&&!NET.__reseat&&recallId(NET.code)!==((m.names&&m.names[0])||null)){
+        const mine=openSeatName((m.names&&m.names[0])||'Shawn');
+        if(mine&&mine!==NET.myName){
+            NET.__reseat=true;ONLINE_LOCKED=false;NET.myName=mine;pickSide(mine);rememberId(NET.code,mine);
+            try{NET.send({type:'__a',op:'hello',name:NET.myName});}catch(e){}
+            return;   // wait for the corrected welcome
+        }
+    }
+    NET.__reseat=false;NET.__rehello=false;
     NET.seat=m.seat;NET.myIndex=m.seat;NET.connected=true;
     NET.oppName=(m.names&&m.names[1-m.seat])||null;
+    // v55: the relay roster owns who holds each seat — adopt it, and once BOTH
+    // seats are filled, LOCK it so a later disconnect/rejoin can't change the name.
+    if(m.names&&m.names[m.seat]){
+        if(m.names.filter(Boolean).length>=2)lockIdentity(m.names[m.seat]);
+        else NET.myName=m.names[m.seat];
+        rememberId(NET.code,m.names[m.seat]);
+    }
+    announceSide();   // v55: tell the peer our FINAL identity so they can lock too
     asyncSyncWords();   // v54: share custom words on connect (consent + dictionary sync)
     if(m.state){asyncLoadGame(m.state,m.config);}
     else{
@@ -3330,6 +3396,7 @@ function asyncWelcome(m){
         const js=document.getElementById('join-status');if(js)js.innerText='✓ Connected — waiting for the game to start…';
         const sb=document.querySelector('#modal-start .btn-start');
         if(sb){if(m.seat===0){sb.innerText='⚡ Start Game';sb.disabled=false;}else{sb.innerText='⏳ Waiting for opponent to start…';sb.disabled=true;}}
+        reflectOpponentName();
     }
 }
 function asyncLoadGame(state,config){
@@ -3399,6 +3466,30 @@ function buildShareLink(){return location.origin+location.pathname+'?game='+(NET
 // nameless link (?game=CODE) opens as the right person on each device — no me= editing.
 function rememberId(code,name){if(code&&name)lsSet('spellcoco.id.'+code,name);}
 function recallId(code){const n=lsGet('spellcoco.id.'+code,null);return (typeof n==='string'&&n)?validPlayerName(n):null;}
+// v55: identity helpers. The relay seats by NAME, so two clients must never send
+// the same name — and once both seats are set, a player can't change theirs.
+let ONLINE_LOCKED=false;
+function openSeatName(takenName){
+    if(takenName==='Shawn')return 'Keith';
+    if(takenName==='Keith')return 'Shawn';
+    return sanitizeGuestName((takenName||'Player')+' 2');   // guest/unknown: stay distinct
+}
+function lockIdentity(name){
+    ONLINE_LOCKED=true;
+    if(name==='Keith'||name==='Shawn'){ONLINE_SIDE.type=name;}
+    else{ONLINE_SIDE.type='Guest';ONLINE_SIDE.guest=sanitizeGuestName(name);}
+    ONLINE_SIDE.picked=true;NET.myName=onlineMyName();
+    renderOnlineSide();
+    ['Keith','Shawn','Guest'].forEach(t=>{
+        ['side-'+t,'join-'+t].forEach(id=>{const b=document.getElementById(id);if(b){b.disabled=true;b.classList.add('seat-locked');b.title='Locked for this game';}});
+    });
+    ['online-guest-name','join-guest-name'].forEach(id=>{const i=document.getElementById(id);if(i)i.disabled=true;});
+}
+function reflectOpponentName(){
+    if(game||!NET.oppName)return;
+    if(UI_MODE==='host'){const hs=document.getElementById('host-status');if(hs&&NET.connected)hs.innerText=`✓ ${NET.oppName} is in — press Start to begin.`;}
+    else{const js=document.getElementById('join-status');if(js&&NET.connected)js.innerText=`✓ In the room with ${NET.oppName} — waiting for the host to start…`;}
+}
 // Unknown identity on a shared link → show the Join panel, prefilled, and (best effort)
 // ask the server who's already here so we can pre-pick the OPEN seat.
 function promptJoinIdentity(code){
@@ -3537,6 +3628,7 @@ function announceSide(){
     else if(NET.mode==='join')NET.send({type:'side',guest:NET.myName});
 }
 function pickSide(t){
+    if(ONLINE_LOCKED)return;   // v55: identity is locked once both players are set
     // accepts a type ('Keith'/'Shawn'/'Guest') or a saved NAME (resume path)
     if(t==='Keith'||t==='Shawn'||t==='Guest')ONLINE_SIDE.type=t;
     else{ONLINE_SIDE.type='Guest';ONLINE_SIDE.guest=sanitizeGuestName(t)}
@@ -4164,10 +4256,10 @@ class Game{
             abilityLog:{}
         }));
         this.timerInterval=null;this.timeLeft=0;this.cocoTimerActive=false;this.over=false;
-        this.round=1;this.turnIndex=0;this.tiles=[];this.selection=[];
+        this.round=1;this.startIndex=(opts&&typeof opts.startIndex==='number'&&opts.startIndex>=0&&opts.startIndex<this.players.length)?opts.startIndex:0;this.turnIndex=this.startIndex;this.tiles=[];this.selection=[];
         this.pendingSwap=false;this.isDragging=false;this.cocoPending=false;
         this.generateBoard();this.selection=[];this.updateUI();this.setupTouchDrag();
-        this.showRoundOverlay('Round 1',`${this.players[0].name} goes first!`);
+        this.showRoundOverlay('Round 1',`${this.players[this.startIndex].name} goes first!`);
         this.maybeCoco();
     }
     get currentPlayer(){return this.players[this.turnIndex]}
@@ -4183,7 +4275,7 @@ class Game{
     }
 
     serialize(){
-        return {round:this.round,turnIndex:this.turnIndex,
+        return {round:this.round,turnIndex:this.turnIndex,startIndex:this.startIndex,
             players:JSON.parse(JSON.stringify(this.players)),
             tiles:this.tiles.map(t=>({char:t.char,mult:t.multiplier,gem:t.hasGem})),
             cocoTimerActive:this.cocoTimerActive,timeLeft:this.timeLeft,cocoPendingFor:(this.cocoPendingFor==null?null:this.cocoPendingFor),
@@ -4192,7 +4284,7 @@ class Game{
     static fromState(st){
         const g=Object.create(Game.prototype);
         g.timerInterval=null;g.timeLeft=st.timeLeft||0;g.cocoTimerActive=false;
-        g.round=st.round;g.turnIndex=st.turnIndex;g.selection=[];
+        g.round=st.round;g.turnIndex=st.turnIndex;g.startIndex=(typeof st.startIndex==='number')?st.startIndex:0;g.selection=[];
         g.pendingSwap=false;g.isDragging=false;g.over=false;
         g.players=st.players;
         g.tiles=st.tiles.map((td,i)=>{const t=new Tile(i,Math.floor(i/5),i%5,td.char);t.multiplier=td.mult;t.hasGem=td.gem;return t});
@@ -4204,7 +4296,7 @@ class Game{
         return g;
     }
     applyState(st){
-        this.round=st.round;this.turnIndex=st.turnIndex;
+        this.round=st.round;this.turnIndex=st.turnIndex;if(typeof st.startIndex==='number')this.startIndex=st.startIndex;
         this.players=st.players;
         this.cocoTimerActive=st.cocoTimerActive;this.timeLeft=st.timeLeft;this.cocoPendingFor=(st.cocoPendingFor==null?null:st.cocoPendingFor);
         this.tiles=st.tiles.map((td,i)=>{const t=new Tile(i,Math.floor(i/5),i%5,td.char);t.multiplier=td.mult;t.hasGem=td.gem;return t});
@@ -4474,12 +4566,14 @@ class Game{
         // Round 1 only: shuffle gem positions after each turn — but NOT on the
         // last turn of the round (endRound → upgradeMultipliersForNewRound →
         // replenishGems would immediately overwrite the scramble anyway).
-        if(this.round===1&&this.turnIndex<this.players.length-1){
+        const next=(this.turnIndex+1)%this.players.length;
+        const roundDone=(next===this.startIndex);   // v55: a round = one full cycle from whoever opened it
+        if(this.round===1&&!roundDone){
             this.randomizeGems();
             setTimeout(()=>this.showToast(TICON+' Treats shifted!'),1900);
         }
-        this.turnIndex++;
-        if(this.turnIndex>=this.players.length){this.turnIndex=0;this.endRound()}
+        this.turnIndex=next;
+        if(roundDone){this.endRound()}
         else{
             this.updateUI();
             this.showRoundOverlay(`${this.currentPlayer.name}'s Turn`,`Round ${this.round} of ${CONFIG.rounds}`);
@@ -4490,7 +4584,7 @@ class Game{
     endRound(){
         this.round++;
         if(this.round>CONFIG.rounds){this.endGame();return}
-        this.turnIndex=0;
+        this.turnIndex=this.startIndex;   // v55: each round restarts with the same opener
         this.upgradeMultipliersForNewRound();
         this.updateUI();
         this.showRoundOverlay(`Round ${this.round}`,`${CONFIG.rounds-this.round+1} remaining`);
@@ -4928,8 +5022,8 @@ function startRematch(){
     if(NET.mode==='host'){
         // v42: rematch with the same two names (whatever they are), fresh order
         const gn=(game&&NET.myIndex>=0&&game.players[1-NET.myIndex])?game.players[1-NET.myIndex].name:(NET.guestName||'Keith');
-        const ns=Math.random()<0.5?[NET.myName,gn]:[gn,NET.myName];
-        opts={names:ns};NET.myIndex=ns.indexOf(NET.myName);
+        if(NET.async){const ns=[];ns[NET.seat]=NET.myName;ns[1-NET.seat]=gn;opts={names:ns,startIndex:Math.random()<0.5?0:1};NET.myIndex=NET.seat;}  // v55: seat-stable order + random opener
+        else{const ns=Math.random()<0.5?[NET.myName,gn]:[gn,NET.myName];opts={names:ns};NET.myIndex=ns.indexOf(NET.myName);}
     } else if(game){
         // v41: rematch keeps the same seats (incl. Coco / guests), fresh order
         const seats=game.players.map(p=>({name:p.name,isCoco:!!p.isCoco,mood:p.mood||null}));
@@ -5121,6 +5215,7 @@ function launchGame(){
         if(NET.async){ns=[];ns[NET.seat]=NET.myName;ns[1-NET.seat]=gn;NET.myIndex=NET.seat;}
         else{ns=Math.random()<0.5?[NET.myName,gn]:[gn,NET.myName];NET.myIndex=ns.indexOf(NET.myName);}
         opts={names:ns};
+        if(NET.async)opts.startIndex=Math.random()<0.5?0:1;   // v55: randomize who opens (host no longer always first)
     } else if(UI_MODE==='solo'){
         CONFIG.solo={active:true,mood:SOLO.mood};
         const you={name:SOLO.you==='Guest'?SOLO.guest:SOLO.you};
