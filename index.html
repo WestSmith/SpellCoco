@@ -12,6 +12,21 @@
 
     <!--
     ================================================================
+    SPELLCOCO v57 — SOUND ON BY DEFAULT
+    ================================================================
+
+    CHANGELOG v56 → v57 (Shawn: "sound should be on by default instead
+    of off"):
+    - CHANGE: Sound Effects now default ON. The #sound-toggle checkbox
+      is `checked` in markup (new-user / fresh-install default), and
+      restoreSettings reads `cfg.sound!==false` so a saved config that
+      predates a stored sound flag also comes up ON. Existing players
+      who explicitly turned sound OFF keep their choice (saved
+      sound:false is respected). Mirrors the v45 cloud-assist pattern.
+    - Client-only; no gameplay, netcode, or state changes. v56 preserved
+      for instant revert.
+
+    ================================================================
     SPELLCOCO v56 — VERSION ON SCREEN + PET THE COCO
     ================================================================
 
@@ -2634,7 +2649,7 @@
             <div class="acc-body">
             <div class="setting-row">
                 <span>Sound Effects</span>
-                <label class="toggle-switch"><input type="checkbox" id="sound-toggle"><span class="toggle-slider"></span></label>
+                <label class="toggle-switch"><input type="checkbox" id="sound-toggle" checked><span class="toggle-slider"></span></label>
             </div>
             <div class="setting-row">
                 <span>Starting Treats</span>
@@ -2934,7 +2949,7 @@ function saveSettings(){
 function restoreSettings(){
     const cfg=lsGet('spellcoco.settings',null);if(!cfg)return;
     try{
-        document.getElementById('sound-toggle').checked=!!cfg.sound;
+        document.getElementById('sound-toggle').checked=cfg.sound!==false; // v57: default ON
         if(cfg.startGems!==undefined)document.getElementById('cfg-start-gems').value=cfg.startGems;
         document.getElementById('cfg-coco-enabled').checked=cfg.cocoEnabled!==false;
         document.getElementById('cfg-coco-enabled').dispatchEvent(new Event('change'));
@@ -5104,7 +5119,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v56';   // v56: single source of truth for the on-screen build label
+const APP_VERSION='v57';   // v57: single source of truth for the on-screen build label
 document.addEventListener('DOMContentLoaded',()=>{
     document.querySelectorAll('.app-version').forEach(e=>{e.textContent=APP_VERSION});
     document.querySelectorAll('.mult-toggle').forEach(label=>{
