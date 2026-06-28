@@ -12,6 +12,24 @@
 
     <!--
     ================================================================
+    SPELLCOCO v56 — VERSION ON SCREEN + PET THE COCO
+    ================================================================
+
+    CHANGELOG v55 → v56 (Shawn: "show which version we're playing,
+    somewhere in the game" + "can clicking the sleeping Coco purr?"):
+    - ADD: on-screen build version. A single APP_VERSION constant feeds
+      every .app-version slot — a subtle line under the start-screen
+      tribute AND a tag in the in-game side-panel header
+      ("Word Duel · 🐾 · v56"). Bump APP_VERSION (+ this header) per release.
+    - ADD: pet the Coco. Tapping the lounging Coco on the board frame
+      plays a soft Web-Audio purr (two low sawtooth carriers through a
+      lowpass, amplitude-modulated by a ~23→27 Hz LFO for the roll, gentle
+      attack/release) plus a subtle wobble. Click or keyboard (role=button,
+      Enter/Space); plays even if game SFX are muted (the tap unlocks
+      audio), volume slider still applies.
+    - Both additive + client-only; no gameplay, netcode, or state changes.
+
+    ================================================================
     SPELLCOCO v55 — FAIR SEATS, FAIR START
     ================================================================
 
@@ -2361,6 +2379,20 @@
             }
             .grid-panel{flex:none;min-height:auto}
         }
+        /* v56: pet-the-Coco (tap the lounging Coco → purr) + on-screen build version */
+        .coco-lounge{pointer-events:auto;cursor:pointer;}
+        .coco-lounge:focus-visible{outline:2px solid var(--coco-eyes-hi);outline-offset:3px;border-radius:8px;}
+        .coco-lounge.purring svg{animation:cocoPurr 1.5s ease;}
+        @keyframes cocoPurr{
+            0%,100%{transform:translateY(0) scale(1)}
+            12%{transform:translateY(0.6px) scale(1.018)}
+            28%{transform:translateY(-0.6px) scale(0.99)}
+            44%{transform:translateY(0.6px) scale(1.016)}
+            60%{transform:translateY(-0.5px) scale(0.992)}
+            78%{transform:translateY(0.4px) scale(1.012)}
+        }
+        .app-version{font-variant-numeric:tabular-nums;letter-spacing:0.04em;opacity:0.85;}
+        .app-version-start{margin:4px 0 0;text-align:center;font-size:0.82rem;font-weight:700;color:var(--ink-soft);letter-spacing:0.06em;}
     </style>
 </head>
 <body>
@@ -2374,7 +2406,7 @@
 <div id="app">
     <div class="side-panel">
         <header>
-            <div class="logo-row"><span class="coco-mark-slot mark-sm"></span><div class="logo">SpellCoco<small>Word Duel · 🐾</small></div></div>
+            <div class="logo-row"><span class="coco-mark-slot mark-sm"></span><div class="logo">SpellCoco<small>Word Duel · 🐾 · <span class="app-version" aria-label="version"></span></small></div></div>
             <div class="header-right">
                 <div class="sound-controls">
                     <button class="btn-icon" id="btn-mute" onclick="toggleMute()" title="Toggle Sound">🔇</button>
@@ -2465,6 +2497,7 @@
         <h1>✦ SpellCoco ✦</h1>
         <p style="color:var(--ink-soft);margin-bottom:2px;font-size:1rem;font-weight:700;">Keith vs Shawn — plus Coco &amp; guests</p>
         <p class="coco-tribute">in loving memory of Coco, the very best cat 🐾</p>
+        <p class="app-version-start"><span class="app-version"></span></p>
 
         <div id="resume-banner" class="resume-banner hidden">
             <div id="resume-desc" style="font-size:0.92rem;margin-bottom:8px;"></div>
@@ -4042,7 +4075,17 @@ const COCO_LOUNGE=`<svg viewBox="0 0 240 100" xmlns="http://www.w3.org/2000/svg"
 <line x1="72" y1="55" x2="94" y2="56" stroke="#f7e9d8" stroke-width="1.6" stroke-linecap="round" opacity="0.9"/>
 </svg>`;
 const _loungeSlot=document.getElementById('coco-lounge');
-if(_loungeSlot)_loungeSlot.innerHTML=COCO_LOUNGE;
+if(_loungeSlot){
+    _loungeSlot.innerHTML=COCO_LOUNGE;
+    _loungeSlot.removeAttribute('aria-hidden');
+    _loungeSlot.setAttribute('role','button');
+    _loungeSlot.setAttribute('tabindex','0');
+    _loungeSlot.setAttribute('aria-label','Pet Coco — he purrs');
+    _loungeSlot.title='Pet Coco 🐾';
+    const _pet=()=>{playPurr();_loungeSlot.classList.remove('purring');void _loungeSlot.offsetWidth;_loungeSlot.classList.add('purring');setTimeout(()=>_loungeSlot.classList.remove('purring'),1500);};
+    _loungeSlot.addEventListener('click',_pet);
+    _loungeSlot.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();_pet();}});
+}
 // v40.1: Zoomies icon — a paw in a hurry
 const COCO_ZOOM=`<svg viewBox="0 0 36 24" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Zoomies — a dashing paw">
 <path d="M2 7 H11" stroke="#f49b3e" stroke-width="2.6" stroke-linecap="round" opacity="0.9"/>
@@ -4064,6 +4107,31 @@ let audioCtx=null,soundEnabled=false,soundVolume=0.5;
 function initAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==='suspended')audioCtx.resume()}
 function playTone(f,dur,type='sine',vol=1){if(!soundEnabled||!audioCtx)return;const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type=type;o.frequency.setValueAtTime(f,audioCtx.currentTime);g.gain.setValueAtTime(vol*soundVolume*0.3,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+dur);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+dur)}
 const SFX={tileSelect(){playTone(880,0.08,'sine',0.6)},tileDeselect(){playTone(440,0.06,'sine',0.3)},submit(){playTone(523,0.12,'sine',0.7);setTimeout(()=>playTone(659,0.12,'sine',0.7),80);setTimeout(()=>playTone(784,0.15,'sine',0.8),160)},longWord(){playTone(523,0.1,'sine',0.8);setTimeout(()=>playTone(659,0.1,'sine',0.8),100);setTimeout(()=>playTone(784,0.1,'sine',0.8),200);setTimeout(()=>playTone(1047,0.25,'sine',1),300)},invalid(){playTone(200,0.2,'square',0.4)},shuffle(){for(let i=0;i<5;i++)setTimeout(()=>playTone(300+Math.random()*400,0.05,'sine',0.3),i*40)},swap(){playTone(600,0.15,'triangle',0.5)},timerWarn(){playTone(440,0.1,'square',0.5)},gameOver(){[523,659,784,1047].forEach((f,i)=>setTimeout(()=>playTone(f,0.3,'sine',0.6),i*200))},cocoAttack(){playTone(330,0.15,'sawtooth',0.6);setTimeout(()=>playTone(440,0.15,'sawtooth',0.7),120);setTimeout(()=>playTone(550,0.2,'sawtooth',0.8),240)}};
+// v56: a soft purr when you pet the lounging Coco. Plays on a deliberate tap even
+// if game SFX are muted (the tap is the gesture that unlocks audio); the volume
+// slider still applies. Low carriers + a ~25 Hz tremolo create the purr "roll".
+function playPurr(){
+    initAudio(); if(!audioCtx) return;
+    const t=audioCtx.currentTime, dur=1.5, vol=Math.max(0,soundVolume);
+    if(vol<=0) return;
+    const master=audioCtx.createGain();
+    master.gain.setValueAtTime(0.0001,t);
+    master.gain.exponentialRampToValueAtTime(0.32*vol,t+0.3);
+    master.gain.setValueAtTime(0.32*vol,t+dur-0.45);
+    master.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    const lp=audioCtx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=300; lp.Q.value=0.6;
+    master.connect(lp); lp.connect(audioCtx.destination);
+    [62,93].forEach((f,i)=>{
+        const o=audioCtx.createOscillator(); o.type='sawtooth'; o.frequency.setValueAtTime(f,t);
+        const cg=audioCtx.createGain(); const base=i?0.22:0.4; cg.gain.setValueAtTime(base,t);
+        const lfo=audioCtx.createOscillator(); lfo.type='sine';
+        lfo.frequency.setValueAtTime(23,t); lfo.frequency.linearRampToValueAtTime(27,t+dur);   // the roll speeds up slightly
+        const lg=audioCtx.createGain(); lg.gain.setValueAtTime(base*0.9,t);
+        lfo.connect(lg); lg.connect(cg.gain);
+        o.connect(cg); cg.connect(master);
+        o.start(t); lfo.start(t); o.stop(t+dur); lfo.stop(t+dur);
+    });
+}
 function toggleMute(){soundEnabled=!soundEnabled;initAudio();document.getElementById('btn-mute').innerText=soundEnabled?'🔊':'🔇';document.getElementById('btn-mute').classList.toggle('active',soundEnabled)}
 function setVolume(v){soundVolume=v/100}
 
@@ -5036,7 +5104,9 @@ function startRematch(){
 
 let game;
 
+const APP_VERSION='v56';   // v56: single source of truth for the on-screen build label
 document.addEventListener('DOMContentLoaded',()=>{
+    document.querySelectorAll('.app-version').forEach(e=>{e.textContent=APP_VERSION});
     document.querySelectorAll('.mult-toggle').forEach(label=>{
         const cb=label.querySelector('input');
         cb.addEventListener('change',()=>{
