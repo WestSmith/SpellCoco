@@ -12,6 +12,53 @@
 
     <!--
     ================================================================
+    SPELLCOCO v60 — KEITH'S DESKTOP CUT: NO-SCROLL SIDEBAR,
+    SOLID TREATS, FRESH BONUSES EVERY ROUND, COCO SPEAKS
+    ================================================================
+
+    CHANGELOG v59 → v60 (Keith's recorded feedback session, 2026-07-01;
+    cleaned transcript in the OneDrive folder):
+    - CHANGE: Desktop layout (≥840px ONLY — mobile pixels untouched).
+      Keith plays 100% zoom + fullscreen Firefox and still had to
+      scroll the left column. Now: the dictionary checker moves UNDER
+      the game board (JS relocates it via matchMedia; it snaps back
+      for mobile) and opens by default there; the left panel is
+      slightly narrower; Letter Values + Long Word Bonus + the room
+      code bar are pinned to the panel BOTTOM (margin-top:auto) as
+      collapsed dropdowns — turn, scores, treats, round stay visible
+      with no scrolling. Rejoin link + offline status stay at the TOP
+      (Keith: "keep that up at the top, but the room code down").
+    - ADD: 🔤 Letter Values dropdown (Keith: "I want to know what the
+      value of every letter is") — A–Z chips built from LETTERS.
+    - CHANGE: Treat icons are SOLID now — same shapes, facet lines
+      removed (.ticon, .tile-gem, selected/path gold variant). The
+      crystal texture made Keith's eyes work to focus ("it wastes
+      time for my eyes… makes the game more stressful").
+    - CHANGE: Bonus tiles re-roll EVERY round (Keith's spec, confirmed
+      by Shawn): round 1 = one letter bonus only; every later round =
+      one letter bonus AND one word bonus, random value (2x/3x uniform)
+      and random spot, cleared+rerolled at each round start. Same board
+      for both players (multipliers already ride serialized state).
+      Used-bonus same-value random re-add (v48 rule) unchanged.
+    - CHANGE: Zoomies default cost 5 → 4 treats (Keith: "at five it
+      will never be used"). One-time settings migration bumps saved 5s
+      to 4 (flagged in spellcoco.zoom4 so a deliberate 5 sticks later).
+      Still configurable on the start screen.
+    - ADD: 🗨 Coco speech bubble — 100+ point plays ONLY (rare by
+      design; Keith: reacting to everything = sensory overload). A
+      static cream bubble beside Coco (whichever side he's lounging
+      on), auto-hides. Line pools are personal: loving for Shawn,
+      grumpy-affectionate for Keith ("Do it again and I might let you
+      pet me" — bed-stealing lore), neutral for guests, smug for Coco
+      AI. Lines are pure sass — never solver output (v39 spoiler rule).
+      Online: rides the existing type:'fx' live-toast channel.
+    - NOT DONE (explicitly cancelled in the session): all swap↔Coco-
+      Attack interaction rules — Keith had misread Coco Attack as a
+      board-changer. Otter's auto action-items list a 15s cooldown;
+      it is WRONG, do not implement.
+    - Client-only; server untouched. v59 preserved for instant revert.
+
+    ================================================================
     SPELLCOCO v59 — MY GAMES LIST + REMATCH VALIDATION
     ================================================================
 
@@ -896,10 +943,14 @@
         }
         @media(min-width:840px){
             #app{flex-direction:row;align-items:flex-start;padding:20px 24px;gap:22px}
+            /* v60: Keith's no-scroll sidebar. Narrower column, full height so
+               the reference rows can pin to the BOTTOM (margin-top:auto), and
+               the dictionary lives under the board (JS relocation) — turn,
+               scores, treats and round stay visible without scrolling. */
             .side-panel{
-                width:clamp(360px,40%,440px);
+                width:clamp(320px,34%,400px);
                 display:flex;flex-direction:column;gap:8px;
-                max-height:calc(100vh - 40px);
+                height:calc(100vh - 40px);
                 overflow-y:auto;padding-right:6px;flex-shrink:0;
                 scrollbar-width:thin;
                 scrollbar-color:var(--purple) transparent;
@@ -909,7 +960,21 @@
                 background:linear-gradient(180deg,var(--pink),var(--purple),var(--blue));
                 border-radius:3px;
             }
-            .grid-panel{flex:1;display:flex;justify-content:center;align-items:flex-start}
+            /* Bottom cluster — rarely-consulted rows Keith asked to move down:
+               letter values, long-word bonus, then the room code at the very
+               bottom ("it's something you only have to look at once"). */
+            #letter-ref{order:97;margin-top:auto}
+            #lw-ref{order:98}
+            #ingame-room{order:99}
+            /* Board column stacks: grid on top, dictionary right below it —
+               "the dictionary is something I use constantly." */
+            .grid-panel{flex:1;display:flex;flex-direction:column;align-items:center;gap:12px}
+            .grid-panel .dict-checker{
+                width:100%;max-width:min(560px,88vmin);
+                background:rgba(0,0,0,0.18);
+                border:1px solid rgba(255,255,255,0.09);
+                border-radius:12px;
+            }
         }
         @media(max-width:839px){
             .side-panel{display:contents}
@@ -1323,14 +1388,15 @@
         }
 
         /* Coco treat — v39: high-contrast purple crystal (Keith's pick).
-           Deep purple ~6:1 on cream tiles; flips to gold on selected/path tiles. */
+           Deep purple ~6:1 on cream tiles; flips to gold on selected/path tiles.
+           v60: SOLID fill, facet lines removed (same shape) — easier focus. */
         .tile-gem{
             position:absolute;
             top:clamp(3px,4%,6px);
             right:clamp(3px,4%,7px);
             width:clamp(16px,3.9vmin,24px);
             height:clamp(15px,3.6vmin,22px);
-            background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 22'%3E%3Cpath d='M7 1.5h10l5.5 7L12 20.5 1.5 8.5z' fill='%237d3eb8' stroke='%23271252' stroke-width='1.8' stroke-linejoin='round'/%3E%3Cpath d='M2.4 8.5h19.2M7.4 2.2l4.6 6 4.6-6M12 8.8V19.6' stroke='%23e0c3f5' stroke-width='1.2' fill='none' opacity='0.8'/%3E%3C/svg%3E") center/contain no-repeat;
+            background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 22'%3E%3Cpath d='M7 1.5h10l5.5 7L12 20.5 1.5 8.5z' fill='%237d3eb8' stroke='%23271252' stroke-width='1.8' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
             filter:drop-shadow(0 2px 5px rgba(180,105,224,0.7));
             animation:gemPulse 2s ease-in-out infinite alternate;
         }
@@ -1339,7 +1405,7 @@
             100%{filter:drop-shadow(0 2px 8px rgba(180,105,224,1))}
         }
         .tile.selected .tile-gem,.tile.path-tile .tile-gem{
-            background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 22'%3E%3Cpath d='M7 1.5h10l5.5 7L12 20.5 1.5 8.5z' fill='%23ffc37d' stroke='%23764408' stroke-width='1.8' stroke-linejoin='round'/%3E%3Cpath d='M2.4 8.5h19.2M7.4 2.2l4.6 6 4.6-6M12 8.8V19.6' stroke='%23fff6ea' stroke-width='1.2' fill='none' opacity='0.8'/%3E%3C/svg%3E");
+            background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 22'%3E%3Cpath d='M7 1.5h10l5.5 7L12 20.5 1.5 8.5z' fill='%23ffc37d' stroke='%23764408' stroke-width='1.8' stroke-linejoin='round'/%3E%3C/svg%3E");
             filter:drop-shadow(0 2px 6px rgba(255,195,125,0.85));
             animation:none;
         }
@@ -2135,6 +2201,47 @@
             color:var(--ink-dim);
             font-style:italic;
         }
+        /* v60: 🔤 Letter Values dropdown — Keith: "I want to know what the
+           value of every letter is… completely drop down, at the very bottom" */
+        .letter-val-grid{
+            padding:0 14px 10px;
+            display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:5px;
+        }
+        .letter-val-chip{
+            display:flex;justify-content:center;align-items:baseline;gap:5px;
+            padding:4px 2px;border-radius:8px;
+            background:rgba(251,242,226,0.07);
+            border:1px solid rgba(255,255,255,0.16);
+            font-weight:700;font-size:clamp(0.85rem,1.8vw,0.92rem);
+        }
+        .letter-val-chip b{color:var(--ink)}
+        .letter-val-chip span{color:var(--gold-hi)}
+
+        /* v60: Coco's speech bubble — 100+ point plays only. STATIC (no
+           animation — Keith's sensory load), cream on dark ink ≈13:1 AAA.
+           Sits in the empty half of the player bar, opposite wherever Coco
+           is lounging; the tail points at him. */
+        .coco-bubble{
+            position:absolute;bottom:-52px;z-index:3;
+            max-width:min(48%,250px);
+            background:var(--coco-cream);color:#2f2418;
+            border:2px solid var(--coco-deep);border-radius:12px;
+            padding:7px 12px;
+            font-size:clamp(0.8rem,1.8vw,0.9rem);font-weight:700;line-height:1.3;
+        }
+        .coco-bubble::after{
+            content:'';position:absolute;top:50%;margin-top:-7px;
+            border:7px solid transparent;
+        }
+        .coco-bubble.from-right{right:172px}
+        .coco-bubble.from-right::after{left:100%;border-left-color:var(--coco-deep)}
+        .coco-bubble.from-left{left:172px}
+        .coco-bubble.from-left::after{right:100%;border-right-color:var(--coco-deep)}
+        @media(max-width:839px){
+            .coco-bubble{bottom:-56px;max-width:52%}
+            .coco-bubble.from-right{right:136px}
+            .coco-bubble.from-left{left:136px}
+        }
 
         /* Animations & misc */
         @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
@@ -2415,9 +2522,11 @@
         /* v55: once identity is locked, show only the player's own seat as a static pill */
         .side-btn.seat-locked{opacity:1;cursor:default;text-decoration:none;}
         .side-btn.seat-locked:not(.active){display:none;}
+        /* v60: SOLID purple — same shape, facet lines gone. The crystal
+           texture cost Keith focus time ("it wastes time for my eyes"). */
         .ticon{
             display:inline-block;width:0.95em;height:0.88em;
-            background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 22'%3E%3Cpath d='M7 1.5h10l5.5 7L12 20.5 1.5 8.5z' fill='%23ce92ee' stroke='%234d2577' stroke-width='1.8' stroke-linejoin='round'/%3E%3Cpath d='M2.4 8.5h19.2M7.4 2.2l4.6 6 4.6-6M12 8.8V19.6' stroke='%23ffffff' stroke-width='1.2' fill='none' opacity='0.7'/%3E%3C/svg%3E") center/contain no-repeat;
+            background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 22'%3E%3Cpath d='M7 1.5h10l5.5 7L12 20.5 1.5 8.5z' fill='%23ce92ee' stroke='%234d2577' stroke-width='1.8' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
             vertical-align:-0.08em;
         }
         .paw{
@@ -2548,6 +2657,8 @@
         <div class="player-bar-wrap">
             <div class="player-bar" id="player-list"></div>
             <span class="coco-lounge" id="coco-lounge" aria-hidden="true"></span>
+            <!-- v60: Coco's speech bubble — 100+ point plays only -->
+            <div id="coco-bubble" class="coco-bubble from-right hidden" role="status" aria-live="polite"></div>
         </div>
         <div class="action-zone">
             <div class="word-area" id="word-area">
@@ -2572,7 +2683,7 @@
                     <div class="coco-title" id="zoomies-title">Coco Zoomies!</div>
                     <div class="coco-desc">Reroll every letter on the board</div>
                 </div>
-                <button class="btn-coco" id="btn-zoomies" onclick="game.useAbility('zoomies')">5<span class="ticon"></span> ZOOM!</button>
+                <button class="btn-coco" id="btn-zoomies" onclick="game.useAbility('zoomies')">4<span class="ticon"></span> ZOOM!</button>
             </div>
             <div class="coco-row" id="coco-zone">
                 <span class="coco-paw-slot" id="coco-paw-slot"></span>
@@ -2598,6 +2709,12 @@
         <details class="lw-ref hidden" id="lw-ref">
             <summary>🏆 Long Word Bonus</summary>
             <div class="lw-ref-tiers" id="lw-ref-tiers"></div>
+        </details>
+
+        <!-- v60: letter value chart (Keith) — collapsed, bottom of the panel -->
+        <details class="lw-ref" id="letter-ref">
+            <summary>🔤 Letter Values</summary>
+            <div class="letter-val-grid" id="letter-val-grid"></div>
         </details>
     </div>
 
@@ -2775,7 +2892,7 @@
             </div>
             <div class="setting-row">
                 <span>Zoomies Cost</span>
-                <input type="number" class="setting-num" id="cfg-zoomies-cost" value="5" min="1" max="10">
+                <input type="number" class="setting-num" id="cfg-zoomies-cost" value="4" min="1" max="10">
             </div>
             <div class="setting-hint">Max 25 (treats can share tiles with multipliers)</div>
             </div>
@@ -2915,7 +3032,7 @@
 <div id="modal-zoomies-confirm" class="modal hidden">
     <div class="modal-content" style="width:400px;">
         <h3 style="margin-bottom:14px;">🌪 Coco Zoomies?</h3>
-        <p style="font-size:0.95rem;margin-bottom:18px;">Coco tears across the board — <strong>every letter is rerolled</strong>, multipliers and treats land in new spots. Costs <strong style="color:var(--coco);"><span id="zoomies-confirm-cost">5</span><span class="ticon"></span></strong>.</p>
+        <p style="font-size:0.95rem;margin-bottom:18px;">Coco tears across the board — <strong>every letter is rerolled</strong>, multipliers and treats land in new spots. Costs <strong style="color:var(--coco);"><span id="zoomies-confirm-cost">4</span><span class="ticon"></span></strong>.</p>
         <div style="display:flex;gap:10px;justify-content:center;">
             <button class="btn-clear" style="max-width:none;flex:1;" onclick="closeZoomiesConfirm()">Cancel</button>
             <button class="btn-submit" style="max-width:none;flex:1;" onclick="confirmZoomies()">🌪 Zoomies!</button>
@@ -2968,7 +3085,7 @@ let CONFIG = {
     longWordStack:false,
     boardGemCount:9,
     cocoAttackTime:35, cocoAttackCost:4, cocoAttackEnabled:true,
-    costs:{shuffle:1, swap:3, time:1, hint:2, zoomies:5},
+    costs:{shuffle:1, swap:3, time:1, hint:2, zoomies:4},  /* v60: zoomies 5→4 (Keith: "at five it will never be used") */
     enabledMults:{DL:true, TL:true, '2W':true, '3W':true}
 };
 
@@ -3059,6 +3176,14 @@ function restoreSettings(){
         if(cfg.boardGems!==undefined)document.getElementById('cfg-board-gems').value=cfg.boardGems;
         if(cfg.hintCost!==undefined)document.getElementById('cfg-hint-cost').value=cfg.hintCost;
         if(cfg.zoomiesCost!==undefined)document.getElementById('cfg-zoomies-cost').value=cfg.zoomiesCost;
+        // v60: one-time migration — the old DEFAULT was 5; Keith wants 4.
+        // A saved 5 almost certainly means "never touched it", so bump it
+        // once; the flag lets anyone deliberately set 5 afterwards.
+        if(String(cfg.zoomiesCost)==='5'&&!lsGet('spellcoco.zoom4',false)){
+            document.getElementById('cfg-zoomies-cost').value=4;
+            cfg.zoomiesCost='4';lsSet('spellcoco.settings',cfg);
+        }
+        lsSet('spellcoco.zoom4',1);
         document.getElementById('cfg-cloud-assist').checked=cfg.cloudAssist!==false; // v45: default ON
         document.querySelectorAll('.mult-toggle').forEach(l=>{
             const cb=l.querySelector('input');
@@ -4117,7 +4242,7 @@ function guestOnData(m){
         case 'start':guestStart(m);break;
         case 'state':if(game)game.applyState(m.state);break;
         case 'timer':if(game){game.cocoTimerActive=m.on;game.timeLeft=m.t;game.updateTimerDisplay()}break;
-        case 'fx':if(game){if(m.toast)game.showToast(m.toast,true);if(m.overlay)game.showRoundOverlay(m.overlay.t,m.overlay.s,true);if(m.celebrate)game.showCelebration(m.celebrate,true);if(m.coco)game.showCocoOverlay(true);if(m.sfx&&SFX[m.sfx])SFX[m.sfx]()}break;
+        case 'fx':if(game){if(m.toast)game.showToast(m.toast,true);if(m.overlay)game.showRoundOverlay(m.overlay.t,m.overlay.s,true);if(m.celebrate)game.showCelebration(m.celebrate,true);if(m.coco)game.showCocoOverlay(true);if(m.bubble)setTimeout(()=>{if(game&&!game.over)cocoSpeak(m.bubble)},3400);if(m.sfx&&SFX[m.sfx])SFX[m.sfx]()}break;
         case 'gameover':{if(game)game.over=true;recordGameStats(m.players);renderGameOver(m.players);break}
     }
 }
@@ -4368,6 +4493,53 @@ if(_loungeSlot){
     const _pet=()=>{playPurr();_loungeSlot.classList.remove('purring');void _loungeSlot.offsetWidth;_loungeSlot.classList.add('purring');setTimeout(()=>_loungeSlot.classList.remove('purring'),1500);};
     _loungeSlot.addEventListener('click',_pet);
     _loungeSlot.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();_pet();}});
+}
+
+// ===================== v60: Coco speaks (100+ point plays ONLY) =====================
+// Grumpy-but-loving, Muppet-heckler energy (Keith's ask). Pools are personal:
+// Coco loved Shawn unconditionally; Keith he bossed around (stole his bed spot,
+// batted at him when moved) but loved anyway. Never meows — Coco never meowed.
+// Lines are pure sass, NEVER solver output (v39 no-spoilers rule).
+const COCO_LINES={
+    Keith:[
+        '100 points? Fine. Do it again and I might let you pet me.',
+        'Hmph. Not bad. I’m still taking your side of the bed.',
+        'I could do better. …Show me again.',
+        'Wowsers. You didn’t hear that from me.'
+    ],
+    Shawn:[
+        'That’s my human. Obviously.',
+        'I taught you that word.',
+        'Big word! You’ve earned a headbutt.',
+        'Never doubted you. Much.'
+    ],
+    generic:[
+        '100 points? I could do better.',
+        'Hm. The cat is mildly impressed.',
+        'Acceptable. Continue.'
+    ],
+    coco:[
+        'I make it look easy.',
+        'All in a day’s nap.'
+    ]
+};
+function cocoLineFor(p){
+    const pool=(p&&p.isCoco)?COCO_LINES.coco:(COCO_LINES[p&&p.name]||COCO_LINES.generic);
+    return pool[Math.floor(Math.random()*pool.length)];
+}
+let _cocoBubbleTimer=null;
+function cocoSpeak(text){
+    const b=document.getElementById('coco-bubble'),lounge=document.getElementById('coco-lounge');
+    if(!b||!lounge||!text)return;
+    b.textContent=text;
+    // He talks from whichever side he's lounging on; the bubble fills the
+    // empty half of the bar and the tail points at him.
+    const onLeft=lounge.classList.contains('side-left');
+    b.classList.toggle('from-left',onLeft);
+    b.classList.toggle('from-right',!onLeft);
+    b.classList.remove('hidden');
+    clearTimeout(_cocoBubbleTimer);
+    _cocoBubbleTimer=setTimeout(()=>b.classList.add('hidden'),7000);
 }
 // v40.1: Zoomies icon — a paw in a hurry
 const COCO_ZOOM=`<svg viewBox="0 0 36 24" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Zoomies — a dashing paw">
@@ -4685,7 +4857,7 @@ class Game{
                 break;}
             case 'zoomies':{
                 if(!guestTurn)return;
-                const p=this.currentPlayer,cost=CONFIG.costs.zoomies||5;
+                const p=this.currentPlayer,cost=CONFIG.costs.zoomies||4;
                 if(p.gems<cost)return;
                 p.gems-=cost;this.logAbility(p,'zoomies',cost);
                 this.zoomiesBoard();this.clearSelection();
@@ -4766,24 +4938,21 @@ class Game{
     }
 
     upgradeMultipliersForNewRound(){
-        const existing=this.tiles.map(t=>t.multiplier).filter(Boolean);
-        const avail=fisherYates(this.tiles.filter(t=>!t.multiplier));
-        let ai=0;
-        const hasWordMult=existing.includes('2W')||existing.includes('3W');
+        // v60: Keith's per-round re-roll. Every round after the first gets a
+        // FRESH board of bonuses: exactly one letter bonus AND one word bonus,
+        // value picked uniformly (2x/3x), spot random — old ones are CLEARED,
+        // so a triple-word in round 1 guarantees nothing about round 2.
+        // Both players share the round's board (multipliers ride serialize()),
+        // and the v48 used-bonus same-value re-add keeps mid-round fairness.
+        this.tiles.forEach(t=>t.multiplier=null);
+        const avail=fisherYates([...this.tiles]);
         const enabledWordMults=['2W','3W'].filter(m=>CONFIG.enabledMults[m]);
-        if(!hasWordMult&&enabledWordMults.length>0&&avail[ai]){
-            if(enabledWordMults.length===2){
-                avail[ai].multiplier=Math.random()<0.7?'2W':'3W';
-            } else {
-                avail[ai].multiplier=enabledWordMults[0];
-            }
-            ai++;
-        }
-        const hasLetterMult=existing.includes('DL')||existing.includes('TL');
         const enabledLetterMults=['DL','TL'].filter(m=>CONFIG.enabledMults[m]);
-        if(!hasLetterMult&&enabledLetterMults.length>0&&avail[ai]){
-            avail[ai].multiplier=enabledLetterMults[Math.floor(Math.random()*enabledLetterMults.length)];
-            ai++;
+        if(enabledWordMults.length>0&&avail.length>0){
+            avail.pop().multiplier=enabledWordMults[Math.floor(Math.random()*enabledWordMults.length)];
+        }
+        if(enabledLetterMults.length>0&&avail.length>0){
+            avail.pop().multiplier=enabledLetterMults[Math.floor(Math.random()*enabledLetterMults.length)];
         }
         this.replenishGems();
     }
@@ -4873,6 +5042,13 @@ class Game{
         // v48: score only mid-game — unused tiles survive the refill, so
         // naming the word (or the letters) would spoil what's still there.
         if(swapBest)setTimeout(()=>{if(!game||game.over)return;this.showToast(`🔄 With a swap: ${swapBest.score} pts was possible`)},5300);
+        // v60: 100+ point plays wake Coco up. Delayed past the turn overlay +
+        // his amble (~3s, v47 timing) so he speaks from wherever he lands.
+        if(r.score>=100){
+            const line=cocoLineFor(p);
+            setTimeout(()=>{if(game&&!game.over)cocoSpeak(line)},3400);
+            NET.send({type:'fx',bubble:line});   // live opponent sees it too (v51 fx channel)
+        }
 
         const used=[...this.selection];
         const mults=[];
@@ -5278,7 +5454,7 @@ class Game{
         document.getElementById('btn-shuffle').disabled=!myTurn||this.pendingSwap||p.gems<CONFIG.costs.shuffle;
         document.getElementById('btn-swap').disabled=!myTurn||this.pendingSwap||p.gems<CONFIG.costs.swap;
         document.getElementById('btn-hint').disabled=!myTurn||this.pendingSwap||p.gems<(CONFIG.costs.hint||2);
-        document.getElementById('btn-zoomies').disabled=!myTurn||this.pendingSwap||p.gems<(CONFIG.costs.zoomies||5);
+        document.getElementById('btn-zoomies').disabled=!myTurn||this.pendingSwap||p.gems<(CONFIG.costs.zoomies||4);
         document.getElementById('btn-swap').classList.toggle('active-swap',this.pendingSwap);
         document.getElementById('btn-cancel-swap').classList.toggle('hidden',!this.pendingSwap);
         const timeBtn=document.getElementById('btn-time');
@@ -5287,7 +5463,7 @@ class Game{
         const cocoBtn=document.getElementById('btn-coco');const np=this.nonActivePlayer;
         cocoBtn.disabled=np.gems<CONFIG.cocoAttackCost||this.cocoTimerActive||(NET.mode!=='local'&&this.turnIndex===NET.myIndex);
         document.getElementById('zoomies-title').innerText=`${p.name}'s Zoomies!`;
-        document.getElementById('btn-zoomies').innerHTML=`${CONFIG.costs.zoomies||5}${TICON} ZOOM!`;
+        document.getElementById('btn-zoomies').innerHTML=`${CONFIG.costs.zoomies||4}${TICON} ZOOM!`;
         document.getElementById('coco-attack-title').innerText=`${np.name}'s Coco Attack!`;
         document.getElementById('coco-attack-desc').innerText=`Force opponent's timer: ${CONFIG.cocoAttackTime}s`;
         // v40: Coco lounges on the active player's side of the action zone.
@@ -5400,9 +5576,41 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v59';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v60';   // single source of truth for the on-screen build label — bump every release
+
+// v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
+function populateLetterRef(){
+    const g=document.getElementById('letter-val-grid');if(!g)return;
+    g.innerHTML='';
+    Object.keys(LETTERS).sort().forEach(ch=>{
+        const d=document.createElement('div');d.className='letter-val-chip';
+        d.innerHTML=`<b>${ch}</b><span>${LETTERS[ch].val}</span>`;
+        g.appendChild(d);
+    });
+}
+
+// v60: on desktop the dictionary lives directly UNDER the board (Keith flips
+// to it constantly); on mobile it snaps back to its old slot — layout there
+// is untouched. matchMedia keeps it right through window resizes/zoom.
+const _dictMQ=window.matchMedia('(min-width:840px)');
+function placeDictChecker(){
+    const d=document.querySelector('.dict-checker');if(!d)return;
+    if(_dictMQ.matches){
+        const gp=document.querySelector('.grid-panel');
+        if(d.parentElement!==gp){gp.appendChild(d);}
+        if(!placeDictChecker._opened){d.open=true;placeDictChecker._opened=true;}
+    }else{
+        const sp=document.querySelector('.side-panel'),lw=document.getElementById('lw-ref');
+        if(d.parentElement!==sp){sp.insertBefore(d,lw);}
+    }
+}
+if(_dictMQ.addEventListener)_dictMQ.addEventListener('change',placeDictChecker);
+else if(_dictMQ.addListener)_dictMQ.addListener(placeDictChecker);   // older Safari
+
 document.addEventListener('DOMContentLoaded',()=>{
     document.querySelectorAll('.app-version').forEach(e=>{e.textContent=APP_VERSION});
+    populateLetterRef();     // v60: letter value chart
+    placeDictChecker();      // v60: dictionary under the board on desktop
     renderMyGames();   // v59: show remembered online games on the start screen
     document.querySelectorAll('.mult-toggle').forEach(label=>{
         const cb=label.querySelector('input');
