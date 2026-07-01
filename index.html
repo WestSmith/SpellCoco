@@ -29,6 +29,13 @@
     - Rematch: the existing 🔄 Rematch button (async branch, seat-stable
       names + random opener) is now live-validated 2-tab; sendStart's
       v58 gover-key clear means rematch stats record correctly.
+    - FIX (found in live test): launchGame now builds the Game QUIETLY —
+      the constructor's updateUI pushed a 'move' BEFORE the 'newgame' op,
+      so a rematch in a finished room was rejected with the old over-state
+      and instantly re-finished itself. newgame is now the first message.
+    - FIX (found in live test): the game-ender's own My Games row now
+      flips to "finished" (regTurnSync in endGame/asyncShowEnding/gameover
+      — endGame skips updateUI, so the hook there never fired).
     - Client-only; server untouched. v58 preserved for instant revert.
 
     ================================================================
@@ -5582,7 +5589,12 @@ function launchGame(){
         if(n1===n2)n2=n2.slice(0,12)+' 2';
         opts={seats:Math.random()<0.5?[{name:n1},{name:n2}]:[{name:n2},{name:n1}]};
     }
-    game=new Game(opts);
+    /* v59: build the board QUIETLY — the constructor's updateUI used to push a
+       'move' before sendStart's 'newgame', so on a REMATCH the server (still
+       holding the finished game) rejected it with the old over-state and the
+       fresh board got instantly re-finished. newgame must be the first message. */
+    NET.quiet=true;
+    try{game=new Game(opts);}finally{NET.quiet=false;}
     /* v40.2: coco-zone visibility is now owned by updateUI (combines
        cocoAttackEnabled with online whose-move-is-it) — no toggle here,
        it would override the constructor's updateUI. */
