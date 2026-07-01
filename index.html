@@ -12,6 +12,54 @@
 
     <!--
     ================================================================
+    SPELLCOCO v58 — CONNECTION RESILIENCE
+    ================================================================
+
+    CHANGELOG v57 → v58 (audit of the online layer; Shawn: "we wanted
+    it to have connection resilience — proceed, I trust you"):
+    - ADD: heartbeat keepalive. Client pings the game server every 20s;
+      a missed pong closes the socket so the normal auto-reconnect takes
+      over. Catches "half-open" mobile connections that LOOK connected
+      but silently eat messages. (Server v58 answers 'ping' with 'pong';
+      the client only enforces the timeout once it has seen a pong, so
+      it stays safe against an older server.)
+    - ADD: instant reconnect on wake. visibilitychange + online events
+      call netNudge() — reconnect NOW instead of waiting out the backoff
+      when the phone comes back from background/airplane mode.
+    - ADD: first-connect retry. Opening a game link on a flaky network
+      retries up to 4 times before giving up (was: one shot, dead end).
+    - FIX: moves made while disconnected are no longer lost. If the
+      socket is down when a move is pushed, the player sees "your move
+      is safe and will sync"; on reconnect, if the server is a move
+      behind (still shows it as OUR turn — turn enforcement makes this
+      safe), the client REPLAYS its local state instead of reverting.
+    - FIX: finished games stay finished. serialize() now carries `over`;
+      endGame pushes a closing state + the server persists over/final
+      recap (finalPlayers). Rejoining a finished room shows the Game
+      Over recap instead of resurrecting a live board. Stats record
+      once per room (spellcoco.gover.<code> guard), so a player who
+      missed the live ending still gets the result on rejoin.
+    - FIX: identity lock released for new games. ONLINE_LOCKED and the
+      disabled seat buttons now reset in setMode() — after one online
+      game you can host/join a new one as anyone without reloading.
+    - FIX: spurious "not your turn" toasts. Dictionary-update handlers
+      (wordok/addword/answerWordRequest) repaint via quietUI() instead
+      of updateUI(), which used to push a full state the server would
+      reject. Real rejects now also carry the authoritative state so a
+      diverged client self-heals.
+    - FIX: endGame ranks a COPY of players for the recap — seat order
+      stays intact in the pushed final state.
+    - CHANGE: seat-collision guard (v55) now trusts an EXPLICIT tap.
+      If you deliberately tapped who you are (ONLINE_TAPPED), joining
+      as the same name as seat 0 no longer silently flips you to the
+      other seat — fixes the real host being reseated as their opponent
+      when opening the shared link on a new device.
+    - Server redeployed (spellcoco-async v58): ping/pong, persisted
+      game-over, reject-with-state, finished-game move gate — and the
+      v54 'peek' op is finally live (open-seat pre-pick on shared links).
+    - v57 preserved for instant revert.
+
+    ================================================================
     SPELLCOCO v57 — SOUND ON BY DEFAULT
     ================================================================
 
@@ -2605,9 +2653,9 @@
                 <div class="setting-row">
                     <span>Play as</span>
                     <div class="side-toggle">
-                        <button class="side-btn" id="side-Keith" onclick="pickSide('Keith')">Keith</button>
-                        <button class="side-btn active" id="side-Shawn" onclick="pickSide('Shawn')">Shawn</button>
-                        <button class="side-btn" id="side-Guest" onclick="pickSide('Guest')">Guest</button>
+                        <button class="side-btn" id="side-Keith" onclick="pickSide('Keith',true)">Keith</button>
+                        <button class="side-btn active" id="side-Shawn" onclick="pickSide('Shawn',true)">Shawn</button>
+                        <button class="side-btn" id="side-Guest" onclick="pickSide('Guest',true)">Guest</button>
                     </div>
                 </div>
                 <div class="guest-name-row hidden" id="online-guest-row">
@@ -2623,9 +2671,9 @@
                 <div class="setting-row">
                     <span>Play as</span>
                     <div class="side-toggle">
-                        <button class="side-btn" id="join-Keith" onclick="pickSide('Keith')">Keith</button>
-                        <button class="side-btn active" id="join-Shawn" onclick="pickSide('Shawn')">Shawn</button>
-                        <button class="side-btn" id="join-Guest" onclick="pickSide('Guest')">Guest</button>
+                        <button class="side-btn" id="join-Keith" onclick="pickSide('Keith',true)">Keith</button>
+                        <button class="side-btn active" id="join-Shawn" onclick="pickSide('Shawn',true)">Shawn</button>
+                        <button class="side-btn" id="join-Guest" onclick="pickSide('Guest',true)">Guest</button>
                     </div>
                 </div>
                 <div class="guest-name-row hidden" id="join-guest-row">
@@ -3192,9 +3240,17 @@ function cocoTakeTurn(){
 // ===================== v33: networking (PeerJS) =====================
 const NET={
     mode:'local',peer:null,conn:null,ws:null,transport:'p2p',useRelay:true,useAsync:true,async:false,seat:null,everConnected:false,reconnectTries:0,reconnectTimer:null,myIndex:-1,myName:'Shawn',code:'',connected:false,quiet:false,
+    hbTimer:null,hbWaiting:false,hbSupported:false,gameCode:'',_offNote:false, // v58: keepalive + offline-move bookkeeping
     guestName:null,oppName:null, // v42: joiner's declared name (host side) / opponent's announced name
     open(){return this.transport==='relay' ? !!(this.ws&&this.ws.readyState===1&&this.connected) : !!(this.conn&&this.conn.open)},
-    send(m){if(this.transport==='relay'){if(this.ws&&this.ws.readyState===1){try{this.ws.send(JSON.stringify(m))}catch(e){}}return}if(this.open()){try{this.conn.send(m)}catch(e){}}},
+    send(m){if(this.transport==='relay'){
+        if(this.ws&&this.ws.readyState===1){try{this.ws.send(JSON.stringify(m))}catch(e){}}
+        else if(this.async&&m&&m.type==='__a'&&m.op==='move'&&game&&!game.over&&!this._offNote){
+            // v58: socket is down mid-move — reassure; the welcome resync replays it
+            this._offNote=true;setTimeout(()=>{NET._offNote=false},5000);
+            game.showToast('📡 Reconnecting — your move is safe and will sync');
+        }
+        return}if(this.open()){try{this.conn.send(m)}catch(e){}}},
     setPill(icon,cls,label){const p=document.getElementById('net-pill');if(!p)return;
         if(!icon){p.classList.add('hidden');return}
         p.className='net-pill '+(cls||'');p.innerText=icon;
@@ -3203,10 +3259,10 @@ const NET={
         // v42: tell the joiner their FINAL (possibly deduped) identity
         let gn=null;
         if(game&&this.myIndex>=0&&game.players[1-this.myIndex])gn=game.players[1-this.myIndex].name;
-        if(this.async){this.send({type:'__a',op:'newgame',state:game.serialize(),config:CONFIG});showInGameRoom();return}
+        if(this.async){this.gameCode=this.code;lsDel('spellcoco.gover.'+this.code);this.send({type:'__a',op:'newgame',state:game.serialize(),config:CONFIG});showInGameRoom();return}
         this.send({type:'start',config:CONFIG,state:game.serialize(),customs:localCustomWords,guestName:gn});
     },
-    cleanup(){if(this.peer){try{this.peer.destroy()}catch(e){}}this.peer=null;this.conn=null;if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.reconnectTries=0;this.transport=this.useRelay?'relay':'p2p';this.everConnected=false;this.connected=false;}
+    cleanup(){if(this.peer){try{this.peer.destroy()}catch(e){}}this.peer=null;this.conn=null;if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.reconnectTries=0;this.transport=this.useRelay?'relay':'p2p';this.everConnected=false;this.connected=false;hbStop();}
 };
 function genCode(){const a='ABCDEFGHJKMNPQRSTUVWXYZ23456789';let c='';for(let i=0;i<4;i++)c+=a[Math.floor(Math.random()*a.length)];return c}
 
@@ -3357,16 +3413,55 @@ function connectAsync(code){
     let ws;try{ws=new WebSocket(ASYNC_URL+'/r/'+code);}catch(e){asyncFail();return}
     NET.ws=ws;
     ws.onopen=()=>{if(NET.ws!==ws)return;clearTimeout(NET.reconnectTimer);NET.reconnectTimer=null;NET.everConnected=true;NET.reconnectTries=0;
-        NET.setPill('🌐','ok','Online: connected');NET.send({type:'__a',op:'hello',name:NET.myName});};
+        NET.setPill('🌐','ok','Online: connected');NET.send({type:'__a',op:'hello',name:NET.myName});hbStart();};
     ws.onmessage=(ev)=>{if(NET.ws!==ws)return;let m;try{m=JSON.parse(ev.data)}catch(e){return}if(m&&m.type==='__a')asyncOnMessage(m);else if(m&&m.type==='fx')asyncFx(m);else asyncOnData(m);};
-    ws.onclose=()=>{if(NET.ws!==ws)return;NET.connected=false;
-        if(!NET.everConnected){asyncFail();return}
-        NET.setPill('⚠','bad','Online: reconnecting…');
+    ws.onclose=()=>{if(NET.ws!==ws)return;NET.connected=false;hbStop();
         NET.reconnectTries=(NET.reconnectTries||0)+1;
+        // v58: even the FIRST connection gets a few retries before we give up
+        if(!NET.everConnected){
+            if(NET.reconnectTries>=4){asyncFail();return}
+            const el=document.getElementById(UI_MODE==='join'?'join-status':'host-status');
+            if(el)el.innerText='Connecting… (attempt '+(NET.reconnectTries+1)+')';
+        }else{
+            NET.setPill('⚠','bad','Online: reconnecting…');
+        }
         const d=Math.min(800*Math.pow(1.7,NET.reconnectTries),8000);
         clearTimeout(NET.reconnectTimer);NET.reconnectTimer=setTimeout(()=>{if(NET.async)connectAsync(code)},d);};
     ws.onerror=()=>{};
 }
+// ===================== v58: connection watchdog =====================
+// Mobile networks love "half-open" sockets: the phone THINKS it's connected but
+// nothing arrives. Ping every 20s; a ping that never gets its pong means the pipe
+// is dead — close it and let the normal auto-reconnect take over. The timeout is
+// only enforced once a pong has EVER arrived (hbSupported), so an older server
+// that doesn't answer pings can never cause false disconnects.
+function hbStart(){
+    hbStop();
+    NET.hbTimer=setInterval(()=>{
+        const ws=NET.ws;
+        if(!NET.async||!ws||ws.readyState!==1)return;
+        if(NET.hbWaiting&&NET.hbSupported){NET.hbWaiting=false;try{ws.close()}catch(e){}return;}
+        NET.hbWaiting=true;
+        try{ws.send(JSON.stringify({type:'__a',op:'ping'}))}catch(e){}
+    },20000);
+}
+function hbStop(){clearInterval(NET.hbTimer);NET.hbTimer=null;NET.hbWaiting=false}
+// The app just woke up (foreground / network back) — check the pipe RIGHT NOW
+// instead of waiting out the reconnect backoff or the next heartbeat.
+function netNudge(){
+    if(!NET.async||!NET.code)return;
+    const ws=NET.ws;
+    if(!ws||ws.readyState>1){ // closed/closing → reconnect immediately
+        clearTimeout(NET.reconnectTimer);NET.reconnectTimer=null;
+        connectAsync(NET.code);
+    }else if(ws.readyState===1){ // looks open — probe it, give it 5s to answer
+        NET.hbWaiting=true;
+        try{ws.send(JSON.stringify({type:'__a',op:'ping'}))}catch(e){}
+        setTimeout(()=>{if(NET.hbWaiting&&NET.ws===ws&&NET.hbSupported){NET.hbWaiting=false;try{ws.close()}catch(e){}}},5000);
+    }
+}
+window.addEventListener('online',netNudge);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)netNudge()});
 function asyncFail(){
     const el=document.getElementById(UI_MODE==='join'?'join-status':'host-status');
     if(el)el.innerText='⚠ Couldn’t reach the game server — check your connection';
@@ -3375,12 +3470,41 @@ function asyncFail(){
 function asyncOnMessage(m){
     switch(m.op){
         case 'welcome':asyncWelcome(m);break;
-        case 'state':if(game){game.applyState(m.state);asyncTurnHint();}break;
+        case 'pong':NET.hbSupported=true;NET.hbWaiting=false;break;   // v58 keepalive answered
+        case 'state':
+            if(game){
+                game.applyState(m.state);
+                if(game.over){asyncShowEnding(m.state);}   // v58: the closing push arrived as a live state
+                else asyncTurnHint();
+            }
+            break;
         case 'newgame':asyncLoadGame(m.state,m.config);break;
-        case 'gameover':if(game)game.over=true;recordGameStats(m.players);renderGameOver(m.players);break;
+        case 'gameover':if(game)game.over=true;recordStatsOnce(m.players);renderGameOver(m.players);break;
         case 'peer':if(m.present)asyncSyncWords();asyncPeer(m);break;
-        case 'reject':if(game)game.showToast('⏳ Hang on — not your turn yet');break;
+        case 'reject':
+            // v58: rejects carry the authoritative state so a diverged client self-heals
+            if(m.state&&m.state.over){if(game)game.over=true;asyncShowEnding(m.state);break;}
+            if(m.state&&game&&!game.over)game.applyState(m.state);
+            if(game&&!game.over)game.showToast('⏳ Hang on — not your turn yet');
+            break;
     }
+}
+// v58: one recap per finished room — a player who missed the live ending still
+// gets their stats recorded on rejoin, and nobody double-counts.
+function recordStatsOnce(ranked){
+    if(NET.async&&NET.code){
+        const k='spellcoco.gover.'+NET.code;
+        if(lsGet(k,null))return;
+        lsSet(k,1);
+    }
+    recordGameStats(ranked);
+}
+function asyncShowEnding(state){
+    const ranked=(state&&state.finalPlayers&&state.finalPlayers.length)?state.finalPlayers
+        :(state&&state.players?[...state.players].sort((a,b)=>b.score-a.score):null);
+    if(!ranked)return;
+    recordStatsOnce(ranked);
+    renderGameOver(ranked);
 }
 // v54: in async, BOTH players are 'host' and the server simply FORWARDS any
 // non-'__a' message — so the custom-word consent + dictionary sync the old
@@ -3400,11 +3524,15 @@ function asyncOnData(m){
             break;
         }
         case 'wordreq':if(typeof m.w==='string'&&/^[A-Z]{2,15}$/.test(m.w))showWordRequest(m.w);break;
-        case 'wordok':addCustomWord(m.w,true);if(game){game.showToast(`📖 ${oppName()} approved "${m.w}" — play it!`);game.updateUI()}break;
+        case 'wordok':addCustomWord(m.w,true);if(game){game.showToast(`📖 ${oppName()} approved "${m.w}" — play it!`);quietUI()}break;
         case 'wordno':if(game)game.showToast(`🙀 ${oppName()} vetoed "${m.w}"`);break;
-        case 'addword':addCustomWord(m.w,true);if(game){game.showToast(`📖 ${m.w} added by ${oppName()}`);game.updateUI()}break;
+        case 'addword':addCustomWord(m.w,true);if(game){game.showToast(`📖 ${m.w} added by ${oppName()}`);quietUI()}break;
     }
 }
+// v58: repaint WITHOUT pushing a state to the server. Dictionary updates don't
+// change the board, and a push from the non-active player just gets rejected
+// (which used to surface as a baffling "not your turn" toast).
+function quietUI(){if(!game)return;NET.quiet=true;try{game.updateUI()}finally{NET.quiet=false}}
 function asyncSyncWords(){if(localCustomWords&&localCustomWords.length)NET.send({type:'customs',words:localCustomWords});}
 function asyncWelcome(m){
     // v55: room already holds two OTHER players and we aren't one of them. If this
@@ -3418,7 +3546,7 @@ function asyncWelcome(m){
     // that lands on seat 0 has matched the HOST's name — take the open seat instead.
     // BUT skip when THIS device remembers being seat 0 (the real host reopening the
     // shared link is also UI_MODE 'join' and legitimately holds seat 0).
-    if(UI_MODE==='join'&&m.seat===0&&!NET.__reseat&&recallId(NET.code)!==((m.names&&m.names[0])||null)){
+    if(UI_MODE==='join'&&m.seat===0&&!NET.__reseat&&!ONLINE_TAPPED&&recallId(NET.code)!==((m.names&&m.names[0])||null)){
         const mine=openSeatName((m.names&&m.names[0])||'Shawn');
         if(mine&&mine!==NET.myName){
             NET.__reseat=true;ONLINE_LOCKED=false;NET.myName=mine;pickSide(mine);rememberId(NET.code,mine);
@@ -3438,7 +3566,18 @@ function asyncWelcome(m){
     }
     announceSide();   // v55: tell the peer our FINAL identity so they can lock too
     asyncSyncWords();   // v54: share custom words on connect (consent + dictionary sync)
-    if(m.state){asyncLoadGame(m.state,m.config);}
+    // v58: if WE moved while offline, the server is one move behind — its state
+    // still shows it as OUR turn while our local board has already flipped. Turn
+    // enforcement makes replaying safe (nobody else could have moved), so push
+    // our local state instead of silently reverting the player's move.
+    if(m.state&&!m.state.over&&game&&!game.over&&NET.gameCode===NET.code
+        &&m.state.turnIndex===NET.seat&&game.turnIndex!==NET.seat&&game.round>=m.state.round){
+        NET.send({type:'__a',op:'move',state:game.serialize()});
+        game.showToast('📡 Back online — your move synced');
+        showInGameRoom();
+        asyncTurnHint();
+    }
+    else if(m.state){asyncLoadGame(m.state,m.config);}
     else{
         const hs=document.getElementById('host-status');if(hs)hs.innerText='✓ Connected — press Start to begin, and share the code with '+(NET.oppName||'your opponent')+'.';
         const js=document.getElementById('join-status');if(js)js.innerText='✓ Connected — waiting for the game to start…';
@@ -3458,11 +3597,14 @@ function asyncLoadGame(state,config){
     document.getElementById('coco-zone').classList.toggle('hidden',!CONFIG.cocoAttackEnabled);
     game=Game.fromState(state);
     NET.myIndex=NET.seat;
+    NET.gameCode=NET.code;   // v58: this game object belongs to THIS room
+    if(game.over){asyncShowEnding(state);return;}   // v58: finished room → recap, not a live board
+    lsDel('spellcoco.gover.'+NET.code);   // v58: fresh live game — let its ending record
     showInGameRoom();   // v54: surface the room code in-game for easy reconnect
     asyncTurnHint(true);
 }
 function asyncTurnHint(overlay){
-    if(!game)return;
+    if(!game||game.over)return;
     const mine=game.turnIndex===NET.myIndex;
     if(overlay)game.showRoundOverlay(`Round ${game.round}`,mine?'Your turn':`Waiting for ${game.currentPlayer.name}…`,true);
 }
@@ -3532,6 +3674,15 @@ function lockIdentity(name){
         ['side-'+t,'join-'+t].forEach(id=>{const b=document.getElementById(id);if(b){b.disabled=true;b.classList.add('seat-locked');b.title='Locked for this game';}});
     });
     ['online-guest-name','join-guest-name'].forEach(id=>{const i=document.getElementById(id);if(i)i.disabled=true;});
+}
+// v58: the mirror of lockIdentity — release the lock and re-enable the seat
+// pickers, so a NEW game doesn't inherit the last game's frozen identity.
+function unlockIdentity(){
+    ONLINE_LOCKED=false;
+    ['Keith','Shawn','Guest'].forEach(t=>{
+        ['side-'+t,'join-'+t].forEach(id=>{const b=document.getElementById(id);if(b){b.disabled=false;b.classList.remove('seat-locked');b.title='';}});
+    });
+    ['online-guest-name','join-guest-name'].forEach(id=>{const i=document.getElementById(id);if(i)i.disabled=false;});
 }
 function reflectOpponentName(){
     if(game||!NET.oppName)return;
@@ -3655,6 +3806,7 @@ function asyncFx(m){if(!game)return;if(m.toast)game.showToast(m.toast,true);if(m
 let UI_MODE='local'; // v41: 'local' | 'solo' | 'host' | 'join' — NET.mode stays networking-only
 function setMode(m){
     NET.cleanup();UI_MODE=m;NET.mode=(m==='host'||m==='join')?m:'local';NET.setPill('');
+    unlockIdentity();ONLINE_TAPPED=false;NET.oppName=null;   // v58: each game locks fresh — don't inherit last game's lock
     hideInGameRoom();   // v54: code bar only shows during an active online game
     ['local','solo','host','join'].forEach(x=>{const b=document.getElementById('mode-'+x);if(b)b.classList.toggle('active',x===m)});
     document.getElementById('local-players-panel').classList.toggle('hidden',m!=='local');
@@ -3668,6 +3820,7 @@ function setMode(m){
 }
 // v42: online identity — Keith / Shawn / Coco's Guest, BOTH ends pick freely.
 let ONLINE_SIDE={type:'Shawn',guest:"Coco's Guest",picked:false};
+let ONLINE_TAPPED=false;   // v58: true only when the PLAYER tapped/typed who they are this game
 function onlineMyName(){return ONLINE_SIDE.type==='Guest'?ONLINE_SIDE.guest:ONLINE_SIDE.type}
 function validPlayerName(n){n=String(n||'');return (n==='Keith'||n==='Shawn')?n:sanitizeGuestName(n)}
 function announceSide(){
@@ -3675,8 +3828,9 @@ function announceSide(){
     if(NET.mode==='host')NET.send({type:'side',host:NET.myName});
     else if(NET.mode==='join')NET.send({type:'side',guest:NET.myName});
 }
-function pickSide(t){
+function pickSide(t,byTap){
     if(ONLINE_LOCKED)return;   // v55: identity is locked once both players are set
+    if(byTap)ONLINE_TAPPED=true;   // v58: an explicit human choice — the collision guard trusts it
     // accepts a type ('Keith'/'Shawn'/'Guest') or a saved NAME (resume path)
     if(t==='Keith'||t==='Shawn'||t==='Guest')ONLINE_SIDE.type=t;
     else{ONLINE_SIDE.type='Guest';ONLINE_SIDE.guest=sanitizeGuestName(t)}
@@ -3685,7 +3839,7 @@ function pickSide(t){
 }
 function onlineGuestChanged(input){
     ONLINE_SIDE.guest=sanitizeGuestName(input.value);input.value=ONLINE_SIDE.guest;
-    ONLINE_SIDE.picked=true;
+    ONLINE_SIDE.picked=true;ONLINE_TAPPED=true;   // v58: typing a name is explicit too
     renderOnlineSide();saveSettings();announceSide();
 }
 function renderOnlineSide(){
@@ -4207,7 +4361,7 @@ function addWordFromGame(){
     const r=game.calculateCurrentScore();
     if(!r.word)return;
     if(NET.mode!=='local'&&NET.open()){proposeWord(r.word);return}
-    if(addCustomWord(r.word)){game.showToast(`📖 ${r.word} added to dictionary!`);game.updateUI()}
+    if(addCustomWord(r.word)){game.showToast(`📖 ${r.word} added to dictionary!`);quietUI()}
 }
 function oppName(){
     // v42: the real opponent, not an assumed Keith/Shawn
@@ -4236,7 +4390,7 @@ function answerWordRequest(ok){
     if(ok){
         addCustomWord(w,true);
         NET.send({type:'wordok',w:w});
-        if(game){game.showToast(`📖 ${w} added for both of you!`);game.updateUI()}
+        if(game){game.showToast(`📖 ${w} added for both of you!`);quietUI()}
     } else {
         NET.send({type:'wordno',w:w});
     }
@@ -4362,13 +4516,14 @@ class Game{
             players:JSON.parse(JSON.stringify(this.players)),
             tiles:this.tiles.map(t=>({char:t.char,mult:t.multiplier,gem:t.hasGem})),
             cocoTimerActive:this.cocoTimerActive,timeLeft:this.timeLeft,cocoPendingFor:(this.cocoPendingFor==null?null:this.cocoPendingFor),
+            over:this.over,   // v58: a finished game stays finished across rejoins
             sel:[...this.selection]};
     }
     static fromState(st){
         const g=Object.create(Game.prototype);
         g.timerInterval=null;g.timeLeft=st.timeLeft||0;g.cocoTimerActive=false;
         g.round=st.round;g.turnIndex=st.turnIndex;g.startIndex=(typeof st.startIndex==='number')?st.startIndex:0;g.selection=[];
-        g.pendingSwap=false;g.isDragging=false;g.over=false;
+        g.pendingSwap=false;g.isDragging=false;g.over=!!st.over;   // v58: restore the over flag
         g.players=st.players;
         g.tiles=st.tiles.map((td,i)=>{const t=new Tile(i,Math.floor(i/5),i%5,td.char);t.multiplier=td.mult;t.hasGem=td.gem;return t});
         (st.sel||[]).forEach(id=>{if(g.tiles[id]){g.tiles[id].isSelected=true;g.selection.push(id)}});
@@ -4379,6 +4534,7 @@ class Game{
         return g;
     }
     applyState(st){
+        if(st.over)this.over=true;   // v58: an ending can arrive by state push too
         this.round=st.round;this.turnIndex=st.turnIndex;if(typeof st.startIndex==='number')this.startIndex=st.startIndex;
         this.players=st.players;
         this.cocoTimerActive=st.cocoTimerActive;this.timeLeft=st.timeLeft;this.cocoPendingFor=(st.cocoPendingFor==null?null:st.cocoPendingFor);
@@ -4678,12 +4834,17 @@ class Game{
         if(this.timerInterval)clearInterval(this.timerInterval);
         SFX.gameOver();
         this.players.forEach(p=>{p.gemBonus=p.gems;p.score+=p.gems});
-        this.players.sort((a,b)=>b.score-a.score);
         this.over=true;
+        // v58: rank a COPY for the recap — this.players keeps SEAT order so the
+        // closing state pushed to the server stays seat-accurate.
+        const ranked=[...this.players].sort((a,b)=>b.score-a.score);
         lsDel('spellcoco.save');
-        recordGameStats(this.players);
-        if(NET.async)NET.send({type:'__a',op:'gameover',players:JSON.parse(JSON.stringify(this.players))});else if(NET.mode==='host')NET.send({type:'gameover',players:JSON.parse(JSON.stringify(this.players))});
-        renderGameOver(this.players);
+        recordStatsOnce(ranked);
+        if(NET.async){
+            NET.send({type:'__a',op:'move',state:this.serialize()});   // closing push (over:true)
+            NET.send({type:'__a',op:'gameover',players:JSON.parse(JSON.stringify(ranked))});
+        }else if(NET.mode==='host')NET.send({type:'gameover',players:JSON.parse(JSON.stringify(ranked))});
+        renderGameOver(ranked);
     }
 
     renderRecap(players){
@@ -5119,7 +5280,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v57';   // v57: single source of truth for the on-screen build label
+const APP_VERSION='v58';   // single source of truth for the on-screen build label — bump every release
 document.addEventListener('DOMContentLoaded',()=>{
     document.querySelectorAll('.app-version').forEach(e=>{e.textContent=APP_VERSION});
     document.querySelectorAll('.mult-toggle').forEach(label=>{
