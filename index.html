@@ -5389,7 +5389,11 @@ function startRematch(){
         const seats=game.players.map(p=>({name:p.name,isCoco:!!p.isCoco,mood:p.mood||null}));
         opts={seats:fisherYates(seats)};
     }
-    game=new Game(opts);
+    /* v59: build QUIETLY, same as launchGame — the constructor's updateUI must
+       not push a 'move' before sendStart's 'newgame' clears the finished game
+       on the server, or the reject's old over-state re-finishes the rematch. */
+    NET.quiet=true;
+    try{game=new Game(opts);}finally{NET.quiet=false;}
     if(NET.mode==='host')NET.sendStart();
     saveGameState();
 }
