@@ -3526,7 +3526,7 @@ function asyncOnMessage(m){
             }
             break;
         case 'newgame':asyncLoadGame(m.state,m.config);break;
-        case 'gameover':if(game)game.over=true;recordStatsOnce(m.players);renderGameOver(m.players);break;
+        case 'gameover':if(game)game.over=true;recordStatsOnce(m.players);regTurnSync();renderGameOver(m.players);break;
         case 'peer':if(m.present)asyncSyncWords();asyncPeer(m);break;
         case 'reject':
             // v58: rejects carry the authoritative state so a diverged client self-heals
@@ -3551,6 +3551,7 @@ function asyncShowEnding(state){
         :(state&&state.players?[...state.players].sort((a,b)=>b.score-a.score):null);
     if(!ranked)return;
     recordStatsOnce(ranked);
+    regTurnSync();   // v59: mark finished in My Games on every ending path
     renderGameOver(ranked);
 }
 // v54: in async, BOTH players are 'host' and the server simply FORWARDS any
@@ -4950,6 +4951,7 @@ class Game{
             NET.send({type:'__a',op:'move',state:this.serialize()});   // closing push (over:true)
             NET.send({type:'__a',op:'gameover',players:JSON.parse(JSON.stringify(ranked))});
         }else if(NET.mode==='host')NET.send({type:'gameover',players:JSON.parse(JSON.stringify(ranked))});
+        regTurnSync();   // v59: flip this game to "finished" in My Games (endGame skips updateUI)
         renderGameOver(ranked);
     }
 
