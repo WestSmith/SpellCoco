@@ -12,6 +12,26 @@
 
     <!--
     ================================================================
+    SPELLCOCO v59 — MY GAMES LIST + REMATCH VALIDATION
+    ================================================================
+
+    CHANGELOG v58 → v59 (Shawn: "go for it — My Games + rematch"):
+    - ADD: 🐾 My Online Games list on the start screen. Every async game
+      this device plays is remembered in localStorage spellcoco.games
+      (code → {opp, me, turn:'me'|'them'|'over', t}), capped at the 8
+      most recent. Each row shows the opponent, whose turn it is
+      ("YOUR TURN" rows glow eye-green), and how long ago it moved;
+      tapping a row rejoins that room as the remembered identity
+      (finished rooms open straight to the recap — v58's persistence).
+      ✕ removes a row. regTurnSync() at the end of updateUI keeps the
+      whose-turn flag fresh (memoized — one localStorage write per
+      actual turn change, not per tap).
+    - Rematch: the existing 🔄 Rematch button (async branch, seat-stable
+      names + random opener) is now live-validated 2-tab; sendStart's
+      v58 gover-key clear means rematch stats record correctly.
+    - Client-only; server untouched. v58 preserved for instant revert.
+
+    ================================================================
     SPELLCOCO v58 — CONNECTION RESILIENCE
     ================================================================
 
@@ -2274,6 +2294,31 @@
             padding:9px 12px;margin-bottom:14px;font-size:0.86rem;
             color:var(--ink-soft);line-height:1.5;background:var(--bg-input);
         }
+        /* v59: My Online Games — tap a row to jump back into that game */
+        .my-games{
+            border:2px solid var(--blue);border-radius:12px;
+            padding:10px 12px;margin-bottom:14px;background:rgba(77,128,255,0.08);
+            text-align:left;
+        }
+        .mg-title{font-weight:800;font-size:0.95rem;color:var(--blue-hi);margin-bottom:8px;}
+        .mg-row{display:flex;gap:6px;align-items:stretch;margin-bottom:6px;}
+        .mg-row:last-child{margin-bottom:0;}
+        .mg-join{
+            flex:1;min-width:0;display:flex;flex-wrap:wrap;gap:2px 10px;align-items:baseline;
+            border:1px solid var(--bg-border);border-radius:9px;background:var(--bg-input);
+            color:var(--ink);padding:9px 11px;cursor:pointer;font:inherit;text-align:left;
+        }
+        .mg-join:hover,.mg-join:focus-visible{border-color:var(--blue-hi);}
+        .mg-opp{font-weight:800;font-size:0.98rem;}
+        .mg-status{font-size:0.82rem;color:var(--ink-dim);}
+        .mg-mine .mg-join{border-color:var(--coco-eyes-hi);background:rgba(139,227,164,0.10);}
+        .mg-mine .mg-status{color:var(--coco-eyes-hi);font-weight:700;}
+        .mg-x{
+            border:1px solid var(--bg-border);border-radius:9px;background:none;
+            color:var(--ink-dim);cursor:pointer;font:inherit;font-size:0.95rem;
+            padding:0 11px;flex:0 0 auto;
+        }
+        .mg-x:hover,.mg-x:focus-visible{color:var(--red);border-color:var(--red);}
         .stats-box .stats-record{font-weight:700;color:var(--ink);font-size:0.95rem;}
         .online-panel{
             margin-top:10px;padding:12px;
@@ -2569,6 +2614,8 @@
                 <button class="btn-clear" style="max-width:none;flex:1;padding:8px;" onclick="discardSavedGame()">✕ Discard</button>
             </div>
         </div>
+
+        <div id="my-games" class="my-games hidden"></div>
 
         <div id="stats-box" class="stats-box hidden"></div>
 
@@ -3259,7 +3306,7 @@ const NET={
         // v42: tell the joiner their FINAL (possibly deduped) identity
         let gn=null;
         if(game&&this.myIndex>=0&&game.players[1-this.myIndex])gn=game.players[1-this.myIndex].name;
-        if(this.async){this.gameCode=this.code;lsDel('spellcoco.gover.'+this.code);this.send({type:'__a',op:'newgame',state:game.serialize(),config:CONFIG});showInGameRoom();return}
+        if(this.async){this.gameCode=this.code;lsDel('spellcoco.gover.'+this.code);this._regTurn=null;this.send({type:'__a',op:'newgame',state:game.serialize(),config:CONFIG});showInGameRoom();regTurnSync();return}
         this.send({type:'start',config:CONFIG,state:game.serialize(),customs:localCustomWords,guestName:gn});
     },
     cleanup(){if(this.peer){try{this.peer.destroy()}catch(e){}}this.peer=null;this.conn=null;if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.reconnectTries=0;this.transport=this.useRelay?'relay':'p2p';this.everConnected=false;this.connected=false;hbStop();}
@@ -3598,6 +3645,7 @@ function asyncLoadGame(state,config){
     game=Game.fromState(state);
     NET.myIndex=NET.seat;
     NET.gameCode=NET.code;   // v58: this game object belongs to THIS room
+    regTurnSync();   // v59: register/refresh this game in My Games right away
     if(game.over){asyncShowEnding(state);return;}   // v58: finished room → recap, not a live board
     lsDel('spellcoco.gover.'+NET.code);   // v58: fresh live game — let its ending record
     showInGameRoom();   // v54: surface the room code in-game for easy reconnect
@@ -3656,6 +3704,63 @@ function buildShareLink(){return location.origin+location.pathname+'?game='+(NET
 // nameless link (?game=CODE) opens as the right person on each device — no me= editing.
 function rememberId(code,name){if(code&&name)lsSet('spellcoco.id.'+code,name);}
 function recallId(code){const n=lsGet('spellcoco.id.'+code,null);return (typeof n==='string'&&n)?validPlayerName(n):null;}
+// ===================== v59: My Online Games =====================
+// This device remembers every async game it plays (8 most recent), so the
+// start screen can show "vs Keith — YOUR TURN · 2h ago" with tap-to-rejoin.
+function gamesReg(){const r=lsGet('spellcoco.games',null);return (r&&typeof r==='object')?r:{}}
+function regGame(patch){
+    if(!(NET.async&&NET.code))return;
+    const r=gamesReg();const e=r[NET.code]||{};
+    Object.assign(e,patch);e.t=Date.now();
+    r[NET.code]=e;
+    Object.keys(r).sort((a,b)=>(r[b].t||0)-(r[a].t||0)).slice(8).forEach(k=>delete r[k]);
+    lsSet('spellcoco.games',r);
+    renderMyGames();
+}
+function unregGame(code){const r=gamesReg();delete r[code];lsSet('spellcoco.games',r);renderMyGames();}
+// Called at the end of every updateUI — memoized so it writes localStorage
+// only when whose-turn actually changes, not on every tile tap.
+function regTurnSync(){
+    if(!(NET.async&&NET.code&&game&&NET.gameCode===NET.code))return;
+    const turn=game.over?'over':(game.turnIndex===NET.myIndex?'me':'them');
+    if(NET._regTurn===NET.code+turn)return;
+    NET._regTurn=NET.code+turn;
+    const opp=(game.players&&game.players[1-NET.myIndex]||{}).name||NET.oppName||null;
+    regGame({turn:turn,opp:opp,me:NET.myName});
+}
+function agoText(t){
+    const s=(Date.now()-(t||0))/1000;
+    if(s<90)return 'just now';
+    const m=s/60;if(m<60)return Math.round(m)+'m ago';
+    const h=m/60;if(h<36)return Math.round(h)+'h ago';
+    return Math.round(h/24)+'d ago';
+}
+function renderMyGames(){
+    const box=document.getElementById('my-games');if(!box)return;
+    const r=gamesReg();
+    const keys=Object.keys(r).sort((a,b)=>(r[b].t||0)-(r[a].t||0));
+    if(!keys.length){box.classList.add('hidden');box.innerHTML='';return}
+    box.classList.remove('hidden');
+    box.innerHTML='<div class="mg-title">🐾 My Online Games</div>'+keys.map(c=>{
+        const e=r[c]||{};
+        const status=e.turn==='over'?'finished — tap for recap':(e.turn==='me'?'YOUR TURN':'waiting for '+(e.opp||'opponent'));
+        return '<div class="mg-row'+(e.turn==='me'?' mg-mine':'')+'">'
+            +'<button class="mg-join" onclick="openMyGame(\''+c+'\')">'
+            +'<span class="mg-opp">vs '+(e.opp||'?')+'</span>'
+            +'<span class="mg-status">'+status+' · '+agoText(e.t)+'</span>'
+            +'</button>'
+            +'<button class="mg-x" aria-label="Remove this game from the list" title="Remove from list" onclick="unregGame(\''+c+'\')">✕</button>'
+            +'</div>';
+    }).join('');
+}
+function openMyGame(code){
+    const e=gamesReg()[code];
+    unlockIdentity();ONLINE_TAPPED=false;   // fresh identity resolution for this room
+    UI_MODE='join';NET.mode='join';
+    const me=(e&&e.me)||recallId(code);
+    if(me)pickSide(me);
+    asyncEnter(code);   // welcome brings the board (or the recap, if finished)
+}
 // v55: identity helpers. The relay seats by NAME, so two clients must never send
 // the same name — and once both seats are set, a player can't change theirs.
 let ONLINE_LOCKED=false;
@@ -3807,6 +3912,7 @@ let UI_MODE='local'; // v41: 'local' | 'solo' | 'host' | 'join' — NET.mode sta
 function setMode(m){
     NET.cleanup();UI_MODE=m;NET.mode=(m==='host'||m==='join')?m:'local';NET.setPill('');
     unlockIdentity();ONLINE_TAPPED=false;NET.oppName=null;   // v58: each game locks fresh — don't inherit last game's lock
+    renderMyGames();   // v59: keep the start-screen games list fresh
     hideInGameRoom();   // v54: code bar only shows during an active online game
     ['local','solo','host','join'].forEach(x=>{const b=document.getElementById('mode-'+x);if(b)b.classList.toggle('active',x===m)});
     document.getElementById('local-players-panel').classList.toggle('hidden',m!=='local');
@@ -5211,6 +5317,7 @@ class Game{
             else if(NET.mode==='join'&&myTurn)NET.send({type:'sel',ids:[...this.selection]});
             else if(NET.mode==='local')saveGameState();
         }
+        regTurnSync();   // v59: keep the My Games whose-turn flag fresh (memoized)
     }
 
     showToast(m,fromNet){if(NET.mode==='host'&&!fromNet)NET.send({type:'fx',toast:m});const d=document.createElement('div');d.className='toast';d.innerHTML=m;document.body.appendChild(d);setTimeout(()=>d.remove(),2200)}
@@ -5280,9 +5387,10 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v58';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v59';   // single source of truth for the on-screen build label — bump every release
 document.addEventListener('DOMContentLoaded',()=>{
     document.querySelectorAll('.app-version').forEach(e=>{e.textContent=APP_VERSION});
+    renderMyGames();   // v59: show remembered online games on the start screen
     document.querySelectorAll('.mult-toggle').forEach(label=>{
         const cb=label.querySelector('input');
         cb.addEventListener('change',()=>{
