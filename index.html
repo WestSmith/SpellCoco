@@ -12,6 +12,61 @@
 
     <!--
     ================================================================
+    SPELLCOCO v62 — SHAWN'S PLAYTEST FIXES + UNDO SWAP + TURN PUSH
+    ================================================================
+
+    CHANGELOG v61 → v62 (Shawn + Keith's live-game feedback, 2026-07-01):
+    - FIX (desktop): the v60 bottom-pinned reference cluster left a
+      void in the lower-left when the panel content was short. The
+      sidebar now hugs its content (height:auto, max-height caps it)
+      and #letter-ref keeps its order but drops margin-top:auto.
+    - FIX (desktop): the 🌐 net pill was clipped at the panel edge —
+      the header couldn't shrink. The volume slider is now flexible
+      (flex:1, min 36px) and the logo row may compress, so mute +
+      slider + pill always fit.
+    - FIX (mobile): SWAP now works on iPhone. The swap-target tap
+      relied on a `click` that iOS Safari doesn't reliably deliver
+      on the drag-managed grid; pointerdown now handles it directly.
+      A 350ms ghost-tap guard stops the same touch from "choosing" a
+      letter in the picker that opens under the finger.
+    - FIX (online): Coco's speech bubbles never reached the OPPONENT
+      in server (async) games — asyncFx dropped the fx `bubble`
+      field. Keith saw his own 100+ lines; Shawn saw none.
+    - CHANGE (mobile): toasts dock beside lounging Coco (top of the
+      board) instead of covering the bottom tile rows.
+    - ADD: Coco reactions after the post-word popups finish:
+      90–99 pt lines (new tier), 100+ (existing pools), pet-word
+      teasing (a word the same player has played 3+ times on this
+      device — QUIZZER seeded for Keith), and RARE random chatter
+      (5%, max 2/game, 25s cooldown; not every game — Shawn's
+      sensory-overload rule). One reaction max per turn, priority
+      100+ > 90s > tease > chatter. All ride the fx bubble channel
+      with a sender-computed delay so they fire AFTER the toasts.
+    - CHANGE: player cards render in PLAY ORDER — whoever goes first
+      is the LEFT card (P1), second player RIGHT (P2), regardless of
+      who hosted. Cards get small P1/P2 tags. Coco's lounge side +
+      "active" highlight follow the real turn index still.
+    - ADD: UNDO SWAP (consent-based, like custom words). Available
+      to the swapper same-turn, BEFORE a word is submitted; opponent
+      gets an Allow/Refuse modal; on Allow the tile letter reverts
+      and the 3 treats come back. Local pass-and-play shows the
+      modal to the other seat; solo Coco auto-forgives; online runs
+      undoreq/undook/undono over the relay (async only — legacy P2P
+      hides the button). Any board change (submit/shuffle/turn end)
+      closes the window.
+    - ADD: TURN PUSH NOTIFICATIONS (Web Push). 🔔 toggle in the
+      online panel + in-game room bar. iPhone requires the game
+      installed to the Home Screen (iOS 16.4+ Apple rule — the
+      toggle explains this). New sw.js service worker shows
+      "Your move" notifications; the game server stores per-device
+      subscriptions (op push/pushoff) and pushes on turn change,
+      new game, and game over — only to players with no live
+      socket in the room. VAPID keys: public pinned in client,
+      private lives as a Worker secret (never in this repo).
+    - Server v62 changes ride the SAME wrangler worker
+      (spellcoco-async); v61 client (37e45cb) preserved for revert.
+
+    ================================================================
     SPELLCOCO v61 — ONE SEAT PER LIVE PLAYER (SEAT-SHARING FIX)
     ================================================================
 
@@ -989,7 +1044,10 @@
             .side-panel{
                 width:clamp(320px,34%,400px);
                 display:flex;flex-direction:column;gap:8px;
-                height:calc(100vh - 40px);
+                /* v62: hug the content — the v60 full-height panel left a
+                   bottom-left void when content was short (Shawn). The cap
+                   still keeps everything reachable via scroll when tall. */
+                height:auto;max-height:calc(100vh - 40px);
                 overflow-y:auto;padding-right:6px;flex-shrink:0;
                 scrollbar-width:thin;
                 scrollbar-color:var(--purple) transparent;
@@ -1000,11 +1058,12 @@
                 border-radius:3px;
             }
             /* Bottom cluster — rarely-consulted rows Keith asked to move down:
-               letter values, long-word bonus, then the room code at the very
-               bottom ("it's something you only have to look at once"). */
-            #letter-ref{order:97;margin-top:auto}
+               letter values, long-word bonus, then the room code last. v62:
+               they follow the content now (no margin-top:auto void — Shawn). */
+            #letter-ref{order:97;margin-top:14px}
             #lw-ref{order:98}
             #ingame-room{order:99}
+            #push-row{order:99}   /* v62: 🔔 pill rides just under the room code */
             /* Board column stacks: grid on top, dictionary right below it —
                "the dictionary is something I use constantly." */
             .grid-panel{flex:1;display:flex;flex-direction:column;align-items:center;gap:12px}
@@ -1116,7 +1175,9 @@
             background:var(--ink-soft);
             opacity:0.6;
         }
-        .header-right{display:flex;align-items:center;gap:8px;min-width:0}
+        /* v62: the header must SHRINK, not clip — the 🌐 pill was getting cut
+           off at the panel edge. Slider goes flexible, logo row may compress. */
+        .header-right{display:flex;align-items:center;gap:6px;min-width:0;flex-shrink:1}
         @media(max-width:839px){
             .volume-slider{display:none}
         }
@@ -1129,7 +1190,7 @@
             color:var(--ink);
         }
 
-        .sound-controls{display:flex;align-items:center;gap:8px}
+        .sound-controls{display:flex;align-items:center;gap:6px;min-width:0;flex:0 1 auto}
         .btn-icon{
             background:none;border:none;cursor:pointer;
             font-size:1.3rem;padding:6px;
@@ -1140,7 +1201,7 @@
         .btn-icon:hover{color:var(--pink-hi)}
         .btn-icon.active{color:var(--pink-hi)}
         .volume-slider{
-            width:72px;height:6px;
+            width:72px;min-width:36px;flex:1 1 36px;height:6px;   /* v62: shrinks so the 🌐 pill always fits */
             -webkit-appearance:none;appearance:none;
             background:var(--bg-elevated);
             border-radius:3px;outline:none;
@@ -1161,6 +1222,12 @@
 
         /* Player bar — active card gets a literal 3-block flag rail */
         .player-bar{display:flex;gap:10px;flex-shrink:0}
+        /* v62: play-order tag — P1 always sits in the LEFT card */
+        .pnum{
+            display:inline-block;margin-right:6px;padding:1px 6px;border-radius:6px;
+            font-size:0.62em;font-weight:700;letter-spacing:0.06em;vertical-align:middle;
+            background:var(--bg-elevated);border:1px solid var(--bg-border);color:var(--ink-dim);
+        }
         .player-card{
             background:var(--bg-panel);
             padding:9px 14px;
@@ -2320,6 +2387,17 @@
         }
         @keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(12px)}}
         @keyframes toastOut{to{opacity:0;transform:translateX(-50%) translateY(-12px)}}
+        /* v62: mobile toasts dock beside lounging Coco (left/right set inline
+           by showToast) — wrap instead of clipping, and fade without the
+           centering translateX the default toast animation assumes. */
+        .toast.by-coco{
+            bottom:auto;transform:none;max-width:none;
+            white-space:normal;overflow:visible;text-overflow:clip;
+            font-size:clamp(0.85rem,3.4vw,1rem);padding:8px 14px;
+            animation:toastInB 0.3s ease,toastOutB 0.3s ease 1.7s forwards;
+        }
+        @keyframes toastInB{from{opacity:0;transform:translateY(8px)}}
+        @keyframes toastOutB{to{opacity:0;transform:translateY(-8px)}}
 
         .round-overlay{
             position:fixed;inset:0;
@@ -2573,7 +2651,7 @@
             border-radius:0 !important;
             box-shadow:none !important;
         }
-        .logo-row{display:flex;align-items:center;gap:9px;min-width:0;}
+        .logo-row{display:flex;align-items:center;gap:9px;min-width:0;overflow:hidden;} /* v62: if space runs out, the logo yields — never the 🌐 pill */
         .coco-mark-slot{display:inline-block;line-height:0;flex-shrink:0;}
         .coco-mark-slot svg{width:100%;height:100%;}
         .mark-sm{width:56px;height:56px;}
@@ -2689,6 +2767,8 @@
             <span class="ir-msg" id="ingame-rejoin-msg">Opponent went offline</span>
             <button class="ir-btn" onclick="copyRejoinLink(this)">🔗 Send rejoin link</button>
         </div>
+        <!-- v62: per-device turn alerts (Web Push; iPhone needs Add to Home Screen) -->
+        <div id="push-row" class="ingame-room hidden" onclick="togglePush()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();togglePush()}" role="button" tabindex="0" aria-label="Toggle turn notifications"></div>
         <div class="round-indicator-row">
             <div id="round-indicator">✦ ROUND 1 / 5 ✦</div>
             <div class="round-pips" id="round-pips"></div>
@@ -2714,6 +2794,8 @@
                 <button class="btn-ability" id="btn-hint" onclick="game.useAbility('hint')">💡 Hint <span class="cost" id="hint-cost-label">2<span class="ticon"></span></span></button>
                 <button class="btn-ability" id="btn-time" onclick="game.useAbility('time')">⏱ +15s <span class="cost">1<span class="ticon"></span></span></button>
                 <button class="btn-cancel-swap hidden" id="btn-cancel-swap" onclick="game.cancelSwap()">✕ Cancel Swap</button>
+                <!-- v62: consent-based undo — same turn, before a word is played -->
+                <button class="btn-cancel-swap hidden" id="btn-undo-swap" onclick="game.requestUndoSwap()">↩ Undo Swap (+3<span class="ticon"></span>)</button>
             </div>
             <div class="coco-hairline" id="coco-hairline"></div>
             <div class="coco-row" id="zoomies-zone">
@@ -3022,6 +3104,18 @@
             </div>
         </details>
         </div><!-- /settings-stack -->
+    </div>
+</div>
+
+<!-- v62: undo-swap consent — mirrors the custom-word Allow/Refuse flow -->
+<div id="modal-undoreq" class="modal hidden" style="z-index:200;">
+    <div class="modal-content" style="width:400px;">
+        <h3 style="margin-bottom:14px;">↩ Undo a swap?</h3>
+        <p id="undoreq-text" style="font-size:1rem;margin-bottom:18px;"></p>
+        <div style="display:flex;gap:10px;justify-content:center;">
+            <button class="btn-clear" style="max-width:none;flex:1;" onclick="answerUndoRequest(false)">🙀 Refuse</button>
+            <button class="btn-submit" style="max-width:none;flex:1;" onclick="answerUndoRequest(true)">✓ Allow</button>
+        </div>
     </div>
 </div>
 
@@ -3758,6 +3852,11 @@ function asyncOnData(m){
         case 'wordok':addCustomWord(m.w,true);if(game){game.showToast(`📖 ${oppName()} approved "${m.w}" — play it!`);quietUI()}break;
         case 'wordno':if(game)game.showToast(`🙀 ${oppName()} vetoed "${m.w}"`);break;
         case 'addword':addCustomWord(m.w,true);if(game){game.showToast(`📖 ${m.w} added by ${oppName()}`);quietUI()}break;
+        // v62: undo-swap consent (async online). The requester holds lastSwap;
+        // approval that arrives after the window closed just no-ops with a toast.
+        case 'undoreq':showUndoRequest({from:m.from,to:m.to},false);break;
+        case 'undook':if(game&&!game.applyUndoSwap())game.showToast('↩ Too late to undo — the board moved on');break;
+        case 'undono':if(game)game.showToast(`🙀 ${oppName()} says the swap stands`);break;
     }
 }
 // v58: repaint WITHOUT pushing a state to the server. Dictionary updates don't
@@ -3831,6 +3930,7 @@ function asyncWelcome(m){
     }
     announceSide();   // v55: tell the peer our FINAL identity so they can lock too
     asyncSyncWords();   // v54: share custom words on connect (consent + dictionary sync)
+    registerPushWithRoom();   // v62: refresh this device's turn-alert subscription for this room
     // v58: if WE moved while offline, the server is one move behind — its state
     // still shows it as OUR turn while our local board has already flipped. Turn
     // enforcement makes replaying safe (nobody else could have moved), so push
@@ -3875,6 +3975,7 @@ function asyncTurnHint(overlay){
     if(overlay)game.showRoundOverlay(`Round ${game.round}`,mine?'Your turn':`Waiting for ${game.currentPlayer.name}…`,true);
 }
 function asyncPeer(m){
+    NET.oppPresent=!!m.present;   // v62: undo-swap needs to know if consent is reachable
     if(!game)return;
     const opp=m.name||NET.oppName||(NET.myName==='Keith'?'Shawn':'Keith');
     const rb=document.getElementById('ingame-rejoin');
@@ -4083,11 +4184,71 @@ function fitCodeText(span,box){
 }
 function showInGameRoom(){
     const bar=document.getElementById('ingame-room');if(!bar)return;
-    if(!(NET.async&&NET.code)){bar.classList.add('hidden');return;}
+    if(!(NET.async&&NET.code)){bar.classList.add('hidden');const pr=document.getElementById('push-row');if(pr)pr.classList.add('hidden');return;}
     const c=document.getElementById('ingame-room-code');if(c)c.textContent=NET.code;
     bar.classList.remove('hidden');
+    const pr=document.getElementById('push-row');if(pr){pr.classList.remove('hidden');updatePushUI();}   // v62: 🔔 toggle rides with the room bar
     requestAnimationFrame(()=>fitCodeText(document.getElementById('ingame-room-code'),bar));
 }
+// ===================== v62: turn push notifications (Web Push) =====================
+// A 🔔 toggle per DEVICE. iPhone: Apple only allows Web Push for apps saved to
+// the Home Screen (iOS 16.4+), so plain-Safari taps get a friendly how-to.
+// The server (spellcoco-async worker) stores each device's subscription per
+// room and pushes on turn change / new game / game over — but only to players
+// with no live socket in the room, so you're never pinged while playing.
+const PUSH_PUBKEY='BF-_j2ITJdPCrEbILfTRpdFDY-YEz7Xe24MaDWqzx9x7sf6TMyKgUwbk6CloXo25yydk367Yuvq8gVdutqk17tk';
+function pushSupported(){return 'serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window}
+function pushPref(){return !!lsGet('spellcoco.push',false)}
+function urlB64ToU8(s){s=s.replace(/-/g,'+').replace(/_/g,'/');const pad=s.length%4?'='.repeat(4-s.length%4):'';const b=atob(s+pad);const a=new Uint8Array(b.length);for(let i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a}
+async function getPushSub(create){
+    if(!pushSupported())return null;
+    try{
+        const reg=await navigator.serviceWorker.ready;
+        let sub=await reg.pushManager.getSubscription();
+        if(!sub&&create)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlB64ToU8(PUSH_PUBKEY)});
+        return sub;
+    }catch(e){return null}
+}
+function pushSay(msg){if(game)game.showToast(msg);else{const el=document.getElementById(UI_MODE==='join'?'join-status':'host-status');if(el)el.innerText=msg.replace(/<[^>]*>/g,'')}}
+async function togglePush(){
+    if(!pushSupported()){
+        const ios=/iPhone|iPad|iPod/.test(navigator.userAgent);
+        const standalone=(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)||navigator.standalone;
+        if(ios&&!standalone)pushSay('📲 First save the game: Share → Add to Home Screen, open SpellCoco from that icon, then tap 🔔 again');
+        else pushSay('⚠ This browser doesn’t support push notifications');
+        return;
+    }
+    if(pushPref()){
+        lsSet('spellcoco.push',false);
+        const sub=await getPushSub(false);
+        if(sub){
+            if(NET.async&&NET.connected)NET.send({type:'__a',op:'pushoff',endpoint:sub.endpoint,dev:devId()});
+            try{sub.unsubscribe()}catch(e){}   // kills the endpoint everywhere; other rooms prune it on 410
+        }
+        updatePushUI();pushSay('🔕 Turn alerts off on this device');
+        return;
+    }
+    const perm=await Notification.requestPermission();
+    if(perm!=='granted'){pushSay('⚠ Notifications are blocked for SpellCoco in this browser’s settings');return}
+    const sub=await getPushSub(true);
+    if(!sub){pushSay('⚠ Couldn’t set up notifications — try again in a moment');return}
+    lsSet('spellcoco.push',true);
+    registerPushWithRoom();
+    updatePushUI();pushSay('🔔 This device will get a push when it’s your turn');
+}
+async function registerPushWithRoom(){
+    if(!pushPref()||!NET.async||!NET.connected||!NET.code)return;
+    const sub=await getPushSub(false);if(!sub)return;
+    NET.send({type:'__a',op:'push',sub:sub.toJSON(),name:NET.myName,dev:devId(),
+        url:location.origin+location.pathname+'?game='+encodeURIComponent(NET.code)});
+}
+function updatePushUI(){
+    const el=document.getElementById('push-row');if(!el)return;
+    const on=pushPref();
+    el.innerHTML='<span class="ir-label">🔔 Turn alerts</span> <span class="ir-code" style="font-size:0.92rem;">'+(on?'ON':'OFF')+'</span> <span class="ir-hint">tap to turn '+(on?'off':'on')+'</span>';
+    el.setAttribute('aria-label','Turn notifications are '+(on?'on':'off')+' — tap to toggle');
+}
+if('serviceWorker' in navigator){try{navigator.serviceWorker.register('sw.js')}catch(e){}}
 function hideInGameRoom(){
     const b=document.getElementById('ingame-room');if(b)b.classList.add('hidden');
     const r=document.getElementById('ingame-rejoin');if(r)r.classList.add('hidden');
@@ -4125,7 +4286,12 @@ function copyRoomCode(){
     }else{window.prompt('Copy this room code:',code);}
 }
 // Live pop-ups (toasts, celebrations) — shown when both players are online.
-function asyncFx(m){if(!game)return;if(m.toast)game.showToast(m.toast,true);if(m.overlay)game.showRoundOverlay(m.overlay.t,m.overlay.s,true);if(m.celebrate)game.showCelebration(m.celebrate,true);if(m.sfx&&SFX[m.sfx])SFX[m.sfx]();}
+function asyncFx(m){if(!game)return;if(m.toast)game.showToast(m.toast,true);if(m.overlay)game.showRoundOverlay(m.overlay.t,m.overlay.s,true);if(m.celebrate)game.showCelebration(m.celebrate,true);
+    // v62 FIX: async games dropped the fx `bubble` field entirely, so the
+    // OPPONENT never saw Coco's speech (Keith saw his own 100+ lines; Shawn
+    // saw none). Delay is sender-computed so it lands after the toasts.
+    if(m.bubble)setTimeout(()=>{if(game&&!game.over)cocoSpeak(m.bubble)},m.bubbleDelay||3400);
+    if(m.sfx&&SFX[m.sfx])SFX[m.sfx]();}
 let UI_MODE='local'; // v41: 'local' | 'solo' | 'host' | 'join' — NET.mode stays networking-only
 function setMode(m){
     NET.cleanup();UI_MODE=m;NET.mode=(m==='host'||m==='join')?m:'local';NET.setPill('');
@@ -4337,7 +4503,7 @@ function guestOnData(m){
         case 'start':guestStart(m);break;
         case 'state':if(game)game.applyState(m.state);break;
         case 'timer':if(game){game.cocoTimerActive=m.on;game.timeLeft=m.t;game.updateTimerDisplay()}break;
-        case 'fx':if(game){if(m.toast)game.showToast(m.toast,true);if(m.overlay)game.showRoundOverlay(m.overlay.t,m.overlay.s,true);if(m.celebrate)game.showCelebration(m.celebrate,true);if(m.coco)game.showCocoOverlay(true);if(m.bubble)setTimeout(()=>{if(game&&!game.over)cocoSpeak(m.bubble)},3400);if(m.sfx&&SFX[m.sfx])SFX[m.sfx]()}break;
+        case 'fx':if(game){if(m.toast)game.showToast(m.toast,true);if(m.overlay)game.showRoundOverlay(m.overlay.t,m.overlay.s,true);if(m.celebrate)game.showCelebration(m.celebrate,true);if(m.coco)game.showCocoOverlay(true);if(m.bubble)setTimeout(()=>{if(game&&!game.over)cocoSpeak(m.bubble)},m.bubbleDelay||3400);if(m.sfx&&SFX[m.sfx])SFX[m.sfx]()}break;
         case 'gameover':{if(game)game.over=true;recordGameStats(m.players);renderGameOver(m.players);break}
     }
 }
@@ -4622,10 +4788,83 @@ function cocoLineFor(p){
     const pool=(p&&p.isCoco)?COCO_LINES.coco:(COCO_LINES[p&&p.name]||COCO_LINES.generic);
     return pool[Math.floor(Math.random()*pool.length)];
 }
+// ===================== v62: more of Coco's opinions =====================
+// 90–99 pts — the "so close" tier (always fires; it's rare enough).
+const COCO_NEAR={
+    Keith:[
+        'Ninety-something. SO close to earning a slow blink.',
+        'Almost a headbutt-worthy word. Almost.',
+        'Single digits from 100. I’ve seen you do better. Do better.'
+    ],
+    Shawn:[
+        'Ninety-plus! One stretch short of perfect — and I know stretching.',
+        'So close to 100 I almost got up. Almost.',
+        'That’s my human warming up.'
+    ],
+    generic:[
+        'Ninety-something. The cat nods. Once.',
+        'Nearly triple digits. Continue impressing me.'
+    ],
+    coco:[
+        'Ninety-ish. I wasn’t even trying.',
+        'A warm-up pounce.'
+    ]
+};
+// Pet-word teasing — {W} is the word. Keith gets the full heckle (grumpy but
+// loving, per v60 rules); Shawn gets affection; never mean.
+const COCO_PET_SEEDS={Keith:['QUIZZER']};   // known favorites before this device has counts
+const COCO_TEASE={
+    Keith:[
+        '{W}? Again? I’m carving a tally into your couch.',
+        'Ah yes, {W}. The Keith classic. I mouthed along.',
+        '{W} AGAIN. Learn a new trick and I’ll trade you one of my treats.'
+    ],
+    Shawn:[
+        '{W} again, huh. Comfort words are valid. I had a comfort spot on the couch.',
+        'You and {W}. Me and the sunny windowsill. We all have our things.'
+    ],
+    generic:[
+        '{W} again? Bold strategy: same word until it stops working.',
+        'I’ve seen {W} so often it shows up in my naps.'
+    ]
+};
+// Rare, unprompted chatter — capped at 2 a game, 5% a turn, 25s cooldown.
+const COCO_CHATTER=[
+    'I batted a Q off this board earlier. You didn’t need it.',
+    'Carry on. I’m supervising.',
+    'This board smells like fish. …That was me.',
+    'Wake me if someone plays something with a Z in it.',
+    'The sunbeam moved. Tragic. Anyway — decent little word.'
+];
+// One reaction max per turn. Priority: 100+ > 90s > tease > chatter; the
+// last two respect a 25s bubble cooldown so Coco never becomes a gimmick.
+function cocoReactionFor(p,r,g){
+    if(r.score>=100)return cocoLineFor(p);
+    if(r.score>=90){
+        const pool=(p&&p.isCoco)?COCO_NEAR.coco:(COCO_NEAR[p&&p.name]||COCO_NEAR.generic);
+        return pool[Math.floor(Math.random()*pool.length)];
+    }
+    if(Date.now()-(window._lastBubbleAt||0)<25000)return null;
+    const w=r.word,n=p&&p.name;
+    if(w&&n&&!p.isCoco){
+        const seeded=COCO_PET_SEEDS[n]&&COCO_PET_SEEDS[n].indexOf(w)>=0;
+        const cnt=(STATS.wc&&STATS.wc[n]&&STATS.wc[n][w])||0;
+        if((seeded||cnt>=3)&&Math.random()<0.45){
+            const pool=COCO_TEASE[n]||COCO_TEASE.generic;
+            return pool[Math.floor(Math.random()*pool.length)].replace('{W}',w);
+        }
+    }
+    if(Math.random()<0.05&&(g._cocoChatter||0)<2){
+        g._cocoChatter=(g._cocoChatter||0)+1;
+        return COCO_CHATTER[Math.floor(Math.random()*COCO_CHATTER.length)];
+    }
+    return null;
+}
 let _cocoBubbleTimer=null;
 function cocoSpeak(text){
     const b=document.getElementById('coco-bubble'),lounge=document.getElementById('coco-lounge');
     if(!b||!lounge||!text)return;
+    window._lastBubbleAt=Date.now();   // v62: cooldown clock for teases/chatter
     b.textContent=text;
     // He talks from whichever side he's lounging on; the bubble fills the
     // empty half of the bar and the tail points at him.
@@ -4776,6 +5015,29 @@ function answerWordRequest(ok){
         NET.send({type:'wordno',w:w});
     }
 }
+// v62: undo-swap consent — mirrors the word-request flow. `local` means the
+// other seat on THIS device (pass-and-play); otherwise the answer goes back
+// over the wire as undook/undono.
+function showUndoRequest(s,local){
+    NET.pendingUndo=local?'local':'net';
+    const who=local?((game&&game.players[s.by]&&game.players[s.by].name)||'Your opponent'):oppName();
+    document.getElementById('undoreq-text').innerHTML=
+        `<strong>${who}</strong> wants to undo their letter swap (<strong>${s.from} → ${s.to}</strong>) and get their 3 treats back.`;
+    document.getElementById('modal-undoreq').classList.remove('hidden');
+}
+function answerUndoRequest(ok){
+    document.getElementById('modal-undoreq').classList.add('hidden');
+    const kind=NET.pendingUndo;NET.pendingUndo=null;
+    if(!kind)return;
+    if(kind==='local'){
+        if(!game)return;
+        if(ok)game.applyUndoSwap();
+        else game.showToast('🙀 The swap stands');
+        return;
+    }
+    NET.send({type:ok?'undook':'undono'});
+    if(ok&&game)game.showToast('↩ You approved the undo');
+}
 function exportCustomWords(){
     const st=document.getElementById('custom-status');
     if(!localCustomWords.length){st.innerText='No custom words to export yet';st.style.color='var(--ink-dim)';return}
@@ -4875,7 +5137,7 @@ class Game{
         }));
         this.timerInterval=null;this.timeLeft=0;this.cocoTimerActive=false;this.over=false;
         this.round=1;this.startIndex=(opts&&typeof opts.startIndex==='number'&&opts.startIndex>=0&&opts.startIndex<this.players.length)?opts.startIndex:0;this.turnIndex=this.startIndex;this.tiles=[];this.selection=[];
-        this.pendingSwap=false;this.isDragging=false;this.cocoPending=false;
+        this.pendingSwap=false;this.isDragging=false;this.cocoPending=false;this.lastSwap=null;
         this.generateBoard();this.selection=[];this.updateUI();this.setupTouchDrag();
         this.showRoundOverlay('Round 1',`${this.players[this.startIndex].name} goes first!`);
         this.maybeCoco();
@@ -4904,7 +5166,7 @@ class Game{
         const g=Object.create(Game.prototype);
         g.timerInterval=null;g.timeLeft=st.timeLeft||0;g.cocoTimerActive=false;
         g.round=st.round;g.turnIndex=st.turnIndex;g.startIndex=(typeof st.startIndex==='number')?st.startIndex:0;g.selection=[];
-        g.pendingSwap=false;g.isDragging=false;g.over=!!st.over;   // v58: restore the over flag
+        g.pendingSwap=false;g.isDragging=false;g.lastSwap=null;g.over=!!st.over;   // v58: restore the over flag (v62: +undo window resets)
         g.players=st.players;
         g.tiles=st.tiles.map((td,i)=>{const t=new Tile(i,Math.floor(i/5),i%5,td.char);t.multiplier=td.mult;t.hasGem=td.gem;return t});
         (st.sel||[]).forEach(id=>{if(g.tiles[id]){g.tiles[id].isSelected=true;g.selection.push(id)}});
@@ -4916,6 +5178,7 @@ class Game{
     }
     applyState(st){
         if(st.over)this.over=true;   // v58: an ending can arrive by state push too
+        this.lastSwap=null;   // v62: an incoming board replaces ours — undo window closes
         this.round=st.round;this.turnIndex=st.turnIndex;if(typeof st.startIndex==='number')this.startIndex=st.startIndex;
         this.players=st.players;
         this.cocoTimerActive=st.cocoTimerActive;this.timeLeft=st.timeLeft;this.cocoPendingFor=(st.cocoPendingFor==null?null:st.cocoPendingFor);
@@ -5055,7 +5318,14 @@ class Game{
     setupTouchDrag(){
         const grid=document.getElementById('grid');
         const gt=(x,y)=>{const el=document.elementFromPoint(x,y);if(!el)return null;const t=el.closest('.tile');return t?parseInt(t.dataset.id):null};
-        grid.addEventListener('pointerdown',e=>{if(this.pendingSwap||!this.myTurn)return;const id=gt(e.clientX,e.clientY);if(id!==null){this.isDragging=true;this.handleTileClick(id)}e.preventDefault()});
+        // v62: swap-target taps are handled RIGHT HERE in pointerdown. The old
+        // path early-returned and waited for a `click`, which iOS Safari doesn't
+        // reliably synthesize on this drag-managed grid — so on iPhone the swap
+        // picker often never opened (Shawn had to switch to desktop). The
+        // _swapModalAt guard (350ms, in performSwap/closeSwapModal) stops the
+        // same touch's ghost click from "choosing" a letter in the picker that
+        // opens under the finger.
+        grid.addEventListener('pointerdown',e=>{if(!this.myTurn)return;const id=gt(e.clientX,e.clientY);if(this.pendingSwap){if(id!==null)this.openSwapModal(id);e.preventDefault();return}if(id!==null){this.isDragging=true;this.handleTileClick(id)}e.preventDefault()});
         grid.addEventListener('pointermove',e=>{if(!this.isDragging||this.pendingSwap)return;const id=gt(e.clientX,e.clientY);if(id!==null&&!this.selection.includes(id)){const l=this.selection[this.selection.length-1];if(l!==undefined&&this.isAdjacent(this.tiles[l],this.tiles[id]))this.selectTile(this.tiles[id])}e.preventDefault()});
         const end=()=>{this.isDragging=false};
         grid.addEventListener('pointerup',end);grid.addEventListener('pointercancel',end);grid.addEventListener('pointerleave',end);
@@ -5137,12 +5407,26 @@ class Game{
         // v48: score only mid-game — unused tiles survive the refill, so
         // naming the word (or the letters) would spoil what's still there.
         if(swapBest)setTimeout(()=>{if(!game||game.over)return;this.showToast(`🔄 With a swap: ${swapBest.score} pts was possible`)},5300);
-        // v60: 100+ point plays wake Coco up. Delayed past the turn overlay +
-        // his amble (~3s, v47 timing) so he speaks from wherever he lands.
-        if(r.score>=100){
-            const line=cocoLineFor(p);
-            setTimeout(()=>{if(game&&!game.over)cocoSpeak(line)},3400);
-            NET.send({type:'fx',bubble:line});   // live opponent sees it too (v51 fx channel)
+        // v62: track how often each player leans on a word (fuels Coco's
+        // pet-word teasing). Device-local, 4+ letters only, pruned at 400.
+        if(r.word.length>=4&&p&&!p.isCoco){
+            STATS.wc=STATS.wc||{};const wm=STATS.wc[p.name]=STATS.wc[p.name]||{};
+            wm[r.word]=(wm[r.word]||0)+1;
+            const ks=Object.keys(wm);if(ks.length>400)for(const k of ks)if(wm[k]<2)delete wm[k];
+            lsSet('spellcoco.stats',STATS);
+        }
+        // v60/v62: Coco reacts AFTER the popups are done (Shawn's ask) —
+        // 100+ always (v60 pools), 90–99 always (new tier), pet-word teasing
+        // and rare chatter occasionally (never every game — sensory-overload
+        // rule). One reaction max per turn; the opponent gets it over the fx
+        // channel with the same sender-computed delay.
+        {
+            const reactDelay=swapBest?7600:best?5200:3400;   // after the last toast (word / best / swap-ceiling)
+            const line=cocoReactionFor(p,r,this);
+            if(line){
+                setTimeout(()=>{if(game&&!game.over)cocoSpeak(line)},reactDelay);
+                NET.send({type:'fx',bubble:line,bubbleDelay:reactDelay});   // v51 fx channel
+            }
         }
 
         const used=[...this.selection];
@@ -5187,6 +5471,7 @@ class Game{
     endTurn(){
         if(this.timerInterval)clearInterval(this.timerInterval);
         this.cocoTimerActive=false;clearDictChecker();this.pendingSwap=false;
+        this.lastSwap=null;   // v62: the undo-swap window closes with the turn
         // Round 1 only: shuffle gem positions after each turn — but NOT on the
         // last turn of the round (endRound → upgradeMultipliersForNewRound →
         // replenishGems would immediately overwrite the scramble anyway).
@@ -5336,7 +5621,41 @@ class Game{
         this.updateUI();
     }
     cancelSwap(){this.pendingSwap=false;this.showToast('Swap cancelled');this.updateUI()}
+    // v62: UNDO SWAP — consent-based, like adding a custom word. Only the
+    // swapper, only on the same turn, only BEFORE a word is submitted (endTurn
+    // and any board change close the window). On Allow the tile letter goes
+    // back and the 3 treats are refunded. Local shows the modal to the other
+    // seat; solo Coco auto-forgives; online asks over the wire (async only).
+    requestUndoSwap(){
+        const s=this.lastSwap;
+        if(!s||!this.myTurn||this.over||s.by!==this.turnIndex)return;
+        if(CONFIG.solo&&CONFIG.solo.active){this.applyUndoSwap('🐾 Coco allows it. He saw nothing.');return}
+        if(NET.mode==='local'){showUndoRequest(s,true);return}
+        if(!NET.async)return;   // legacy P2P never shows the button
+        if(NET.oppPresent===false){this.showToast('⚠ '+oppName()+' is offline — an undo needs their OK while it’s still your turn');return}
+        NET.send({type:'undoreq',from:s.from,to:s.to});
+        this.showToast(`📨 Asked ${oppName()} to undo the swap…`);
+    }
+    applyUndoSwap(msg){
+        const s=this.lastSwap;
+        if(!s)return false;
+        const t=this.tiles[s.tileId];
+        if(!t||t.char!==s.to){this.lastSwap=null;return false}
+        if(this.selection.length)this.clearSelection();
+        t.char=s.from;t.baseValue=s.fromVal;
+        const p=this.players[s.by];
+        if(p){
+            p.gems=Math.min(CONFIG.maxGems,p.gems+CONFIG.costs.swap);
+            const log=p.abilityLog[this.round];
+            if(log){log.swaps=Math.max(0,(log.swaps||0)-1);log.gemsSpent=Math.max(0,(log.gemsSpent||0)-CONFIG.costs.swap)}
+        }
+        this.lastSwap=null;
+        this.showToast(msg||`↩ Swap undone — ${s.to} back to ${s.from}, +3 ${TICON} refunded`);
+        SFX.swap();this.updateUI();
+        return true;
+    }
     shuffleBoard(){
+        this.lastSwap=null;   // v62: tiles move — the swap can't be traced back
         const mults=[];
         this.tiles.forEach(t=>{
             if(t.multiplier){mults.push(t.multiplier);t.multiplier=null}
@@ -5361,10 +5680,14 @@ class Game{
         mults.forEach(m=>{if(si<idx.length)this.tiles[idx[si++]].multiplier=m});
         this.replenishGems();
     }
-    openSwapModal(tileId){this.swapTargetId=tileId;const g=document.getElementById('swap-options');g.innerHTML='';for(let ch of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'){const d=document.createElement('div');d.className='swap-tile';d.innerText=ch;d.onclick=()=>this.performSwap(ch);g.appendChild(d)}document.getElementById('modal-swap').classList.remove('hidden')}
+    openSwapModal(tileId){this.swapTargetId=tileId;this._swapModalAt=Date.now();const g=document.getElementById('swap-options');g.innerHTML='';for(let ch of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'){const d=document.createElement('div');d.className='swap-tile';d.innerText=ch;d.onclick=()=>this.performSwap(ch);g.appendChild(d)}document.getElementById('modal-swap').classList.remove('hidden')}
     performSwap(ch){
+        if(Date.now()-(this._swapModalAt||0)<350)return;   // v62: ghost-tap guard — the touch that OPENED the picker can't also pick
         if(NET.mode==='join'){document.getElementById('modal-swap').classList.add('hidden');this.pendingSwap=false;NET.send({type:'act',kind:'swap',tileId:this.swapTargetId,ch:ch});return}
-        const p=this.currentPlayer;if(p.gems<CONFIG.costs.swap){this.showToast('Not enough treats!');SFX.invalid();this.pendingSwap=false;document.getElementById('modal-swap').classList.add('hidden');this.updateUI();return}p.gems-=CONFIG.costs.swap;this.logAbility(p,'swap',CONFIG.costs.swap);const t=this.tiles[this.swapTargetId];t.char=ch;t.baseValue=LETTERS[ch].val;document.getElementById('modal-swap').classList.add('hidden');this.pendingSwap=false;this.showToast(`Swapped to ${ch}!`);SFX.swap();this.updateUI()}
+        const p=this.currentPlayer;if(p.gems<CONFIG.costs.swap){this.showToast('Not enough treats!');SFX.invalid();this.pendingSwap=false;document.getElementById('modal-swap').classList.add('hidden');this.updateUI();return}p.gems-=CONFIG.costs.swap;this.logAbility(p,'swap',CONFIG.costs.swap);const t=this.tiles[this.swapTargetId];
+        // v62: remember the swap so it can be UNDONE (consent-based) this turn
+        this.lastSwap={tileId:this.swapTargetId,from:t.char,fromVal:t.baseValue,to:ch,by:this.turnIndex,round:this.round};
+        t.char=ch;t.baseValue=LETTERS[ch].val;document.getElementById('modal-swap').classList.add('hidden');this.pendingSwap=false;this.showToast(`Swapped to ${ch}!`);SFX.swap();this.updateUI()}
 
     cocoAttack(){
         // v52: async Coco Attack — the attacker isn't the turn authority, so the
@@ -5519,11 +5842,16 @@ class Game{
         }
         const solo=!!(CONFIG.solo&&CONFIG.solo.active);
         const pList=document.getElementById('player-list');pList.innerHTML='';
-        this.players.forEach((p,i)=>{
+        // v62: cards render in PLAY ORDER — whoever opens the round sits LEFT
+        // (P1), the second player RIGHT (P2), no matter who hosted (Shawn +
+        // Keith got confused when the host randomization put P1 on the right).
+        const order=this.players.map((_,i)=>(this.startIndex+i)%this.players.length);
+        order.forEach((i,slot)=>{
+            const p=this.players[i];
             const d=document.createElement('div');
             d.className=`player-card${i===this.turnIndex?' active':''}`;
             const mood=p.isCoco&&p.mood&&COCO_MOODS[p.mood]?COCO_MOODS[p.mood]:null;
-            d.innerHTML=`<div class="player-name${p.isCoco?' is-coco':''}">${p.isCoco?'🐾 ':''}${p.name}${mood?` <span title="${mood.label} mood" aria-label="${mood.label} mood">${mood.emoji}</span>`:''} <span style="font-size:0.72em;color:var(--ink-dim);font-weight:400;">▸ history</span></div><div class="player-score">${p.score}</div><div class="player-gems">${TICON} ${p.gems} / ${CONFIG.maxGems}</div>${p.lastWord?`<div class="player-lastword">${p.lastWord}</div>`:''}`;
+            d.innerHTML=`<div class="player-name${p.isCoco?' is-coco':''}"><span class="pnum" aria-label="plays ${slot===0?'first':'second'}">P${slot+1}</span>${p.isCoco?'🐾 ':''}${p.name}${mood?` <span title="${mood.label} mood" aria-label="${mood.label} mood">${mood.emoji}</span>`:''} <span style="font-size:0.72em;color:var(--ink-dim);font-weight:400;">▸ history</span></div><div class="player-score">${p.score}</div><div class="player-gems">${TICON} ${p.gems} / ${CONFIG.maxGems}</div>${p.lastWord?`<div class="player-lastword">${p.lastWord}</div>`:''}`;
             d.onclick=()=>this.showPlayerHistory(i);
             pList.appendChild(d);
         });
@@ -5552,6 +5880,9 @@ class Game{
         document.getElementById('btn-zoomies').disabled=!myTurn||this.pendingSwap||p.gems<(CONFIG.costs.zoomies||4);
         document.getElementById('btn-swap').classList.toggle('active-swap',this.pendingSwap);
         document.getElementById('btn-cancel-swap').classList.toggle('hidden',!this.pendingSwap);
+        // v62: undo-swap — swapper only, same turn, pre-word, local/solo/async only
+        const undoBtn=document.getElementById('btn-undo-swap');
+        if(undoBtn)undoBtn.classList.toggle('hidden',!(this.lastSwap&&myTurn&&!this.over&&!this.pendingSwap&&this.lastSwap.by===this.turnIndex&&(NET.mode==='local'||NET.async)));
         const timeBtn=document.getElementById('btn-time');
         timeBtn.style.display=this.cocoTimerActive?'inline-flex':'none';
         timeBtn.disabled=!myTurn||this.pendingSwap||p.gems<CONFIG.costs.time;
@@ -5569,7 +5900,7 @@ class Game{
         // Coco AI) don't reset the timer. First call of a game snaps in place.
         const lounge=document.getElementById('coco-lounge');
         if(lounge){
-            const wantLeft=this.turnIndex===0;
+            const wantLeft=this.turnIndex===this.startIndex;   // v62: left card = play order P1, not seat 0
             if(this._loungeSide===undefined){
                 this._loungeSide=wantLeft;
                 lounge.classList.toggle('side-left',wantLeft);
@@ -5600,7 +5931,21 @@ class Game{
         regTurnSync();   // v59: keep the My Games whose-turn flag fresh (memoized)
     }
 
-    showToast(m,fromNet){if(NET.mode==='host'&&!fromNet)NET.send({type:'fx',toast:m});const d=document.createElement('div');d.className='toast';d.innerHTML=m;document.body.appendChild(d);setTimeout(()=>d.remove(),2200)}
+    showToast(m,fromNet){if(NET.mode==='host'&&!fromNet)NET.send({type:'fx',toast:m});const d=document.createElement('div');d.className='toast';d.innerHTML=m;
+        // v62: on phones the old spot (fixed, ~15vh up) sat right on the
+        // board's bottom tile rows (Shawn's screenshots). Dock toasts beside
+        // lounging Coco at the top of the board instead — he "announces" them.
+        const lounge=document.getElementById('coco-lounge');
+        if(window.matchMedia('(max-width:839px)').matches&&lounge&&lounge.offsetParent&&document.getElementById('grid').childElementCount){
+            const r=lounge.getBoundingClientRect();
+            if(r.width>0){
+                d.classList.add('by-coco');
+                d.style.top=Math.max(8,r.top+r.height*0.45)+'px';
+                if(lounge.classList.contains('side-left')){d.style.left=(r.right+6)+'px';d.style.right='10px';}
+                else{d.style.right=(window.innerWidth-r.left+6)+'px';d.style.left='10px';}
+            }
+        }
+        document.body.appendChild(d);setTimeout(()=>d.remove(),2200)}
     showScoreFloat(t){const d=document.createElement('div');d.className='score-float';d.innerText=t;d.style.left='50%';d.style.top='38%';document.body.appendChild(d);setTimeout(()=>d.remove(),1400)}
     showCelebration(t,fromNet){if(NET.mode==='host'&&!fromNet)NET.send({type:'fx',celebrate:t,sfx:'longWord'});const a=document.getElementById('word-area');const b=document.createElement('div');b.className='celebration-banner';b.innerHTML=`<span>✨ ${t} ✨</span>`;a.appendChild(b);setTimeout(()=>b.remove(),2000)}
     showRoundOverlay(t,s,fromNet){if(NET.mode==='host'&&!fromNet)NET.send({type:'fx',overlay:{t:t,s:s}});const o=document.createElement('div');o.className='round-overlay';o.innerHTML=`<span class="round-text">✦ ${t} ✦</span><span class="round-sub">${s||''}</span>`;document.body.appendChild(o);setTimeout(()=>o.remove(),1800)}
@@ -5671,7 +6016,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v61';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v62';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){
@@ -5936,7 +6281,7 @@ function populateLwRef(){
     lwRefEl.classList.remove('hidden');
 }
 function closeHistoryModal(){document.getElementById('modal-history').classList.add('hidden')}
-function closeSwapModal(){document.getElementById('modal-swap').classList.add('hidden');if(game){game.pendingSwap=false;game.updateUI()}}
+function closeSwapModal(){if(game&&Date.now()-(game._swapModalAt||0)<350)return;document.getElementById('modal-swap').classList.add('hidden');if(game){game.pendingSwap=false;game.updateUI()}}
 function closeShuffleConfirm(){document.getElementById('modal-shuffle-confirm').classList.add('hidden')}
 function confirmShuffle(){document.getElementById('modal-shuffle-confirm').classList.add('hidden');if(game&&NET.mode==='join'){NET.send({type:'act',kind:'shuffle'});return}if(game){const p=game.currentPlayer;p.gems-=CONFIG.costs.shuffle;game.logAbility(p,'shuffle',CONFIG.costs.shuffle);game.shuffleBoard();game.clearSelection();game.showToast('Board shuffled!');SFX.shuffle();game.updateUI()}}
 function closeZoomiesConfirm(){document.getElementById('modal-zoomies-confirm').classList.add('hidden')}
