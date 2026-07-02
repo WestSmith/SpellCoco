@@ -12,6 +12,45 @@
 
     <!--
     ================================================================
+    SPELLCOCO v61 — ONE SEAT PER LIVE PLAYER (SEAT-SHARING FIX)
+    ================================================================
+
+    CHANGELOG v60 → v61 (Shawn: "even if I join as player 2, I can
+    control player 1 in player 1's round"):
+    - ROOT CAUSE (reproduced headlessly, 2 isolated clients vs the
+      live relay): the relay seats purely by NAME. Whenever the
+      joiner's hello carried the same name as the host — an explicit
+      tap of the host's name (v58's ONLINE_TAPPED bypassed the v55
+      collision guard), or a same-browser tab silently reusing the
+      remembered identity (spellcoco.id.<code> is localStorage,
+      shared across tabs) — BOTH live sockets got seat 0. Both
+      clients then had myIndex=0, myTurn=true on player 1's turn,
+      and the server accepted either socket's moves.
+    - FIX (client): hello now carries a per-TAB device nonce
+      (sessionStorage spellcoco.dev — survives reload, never shared
+      between tabs/devices). New 'busy' welcome handling: if my
+      name's seat is being PLAYED live elsewhere, retry twice when
+      this device remembers being that identity (covers a half-open
+      socket of MY OWN dying tab), then take the open seat instead
+      (openSeatName flip); if already seated, an identity tap that
+      collides is reverted with a toast; if the room is truly full,
+      say so. Tapping/typing an identity AFTER connecting now
+      re-hellos, so the server seat FOLLOWS the tap (used to
+      silently diverge: UI said Keith, server still had you as
+      seat-0 Shawn).
+    - FIX (server v61): seats store {name, dev}. A hello for a seat
+      that another LIVE socket holds is refused with busy (seat:-1)
+      unless the dev nonce matches (same tab reconnecting — the old
+      socket is superseded). A hello with a NEW name but a known dev
+      RENAMES that device's seat pre-game (identity change follows
+      the player). Two live sockets can never share a seat.
+    - Old client + new server: collision hello now gets seat -1
+      (harmless spectator) instead of corrupting the game.
+      New client + old server: dev/busy fields are simply unused;
+      v55 name-guard behavior remains.
+    - v60 preserved for instant revert.
+
+    ================================================================
     SPELLCOCO v60 — KEITH'S DESKTOP CUT: NO-SCROLL SIDEBAR,
     SOLID TREATS, FRESH BONUSES EVERY ROUND, COCO SPEAKS
     ================================================================
@@ -3565,6 +3604,18 @@ function guestRelayPeerLeft(){
 // Access is gated only by the unguessable room code / private link.
 const ASYNC_URL = RELAY_URL.replace('spellcoco-relay','spellcoco-async');
 function genLongCode(){const a='ABCDEFGHJKMNPQRSTUVWXYZ23456789';let c='';for(let i=0;i<14;i++)c+=a[Math.floor(Math.random()*a.length)];return c}
+// v61: per-TAB device nonce. Lets the relay tell "the same tab reconnecting"
+// apart from "a second player who picked the same name" — two live tabs can
+// never share a seat (which used to let a joiner control the host's pieces).
+// sessionStorage is per-tab and survives reload, but is never shared.
+function devId(){
+    try{
+        let d=sessionStorage.getItem('spellcoco.dev');
+        if(!d){d=Math.random().toString(36).slice(2,11)+Date.now().toString(36);sessionStorage.setItem('spellcoco.dev',d);}
+        return d;
+    }catch(e){return NET._dev||(NET._dev=Math.random().toString(36).slice(2,11)+Date.now().toString(36));}
+}
+function sendHello(){NET.send({type:'__a',op:'hello',name:NET.myName,dev:devId()});}
 
 function hostGameAsync(){
     const code=genLongCode();NET.code=code;
@@ -3592,7 +3643,7 @@ function connectAsync(code){
     let ws;try{ws=new WebSocket(ASYNC_URL+'/r/'+code);}catch(e){asyncFail();return}
     NET.ws=ws;
     ws.onopen=()=>{if(NET.ws!==ws)return;clearTimeout(NET.reconnectTimer);NET.reconnectTimer=null;NET.everConnected=true;NET.reconnectTries=0;
-        NET.setPill('🌐','ok','Online: connected');NET.send({type:'__a',op:'hello',name:NET.myName});hbStart();};
+        NET.setPill('🌐','ok','Online: connected');sendHello();hbStart();};
     ws.onmessage=(ev)=>{if(NET.ws!==ws)return;let m;try{m=JSON.parse(ev.data)}catch(e){return}if(m&&m.type==='__a')asyncOnMessage(m);else if(m&&m.type==='fx')asyncFx(m);else asyncOnData(m);};
     ws.onclose=()=>{if(NET.ws!==ws)return;NET.connected=false;hbStop();
         NET.reconnectTries=(NET.reconnectTries||0)+1;
@@ -3715,11 +3766,45 @@ function asyncOnData(m){
 function quietUI(){if(!game)return;NET.quiet=true;try{game.updateUI()}finally{NET.quiet=false}}
 function asyncSyncWords(){if(localCustomWords&&localCustomWords.length)NET.send({type:'customs',words:localCustomWords});}
 function asyncWelcome(m){
+    // v61: our name's seat is being PLAYED on another live device right now.
+    if(m.busy){
+        // Already seated here? Then this was an identity TAP that collided with
+        // the other player's live seat — undo the tap, keep our own seat.
+        if(NET.seat!=null&&NET.seat>=0&&m.names&&m.names[NET.seat]){
+            const keepName=m.names[NET.seat];
+            ONLINE_LOCKED=false;NET.myName=keepName;pickSide(keepName);
+            if(game)game.showToast('🙀 That name is being played live — you’re still '+keepName);
+            else{const el=document.getElementById(UI_MODE==='join'?'join-status':'host-status');if(el)el.innerText='⚠ That name is taken — you’re still '+keepName;}
+            return;
+        }
+        // This device remembers BEING that identity — probably our own dying
+        // socket (killed tab / half-open mobile pipe). Knock again; the server's
+        // heartbeat clears the corpse within seconds.
+        if(recallId(NET.code)===NET.myName&&(NET.__busyTries=(NET.__busyTries||0)+1)<=2){
+            const el=document.getElementById(UI_MODE==='join'?'join-status':'host-status');
+            if(el)el.innerText='Reconnecting as '+NET.myName+'…';
+            setTimeout(()=>{if(NET.async&&NET.code)sendHello()},4000);
+            return;
+        }
+        // Someone ELSE is live as that name — take the open seat instead.
+        if((m.names||[]).filter(Boolean).length<2&&!NET.__reseat){
+            const mine=openSeatName(NET.myName);
+            if(mine&&mine!==NET.myName){
+                NET.__reseat=true;NET.__busyTries=0;ONLINE_LOCKED=false;NET.myName=mine;pickSide(mine);rememberId(NET.code,mine);
+                try{sendHello();}catch(e){}
+                return;
+            }
+        }
+        const el=document.getElementById(UI_MODE==='join'?'join-status':'host-status');
+        if(el)el.innerText='⚠ '+NET.myName+' is already playing in this room on another device';
+        NET.cleanup();return;
+    }
+    NET.__busyTries=0;
     // v55: room already holds two OTHER players and we aren't one of them. If this
     // device remembers being one of them, re-hello as that identity; else explain.
     if(m.full){
         const known=recallId(NET.code);
-        if(known&&m.names&&m.names.indexOf(known)>=0&&!NET.__rehello){NET.__rehello=true;ONLINE_LOCKED=false;NET.myName=known;pickSide(known);try{NET.send({type:'__a',op:'hello',name:NET.myName});}catch(e){}return;}
+        if(known&&m.names&&m.names.indexOf(known)>=0&&!NET.__rehello){NET.__rehello=true;ONLINE_LOCKED=false;NET.myName=known;pickSide(known);try{sendHello();}catch(e){}return;}
         const el=document.getElementById(UI_MODE==='join'?'join-status':'host-status');if(el)el.innerText='⚠ This game already has two players';NET.cleanup();return;
     }
     // v55: identity-collision guard. The relay seats by NAME, so a JOIN-mode client
@@ -3730,7 +3815,7 @@ function asyncWelcome(m){
         const mine=openSeatName((m.names&&m.names[0])||'Shawn');
         if(mine&&mine!==NET.myName){
             NET.__reseat=true;ONLINE_LOCKED=false;NET.myName=mine;pickSide(mine);rememberId(NET.code,mine);
-            try{NET.send({type:'__a',op:'hello',name:NET.myName});}catch(e){}
+            try{sendHello();}catch(e){}
             return;   // wait for the corrected welcome
         }
     }
@@ -4075,11 +4160,21 @@ function pickSide(t,byTap){
     else{ONLINE_SIDE.type='Guest';ONLINE_SIDE.guest=sanitizeGuestName(t)}
     ONLINE_SIDE.picked=true;
     renderOnlineSide();saveSettings();announceSide();
+    reHelloOnTap(byTap);
+}
+// v61: an identity tapped/typed AFTER we're connected must reach the SERVER —
+// the seat is server-side, per-socket. Re-hello so the relay reseats/renames us
+// (it refuses with 'busy' if that name is being played live on another device).
+// Pre-game only: mid-game identity is locked anyway.
+function reHelloOnTap(byTap){
+    if(!byTap||!NET.async||game)return;
+    if(NET.ws&&NET.ws.readyState===1){NET.__reseat=false;NET.__busyTries=0;try{sendHello()}catch(e){}}
 }
 function onlineGuestChanged(input){
     ONLINE_SIDE.guest=sanitizeGuestName(input.value);input.value=ONLINE_SIDE.guest;
     ONLINE_SIDE.picked=true;ONLINE_TAPPED=true;   // v58: typing a name is explicit too
     renderOnlineSide();saveSettings();announceSide();
+    reHelloOnTap(true);
 }
 function renderOnlineSide(){
     ['Keith','Shawn','Guest'].forEach(t=>{
@@ -5576,7 +5671,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v60';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v61';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){
