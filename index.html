@@ -12,7 +12,34 @@
 
     <!--
     ================================================================
-    SPELLCOCO v62 — SHAWN'S PLAYTEST FIXES + UNDO SWAP + TURN PUSH
+    SPELLCOCO v63 — POPUP CHOREOGRAPHY (FX QUEUE)
+    ================================================================
+
+    CHANGELOG v62 → v63 (Shawn's screenshots, 2026-07-03):
+    - FIX: popups no longer float ON TOP of the round/turn fade.
+      Toasts were z-index 999 over the overlay's 90 AND fired in the
+      same tick as endTurn's overlay. The overlay is now z 1100
+      (covers everything) and stamps FX.overlayUntil; every toast
+      rides a new FX QUEUE that waits out the fade and then shows
+      ONE toast at a time (2.4s spacing) — no more stacked/overlapped
+      toasts, no more ghost-text mess mid-fade. The score float (+NN)
+      defers past the fade too.
+    - CHANGE: the hand-tuned 2600/5300ms delays for the "⭐ Best
+      possible" and "🔄 With a swap" toasts are gone — they queue in
+      order. Coco's bubble delay is now fxEta() (queue-drain time),
+      still sender-computed for the online fx channel. Toasts queued
+      before the game ends are dropped if it ends while they wait.
+    - FIX (mobile): docked toasts are BOTTOM-anchored at Coco's
+      midline, so wrapped toasts grow UP into the header gap instead
+      of down over the top tile rows (v62 top-anchored them).
+    - FIX (mobile): "✦ Coco's Guest's Turn ✦" wrapped with a lone ✦
+      on its own line. Title sparkles are now &nbsp;-bound, the
+      overlay is centered with side padding, and long titles wrap
+      balanced (text-wrap:balance).
+    - Client-only, no netcode/gameplay change. v62 preserved for revert.
+
+    ================================================================
+    (v62) SHAWN'S PLAYTEST FIXES + UNDO SWAP + TURN PUSH
     ================================================================
 
     CHANGELOG v61 → v62 (Shawn + Keith's live-game feedback, 2026-07-01):
@@ -2389,9 +2416,11 @@
         @keyframes toastOut{to{opacity:0;transform:translateX(-50%) translateY(-12px)}}
         /* v62: mobile toasts dock beside lounging Coco (left/right set inline
            by showToast) — wrap instead of clipping, and fade without the
-           centering translateX the default toast animation assumes. */
+           centering translateX the default toast animation assumes.
+           v63: BOTTOM-anchored (inline) at Coco's midline so a wrapped toast
+           grows UP into the header gap instead of down over the tiles. */
         .toast.by-coco{
-            bottom:auto;transform:none;max-width:none;
+            transform:none;max-width:none;
             white-space:normal;overflow:visible;text-overflow:clip;
             font-size:clamp(0.85rem,3.4vw,1rem);padding:8px 14px;
             animation:toastInB 0.3s ease,toastOutB 0.3s ease 1.7s forwards;
@@ -2404,11 +2433,15 @@
             background:rgba(7,5,28,0.9);
             display:flex;flex-direction:column;
             justify-content:center;align-items:center;
-            z-index:90;
+            /* v63: was z-index 90 — toasts (999) floated ON the fade. Now the
+               fade covers everything; popups queue up behind it (FX queue). */
+            z-index:1100;
             backdrop-filter:blur(6px);
+            padding:0 18px;text-align:center;
             animation:fadeIn 0.3s ease,fadeOut 0.4s ease 1.2s forwards;
         }
         .round-overlay .round-text{
+            text-wrap:balance;
             font-family:'Atkinson Hyperlegible',sans-serif;
             font-size:clamp(2.2rem,7vw,3rem);
             font-weight:700;
@@ -5400,13 +5433,16 @@ class Game{
 
         if(r.longBonus>0){this.showCelebration(`LONG WORD! +${r.longBonus}`);SFX.longWord()}else{SFX.submit()}
         this.showScoreFloat(`+${r.score}`);this.showToast(`${r.word} → +${r.score} pts`);
+        // v63: no more hand-tuned 2600/5300ms delays — the FX queue shows
+        // these in order, one at a time, after the turn-overlay fade, and
+        // drops them itself if the game ends while they wait.
         if(best){
             const found=r.score>=best.score;
-            setTimeout(()=>{if(!game||game.over)return;this.showToast(found?'🏆 That was the best word on the board!':`⭐ Best possible: ${best.score} pts`)},2600);
+            this.showToast(found?'🏆 That was the best word on the board!':`⭐ Best possible: ${best.score} pts`);
         }
         // v48: score only mid-game — unused tiles survive the refill, so
         // naming the word (or the letters) would spoil what's still there.
-        if(swapBest)setTimeout(()=>{if(!game||game.over)return;this.showToast(`🔄 With a swap: ${swapBest.score} pts was possible`)},5300);
+        if(swapBest)this.showToast(`🔄 With a swap: ${swapBest.score} pts was possible`);
         // v62: track how often each player leans on a word (fuels Coco's
         // pet-word teasing). Device-local, 4+ letters only, pruned at 400.
         if(r.word.length>=4&&p&&!p.isCoco){
@@ -5421,7 +5457,7 @@ class Game{
         // rule). One reaction max per turn; the opponent gets it over the fx
         // channel with the same sender-computed delay.
         {
-            const reactDelay=swapBest?7600:best?5200:3400;   // after the last toast (word / best / swap-ceiling)
+            const reactDelay=fxEta();   // v63: after the FX queue drains (word / best / swap-ceiling toasts)
             const line=cocoReactionFor(p,r,this);
             if(line){
                 setTimeout(()=>{if(game&&!game.over)cocoSpeak(line)},reactDelay);
@@ -5479,7 +5515,7 @@ class Game{
         const roundDone=(next===this.startIndex);   // v55: a round = one full cycle from whoever opened it
         if(this.round===1&&!roundDone){
             this.randomizeGems();
-            setTimeout(()=>this.showToast(TICON+' Treats shifted!'),1900);
+            this.showToast(TICON+' Treats shifted!');   // v63: FX queue orders it after the word toasts
         }
         this.turnIndex=next;
         if(roundDone){this.endRound()}
@@ -5931,25 +5967,58 @@ class Game{
         regTurnSync();   // v59: keep the My Games whose-turn flag fresh (memoized)
     }
 
-    showToast(m,fromNet){if(NET.mode==='host'&&!fromNet)NET.send({type:'fx',toast:m});const d=document.createElement('div');d.className='toast';d.innerHTML=m;
-        // v62: on phones the old spot (fixed, ~15vh up) sat right on the
-        // board's bottom tile rows (Shawn's screenshots). Dock toasts beside
-        // lounging Coco at the top of the board instead — he "announces" them.
-        const lounge=document.getElementById('coco-lounge');
-        if(window.matchMedia('(max-width:839px)').matches&&lounge&&lounge.offsetParent&&document.getElementById('grid').childElementCount){
-            const r=lounge.getBoundingClientRect();
-            if(r.width>0){
-                d.classList.add('by-coco');
-                d.style.top=Math.max(8,r.top+r.height*0.45)+'px';
-                if(lounge.classList.contains('side-left')){d.style.left=(r.right+6)+'px';d.style.right='10px';}
-                else{d.style.right=(window.innerWidth-r.left+6)+'px';d.style.left='10px';}
+    // v63: toasts ride the FX queue — they wait out any round-overlay fade
+    // and show ONE at a time (Shawn's screenshots: toasts floated on the
+    // fade at z999 vs z90, stacked on each other, and buried the board).
+    // Position is computed at SHOW time (Coco may have switched sides).
+    showToast(m,fromNet){if(NET.mode==='host'&&!fromNet)NET.send({type:'fx',toast:m});
+        const wasOver=!!(game&&game.over);
+        fxToast(()=>{
+            if(game&&game.over&&!wasOver)return false;   // game ended while queued — stale, skip
+            const d=document.createElement('div');d.className='toast';d.innerHTML=m;
+            // v62: dock toasts beside lounging Coco on phones — he "announces" them.
+            const lounge=document.getElementById('coco-lounge');
+            if(window.matchMedia('(max-width:839px)').matches&&lounge&&lounge.offsetParent&&document.getElementById('grid').childElementCount){
+                const r=lounge.getBoundingClientRect();
+                if(r.width>0){
+                    d.classList.add('by-coco');
+                    // v63: bottom-anchored at Coco's midline — wraps grow upward,
+                    // never down onto the tiles (was top-anchored over the board).
+                    d.style.bottom=Math.max(8,window.innerHeight-(r.top+r.height*0.5))+'px';
+                    if(lounge.classList.contains('side-left')){d.style.left=(r.right+6)+'px';d.style.right='10px';}
+                    else{d.style.right=(window.innerWidth-r.left+6)+'px';d.style.left='10px';}
+                }
             }
-        }
-        document.body.appendChild(d);setTimeout(()=>d.remove(),2200)}
-    showScoreFloat(t){const d=document.createElement('div');d.className='score-float';d.innerText=t;d.style.left='50%';d.style.top='38%';document.body.appendChild(d);setTimeout(()=>d.remove(),1400)}
+            document.body.appendChild(d);setTimeout(()=>d.remove(),2200);
+        })}
+    // v63: the score float defers past an active overlay fade too (it used to
+    // hover at z999 on top of the "Round N" blur). setTimeout(0) matters:
+    // submitWord queues this BEFORE endTurn starts the overlay in the same tick.
+    showScoreFloat(t){const go=()=>{const w=FX.overlayUntil-Date.now();if(w>0){setTimeout(go,w+120);return}
+        const d=document.createElement('div');d.className='score-float';d.innerText=t;d.style.left='50%';d.style.top='38%';document.body.appendChild(d);setTimeout(()=>d.remove(),1400)};setTimeout(go,0)}
     showCelebration(t,fromNet){if(NET.mode==='host'&&!fromNet)NET.send({type:'fx',celebrate:t,sfx:'longWord'});const a=document.getElementById('word-area');const b=document.createElement('div');b.className='celebration-banner';b.innerHTML=`<span>✨ ${t} ✨</span>`;a.appendChild(b);setTimeout(()=>b.remove(),2000)}
-    showRoundOverlay(t,s,fromNet){if(NET.mode==='host'&&!fromNet)NET.send({type:'fx',overlay:{t:t,s:s}});const o=document.createElement('div');o.className='round-overlay';o.innerHTML=`<span class="round-text">✦ ${t} ✦</span><span class="round-sub">${s||''}</span>`;document.body.appendChild(o);setTimeout(()=>o.remove(),1800)}
+    // v63: ✦&nbsp;title&nbsp;✦ — the sparkles can't wrap onto their own line
+    // on narrow phones ("✦ Coco's Guest's Turn ✦" used to break badly).
+    // Also stamps FX.overlayUntil so queued popups wait out the fade.
+    showRoundOverlay(t,s,fromNet){if(NET.mode==='host'&&!fromNet)NET.send({type:'fx',overlay:{t:t,s:s}});FX.overlayUntil=Date.now()+1800;const o=document.createElement('div');o.className='round-overlay';o.innerHTML=`<span class="round-text">✦&nbsp;${t}&nbsp;✦</span><span class="round-sub">${s||''}</span>`;document.body.appendChild(o);setTimeout(()=>o.remove(),1800)}
 }
+
+// v63: FX queue — one popup at a time, none while a round-overlay fade is up.
+// Builders return false to skip their slot (e.g. the game ended meanwhile).
+// The pump's first pop is a setTimeout(0), so an overlay started later in the
+// SAME tick (submitWord → endTurn) is already stamped before anything shows.
+const FX={overlayUntil:0,queue:[],pump:null};
+function fxToast(build){FX.queue.push(build);if(!FX.pump)FX.pump=setTimeout(fxPump,0)}
+function fxPump(){
+    const wait=FX.overlayUntil-Date.now();
+    if(wait>0){FX.pump=setTimeout(fxPump,wait+120);return}
+    const b=FX.queue.shift();
+    const shown=b?b():false;
+    FX.pump=FX.queue.length?setTimeout(fxPump,shown===false?0:2400):null;   // 2.2s toast life + a breath
+}
+// Rough ms until the queue drains — lets Coco's bubble (and its net copy)
+// fire after the LAST toast without the old hand-tuned 3400/5200/7600 delays.
+function fxEta(){return Math.max(FX.overlayUntil-Date.now(),0)+FX.queue.length*2400+500}
 
 const DEF_CACHE={};
 function escHtml(t){return String(t).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))}
@@ -6016,7 +6085,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v62';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v63';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){
