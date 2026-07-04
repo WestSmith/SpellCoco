@@ -3586,6 +3586,7 @@ function cocoTakeTurn(){
 const NET={
     mode:'local',peer:null,conn:null,ws:null,transport:'p2p',useRelay:true,useAsync:true,async:false,seat:null,everConnected:false,reconnectTries:0,reconnectTimer:null,myIndex:-1,myName:'Shawn',code:'',connected:false,quiet:false,
     hbTimer:null,hbWaiting:false,hbSupported:false,gameCode:'',_offNote:false, // v58: keepalive + offline-move bookkeeping
+    pendingMove:null,moveSeq:0, // v64: last turn-completing move, held until the server acks it
     guestName:null,oppName:null, // v42: joiner's declared name (host side) / opponent's announced name
     open(){return this.transport==='relay' ? !!(this.ws&&this.ws.readyState===1&&this.connected) : !!(this.conn&&this.conn.open)},
     send(m){if(this.transport==='relay'){
@@ -3596,6 +3597,23 @@ const NET={
             game.showToast('📡 Reconnecting — your move is safe and will sync');
         }
         return}if(this.open()){try{this.conn.send(m)}catch(e){}}},
+    // v64: THE fix for the READING incident. A move that flips the turn (or ends
+    // the game) is remembered until the server answers 'moveok' — a half-open
+    // socket swallows sends without an error, so "sent" never meant "arrived".
+    // Selection-sync pushes (turnIndex still ours) aren't tracked: losing one
+    // costs nothing. The pending move is re-pushed by the heartbeat and on every
+    // fresh welcome; turn enforcement makes duplicates harmless (already-accepted
+    // re-pushes come back as reject not-your-turn with our q = implicit ack).
+    sendMove(state){
+        const m={type:'__a',op:'move',state:state,q:++this.moveSeq};
+        if(this.async&&(state.over||state.turnIndex!==this.myIndex))this.pendingMove={m:m,q:m.q,at:Date.now()};
+        this.send(m);
+    },
+    resendPending(){
+        if(!this.async||!this.pendingMove)return;
+        if(game&&this.pendingMove.m.state&&!this.pendingMove.m.state.over&&game.over){this.pendingMove=null;return} // game ended meanwhile
+        if(this.ws&&this.ws.readyState===1){try{this.ws.send(JSON.stringify(this.pendingMove.m))}catch(e){}}
+    },
     setPill(icon,cls,label){const p=document.getElementById('net-pill');if(!p)return;
         if(!icon){p.classList.add('hidden');return}
         p.className='net-pill '+(cls||'');p.innerText=icon;
@@ -3604,10 +3622,10 @@ const NET={
         // v42: tell the joiner their FINAL (possibly deduped) identity
         let gn=null;
         if(game&&this.myIndex>=0&&game.players[1-this.myIndex])gn=game.players[1-this.myIndex].name;
-        if(this.async){this.gameCode=this.code;lsDel('spellcoco.gover.'+this.code);this._regTurn=null;this.send({type:'__a',op:'newgame',state:game.serialize(),config:CONFIG});showInGameRoom();regTurnSync();return}
+        if(this.async){this.gameCode=this.code;this.pendingMove=null;/*v64: fresh game, fresh ledger*/lsDel('spellcoco.gover.'+this.code);this._regTurn=null;this.send({type:'__a',op:'newgame',state:game.serialize(),config:CONFIG});showInGameRoom();regTurnSync();return}
         this.send({type:'start',config:CONFIG,state:game.serialize(),customs:localCustomWords,guestName:gn});
     },
-    cleanup(){if(this.peer){try{this.peer.destroy()}catch(e){}}this.peer=null;this.conn=null;if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.reconnectTries=0;this.transport=this.useRelay?'relay':'p2p';this.everConnected=false;this.connected=false;hbStop();}
+    cleanup(){this.pendingMove=null;/*v64: never re-push into a different room*/if(this.peer){try{this.peer.destroy()}catch(e){}}this.peer=null;this.conn=null;if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.reconnectTries=0;this.transport=this.useRelay?'relay':'p2p';this.everConnected=false;this.connected=false;hbStop();}
 };
 function genCode(){const a='ABCDEFGHJKMNPQRSTUVWXYZ23456789';let c='';for(let i=0;i<4;i++)c+=a[Math.floor(Math.random()*a.length)];return c}
 
@@ -3800,6 +3818,7 @@ function hbStart(){
         if(NET.hbWaiting&&NET.hbSupported){NET.hbWaiting=false;try{ws.close()}catch(e){}return;}
         NET.hbWaiting=true;
         try{ws.send(JSON.stringify({type:'__a',op:'ping'}))}catch(e){}
+        NET.resendPending();   // v64: keep knocking until the server says moveok
     },20000);
 }
 function hbStop(){clearInterval(NET.hbTimer);NET.hbTimer=null;NET.hbWaiting=false}
@@ -3828,6 +3847,9 @@ function asyncOnMessage(m){
     switch(m.op){
         case 'welcome':asyncWelcome(m);break;
         case 'pong':NET.hbSupported=true;NET.hbWaiting=false;break;   // v58 keepalive answered
+        case 'moveok':   // v64: the server has our move on disk — stop re-pushing
+            if(NET.pendingMove&&(m.q==null||m.q>=NET.pendingMove.q))NET.pendingMove=null;
+            break;
         case 'state':
             if(game){
                 game.applyState(m.state);
@@ -3839,6 +3861,18 @@ function asyncOnMessage(m){
         case 'gameover':if(game)game.over=true;recordStatsOnce(m.players);regTurnSync();renderGameOver(m.players);break;
         case 'peer':if(m.present)asyncSyncWords();asyncPeer(m);break;
         case 'reject':
+            // v64: seatless socket (server restarted / we never re-helloed) —
+            // re-introduce ourselves; the welcome re-pushes any pending move.
+            if(m.reason==='no-seat'){sendHello();break;}
+            // v64: a re-push of an ALREADY-accepted move bounces off turn
+            // enforcement — the echoed q proves it's ours, so it's an ack,
+            // not a scolding. Adopt the authoritative state quietly.
+            if(NET.pendingMove&&m.q!=null&&m.q===NET.pendingMove.q){
+                NET.pendingMove=null;
+                if(m.state&&m.state.over){if(game)game.over=true;asyncShowEnding(m.state);}
+                else if(m.state&&game&&!game.over){game.applyState(m.state);asyncTurnHint();}
+                break;
+            }
             // v58: rejects carry the authoritative state so a diverged client self-heals
             if(m.state&&m.state.over){if(game)game.over=true;asyncShowEnding(m.state);break;}
             if(m.state&&game&&!game.over)game.applyState(m.state);
@@ -3964,13 +3998,14 @@ function asyncWelcome(m){
     announceSide();   // v55: tell the peer our FINAL identity so they can lock too
     asyncSyncWords();   // v54: share custom words on connect (consent + dictionary sync)
     registerPushWithRoom();   // v62: refresh this device's turn-alert subscription for this room
+    NET.resendPending();   // v64: an unacked move survives the reconnect — push it again first thing
     // v58: if WE moved while offline, the server is one move behind — its state
     // still shows it as OUR turn while our local board has already flipped. Turn
     // enforcement makes replaying safe (nobody else could have moved), so push
     // our local state instead of silently reverting the player's move.
     if(m.state&&!m.state.over&&game&&!game.over&&NET.gameCode===NET.code
         &&m.state.turnIndex===NET.seat&&game.turnIndex!==NET.seat&&game.round>=m.state.round){
-        NET.send({type:'__a',op:'move',state:game.serialize()});
+        NET.sendMove(game.serialize());   // v64: tracked until acked
         game.showToast('📡 Back online — your move synced');
         showInGameRoom();
         asyncTurnHint();
@@ -5547,7 +5582,7 @@ class Game{
         lsDel('spellcoco.save');
         recordStatsOnce(ranked);
         if(NET.async){
-            NET.send({type:'__a',op:'move',state:this.serialize()});   // closing push (over:true)
+            NET.sendMove(this.serialize());   // closing push (over:true) — v64: tracked until acked
             NET.send({type:'__a',op:'gameover',players:JSON.parse(JSON.stringify(ranked))});
         }else if(NET.mode==='host')NET.send({type:'gameover',players:JSON.parse(JSON.stringify(ranked))});
         regTurnSync();   // v59: flip this game to "finished" in My Games (endGame skips updateUI)
@@ -5960,7 +5995,7 @@ class Game{
         document.getElementById('coco-hairline').classList.toggle('hidden',zoomHidden&&attackHidden);
         this.updateTimerDisplay();
         if(!NET.quiet){
-            if(NET.async)NET.send({type:'__a',op:'move',state:this.serialize()});else if(NET.mode==='host')NET.send({type:'state',state:this.serialize()});
+            if(NET.async)NET.sendMove(this.serialize());else if(NET.mode==='host')NET.send({type:'state',state:this.serialize()});
             else if(NET.mode==='join'&&myTurn)NET.send({type:'sel',ids:[...this.selection]});
             else if(NET.mode==='local')saveGameState();
         }
@@ -6085,7 +6120,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v63';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v64';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){
