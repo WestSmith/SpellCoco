@@ -12,7 +12,38 @@
 
     <!--
     ================================================================
-    SPELLCOCO v65 — COCO SPEAKS (DE-BOXITIS) + STATUS DOTS
+    SPELLCOCO v66 — ZOMBIE GAME FIX + BUBBLE CHOREOGRAPHY
+    ================================================================
+
+    CHANGELOG v65 → v66 (Shawn's playtest, 2026-07-04):
+    - FIX: "error sound when I click a word" + "scores/positions
+      jumping around" (Round 6/5 screenshots) — ONE root cause: every
+      new Game left the PREVIOUS game wired to #grid (setupTouchDrag
+      listeners are never removed) with its timers alive. After "Play
+      Again", each tap also fired the FINISHED game's handler, which
+      played SFX.invalid and repainted the whole UI with its dead
+      state. New retireGame() marks the old instance _dead (called
+      from the constructor and fromState, so every replacement path is
+      covered) and _dead now gates every entry point: grid listeners,
+      handleTileClick, submitWord, endTurn, updateUI. Finished games
+      also stop taking board taps (handleTileClick checks .over).
+    - FIX: Coco's bubble no longer appears BEFORE he ambles over —
+      FX.loungeUntil is stamped when a side-switch is scheduled
+      (1.6s defer + 1.4s walk) and the bubble pump waits it out,
+      alongside the existing round-overlay wait.
+    - CHANGE: bubble messages are now UTTERANCES, one bubble at a
+      time. Same-play lines (score → best word → swap ceiling, <900ms
+      apart) still merge; anything later is a NEW bubble, and every
+      personality line (quips, teases, reactions, net bubbles) is
+      ALWAYS standalone — a swap no longer silently grows an old
+      bubble, and quips stop getting buried. The current bubble gets
+      ≥1.7s on screen, then a 280ms blink separates bubbles (no
+      animation — Keith's sensory-load rule). Eyes stay open across
+      the blink when more is queued.
+    - Client-only, no netcode change. v65 preserved for revert.
+
+    ================================================================
+    (v65) COCO SPEAKS (DE-BOXITIS) + STATUS DOTS
     ================================================================
 
     CHANGELOG v64 → v65 (Shawn's mobile UI/UX pass, 2026-07-04):
@@ -5027,59 +5058,83 @@ function cocoReactionFor(p,r,g){
     }
     return null;
 }
-// v65: cocoSay — Coco IS the message channel now. Game-event toasts and his
-// personality lines all come out of the ONE bubble beside his lounge spot.
-// Lines that arrive close together (same play: score → best-word → swap
-// ceiling) MERGE into a single multi-line bubble instead of queuing; lines
-// arriving while he's mid-sentence append (max 4). The first render waits
-// out any round-overlay fade (FX.overlayUntil), his eyes open while the
-// bubble is up, and lines pending when the game ends are dropped (the recap
-// carries them). Bubble position is CSS-anchored to his side, both edges
-// pinned — it scrolls with the page and can't bleed off the board.
-const COCO_SAY={lines:[],flushTimer:null,hideTimer:null,showing:false};
-function cocoSay(html){
+// v65→v66: cocoSay — Coco IS the message channel. v66 reworks the pipeline
+// after Shawn's playtest: the v65 bubble APPENDED every new line, so a swap
+// message silently grew an old bubble and quips got buried at the bottom.
+// Now messages are grouped into UTTERANCES (bubbles) shown one at a time:
+//   - lines from the SAME play (score → best-word → swap ceiling arrive in
+//     one burst, <900ms apart) still merge into one multi-line bubble;
+//   - anything later — and EVERY personality line (quips, teases, reactions,
+//     net bubbles) — is its own standalone bubble;
+//   - a new bubble never barges in: the current one gets ≥1.7s on screen,
+//     then a short blink (280ms hidden) makes "new message" unmistakable
+//     without animation (Keith's sensory-load rule).
+// A bubble waits out BOTH the round-overlay fade (FX.overlayUntil) and
+// Coco's amble (FX.loungeUntil — Shawn: it used to pop up mid-walk, before
+// he'd settled). Eyes stay open across a blink if more bubbles are queued.
+// Bubbles pending when the game ends are dropped (the recap carries them).
+const COCO_SAY={q:[],flushTimer:null,hideTimer:null,showing:false,openAt:0};
+const COCO_MERGE_MS=900,COCO_MIN_SHOW=1700,COCO_BLINK=280;
+function cocoSay(html,standalone){
     const b=document.getElementById('coco-bubble'),lounge=document.getElementById('coco-lounge');
     if(!b||!lounge||!html)return;
     window._lastBubbleAt=Date.now();   // v62: cooldown clock for teases/chatter
-    if(COCO_SAY.lines.length>=4)COCO_SAY.lines=COCO_SAY.lines.slice(-3);
-    COCO_SAY.lines.push(html);
-    if(COCO_SAY.showing){_cocoRender();return}
-    if(!COCO_SAY.flushTimer){
-        const wait=Math.max(FX.overlayUntil-Date.now(),0)+250;
-        COCO_SAY.flushTimer=setTimeout(_cocoFlush,wait);
+    const now=Date.now(),tail=COCO_SAY.q[COCO_SAY.q.length-1];
+    if(!standalone&&tail&&!tail.solo&&now-tail.t<COCO_MERGE_MS&&tail.lines.length<4)tail.lines.push(html);
+    else{
+        if(COCO_SAY.q.length>=3)COCO_SAY.q.shift();   // backlog cap — keep the freshest
+        COCO_SAY.q.push({lines:[html],solo:!!standalone,t:now});
     }
+    _cocoSchedule(0);
 }
-function _cocoFlush(){
+function _cocoSchedule(ms){if(!COCO_SAY.flushTimer)COCO_SAY.flushTimer=setTimeout(_cocoPump,ms)}
+function _cocoPump(){
     COCO_SAY.flushTimer=null;
-    const wait=FX.overlayUntil-Date.now();   // a NEW overlay started while we waited
-    if(wait>0){COCO_SAY.flushTimer=setTimeout(_cocoFlush,wait+250);return}
-    if(!COCO_SAY.lines.length)return;
-    if(game&&game.over){COCO_SAY.lines=[];return}
-    _cocoRender();
+    if(!COCO_SAY.q.length)return;
+    if(game&&game.over){COCO_SAY.q=[];return}
+    const wait=Math.max(FX.overlayUntil,FX.loungeUntil)-Date.now();
+    if(wait>0){_cocoSchedule(wait+250);return}
+    if(COCO_SAY.showing){   // let the current bubble land, then blink-swap
+        const upFor=Date.now()-COCO_SAY.openAt;
+        if(upFor<COCO_MIN_SHOW){_cocoSchedule(COCO_MIN_SHOW-upFor);return}
+        clearTimeout(COCO_SAY.hideTimer);
+        _cocoHide(true);
+        _cocoSchedule(COCO_BLINK);return;
+    }
+    _cocoRender(COCO_SAY.q.shift());
 }
-function _cocoRender(){
+function _cocoRender(bub){
     const b=document.getElementById('coco-bubble'),lounge=document.getElementById('coco-lounge');
-    if(!b||!lounge)return;
-    b.innerHTML=COCO_SAY.lines.map(l=>`<div class="cb-line">${l}</div>`).join('');
+    if(!b||!lounge||!bub)return;
+    b.innerHTML=bub.lines.map(l=>`<div class="cb-line">${l}</div>`).join('');
     const onLeft=lounge.classList.contains('side-left');
     b.classList.toggle('from-left',onLeft);
     b.classList.toggle('from-right',!onLeft);
     b.classList.remove('hidden');
     lounge.classList.add('speaking');
-    COCO_SAY.showing=true;
+    COCO_SAY.showing=true;COCO_SAY.openAt=Date.now();
     clearTimeout(COCO_SAY.hideTimer);
-    COCO_SAY.hideTimer=setTimeout(_cocoHide,3800+(COCO_SAY.lines.length-1)*1200);
+    COCO_SAY.hideTimer=setTimeout(()=>{
+        _cocoHide(COCO_SAY.q.length>0);
+        if(COCO_SAY.q.length)_cocoSchedule(COCO_BLINK);
+    },3800+(bub.lines.length-1)*1200);
 }
-function _cocoHide(){
+function _cocoHide(more){
     const b=document.getElementById('coco-bubble'),lounge=document.getElementById('coco-lounge');
     if(b)b.classList.add('hidden');
-    if(lounge)lounge.classList.remove('speaking');
-    COCO_SAY.showing=false;COCO_SAY.lines=[];
+    if(lounge&&!more)lounge.classList.remove('speaking');   // eyes stay open mid-blink
+    COCO_SAY.showing=false;
 }
-// Personality lines (incl. the net fx `bubble` channel) ride the same pipe.
+function cocoSayReset(){   // v66: a retired game's words die with it
+    clearTimeout(COCO_SAY.flushTimer);clearTimeout(COCO_SAY.hideTimer);
+    COCO_SAY.q=[];COCO_SAY.flushTimer=null;COCO_SAY.hideTimer=null;
+    _cocoHide(false);
+}
+// Personality lines (incl. the net fx `bubble` channel) ride the same pipe —
+// ALWAYS standalone (v66): a quip is never appended under event lines.
 // escHtml because bubble text can arrive from the OPPONENT's client — the
 // old textContent path never parsed it as HTML, so neither do we.
-function cocoSpeak(text){if(text)cocoSay(escHtml(text))}
+function cocoSpeak(text){if(text)cocoSay(escHtml(text),true)}
 // v40.1: Zoomies icon — a paw in a hurry
 const COCO_ZOOM=`<svg viewBox="0 0 36 24" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Zoomies — a dashing paw">
 <path d="M2 7 H11" stroke="#f49b3e" stroke-width="2.6" stroke-linecap="round" opacity="0.9"/>
@@ -5340,6 +5395,7 @@ class Game{
             totalGems:0,
             abilityLog:{}
         }));
+        retireGame();   // v66: kill the OLD game's grid listeners/timers before this one takes over
         this.timerInterval=null;this.timeLeft=0;this.cocoTimerActive=false;this.over=false;
         this.round=1;this.startIndex=(opts&&typeof opts.startIndex==='number'&&opts.startIndex>=0&&opts.startIndex<this.players.length)?opts.startIndex:0;this.turnIndex=this.startIndex;this.tiles=[];this.selection=[];
         this.pendingSwap=false;this.isDragging=false;this.cocoPending=false;this.lastSwap=null;
@@ -5368,6 +5424,7 @@ class Game{
             sel:[...this.selection]};
     }
     static fromState(st){
+        retireGame();   // v66: every fromState replaces the global game — retire the old one first
         const g=Object.create(Game.prototype);
         g.timerInterval=null;g.timeLeft=st.timeLeft||0;g.cocoTimerActive=false;
         g.round=st.round;g.turnIndex=st.turnIndex;g.startIndex=(typeof st.startIndex==='number')?st.startIndex:0;g.selection=[];
@@ -5530,13 +5587,14 @@ class Game{
         // _swapModalAt guard (350ms, in performSwap/closeSwapModal) stops the
         // same touch's ghost click from "choosing" a letter in the picker that
         // opens under the finger.
-        grid.addEventListener('pointerdown',e=>{if(!this.myTurn)return;const id=gt(e.clientX,e.clientY);if(this.pendingSwap){if(id!==null)this.openSwapModal(id);e.preventDefault();return}if(id!==null){this.isDragging=true;this.handleTileClick(id)}e.preventDefault()});
-        grid.addEventListener('pointermove',e=>{if(!this.isDragging||this.pendingSwap)return;const id=gt(e.clientX,e.clientY);if(id!==null&&!this.selection.includes(id)){const l=this.selection[this.selection.length-1];if(l!==undefined&&this.isAdjacent(this.tiles[l],this.tiles[id]))this.selectTile(this.tiles[id])}e.preventDefault()});
+        grid.addEventListener('pointerdown',e=>{if(this._dead||this.over)return;if(!this.myTurn)return;const id=gt(e.clientX,e.clientY);if(this.pendingSwap){if(id!==null)this.openSwapModal(id);e.preventDefault();return}if(id!==null){this.isDragging=true;this.handleTileClick(id)}e.preventDefault()});
+        grid.addEventListener('pointermove',e=>{if(this._dead||!this.isDragging||this.pendingSwap)return;const id=gt(e.clientX,e.clientY);if(id!==null&&!this.selection.includes(id)){const l=this.selection[this.selection.length-1];if(l!==undefined&&this.isAdjacent(this.tiles[l],this.tiles[id]))this.selectTile(this.tiles[id])}e.preventDefault()});
         const end=()=>{this.isDragging=false};
         grid.addEventListener('pointerup',end);grid.addEventListener('pointercancel',end);grid.addEventListener('pointerleave',end);
     }
 
     handleTileClick(id){
+        if(this._dead||this.over)return;   // v66: retired or finished games don't take input
         if(!this.myTurn)return;
         if(this.pendingSwap){this.openSwapModal(id);return}
         const tile=this.tiles[id];
@@ -5578,6 +5636,7 @@ class Game{
     }
 
     submitWord(){
+        if(this._dead||this.over)return;   // v66
         const r=this.calculateCurrentScore();
         if(!r.isValid){
             // v45: before saying no, ask the cloud — the local list may just be behind
@@ -5677,6 +5736,7 @@ class Game{
     }
 
     endTurn(){
+        if(this._dead)return;   // v66
         if(this.timerInterval)clearInterval(this.timerInterval);
         this.cocoTimerActive=false;clearDictChecker();this.pendingSwap=false;
         this.lastSwap=null;   // v62: the undo-swap window closes with the turn
@@ -6037,6 +6097,7 @@ class Game{
     updateTimerDisplay(){const el=document.getElementById('timer-display');el.classList.toggle('hidden',!this.cocoTimerActive);if(this.cocoTimerActive){el.innerText=this.timeLeft;el.style.color=this.timeLeft<=5?'var(--red)':'var(--coco)'}else{el.innerText='--';el.style.color='var(--ink)'}}
 
     updateUI(){
+        if(this._dead)return;   // v66: a retired game must never repaint the live board
         document.getElementById('round-indicator').innerText=`✦ ROUND ${this.round} / ${CONFIG.rounds} ✦`;
         // Render round pips
         const pipsEl=document.getElementById('round-pips');
@@ -6127,6 +6188,9 @@ class Game{
             }else if(this._loungeSide!==wantLeft){
                 this._loungeSide=wantLeft;
                 clearTimeout(this._loungeTimer);
+                // v66: bubbles wait for him to SETTLE — amble starts at 1.6s,
+                // the walk transition is 1.4s (Shawn: bubble appeared mid-walk).
+                FX.loungeUntil=Date.now()+3100;
                 this._loungeTimer=setTimeout(()=>lounge.classList.toggle('side-left',wantLeft),1600);
             }
         }
@@ -6190,7 +6254,22 @@ class Game{
 // Builders return false to skip their slot (e.g. the game ended meanwhile).
 // The pump's first pop is a setTimeout(0), so an overlay started later in the
 // SAME tick (submitWord → endTurn) is already stamped before anything shows.
-const FX={overlayUntil:0,queue:[],pump:null};
+const FX={overlayUntil:0,loungeUntil:0,queue:[],pump:null};
+// v66: retire the old Game before a new one takes the board. Instances stay
+// wired to #grid forever (setupTouchDrag can't be undone cheaply), so a
+// finished game's handlers used to fire on every tap — playing SFX.invalid
+// ("error sound when I click a word") and repainting the whole UI with its
+// dead state (Shawn's "scores/positions jumping around", "ROUND 6/5"
+// screenshots = the PREVIOUS game's final state). _dead gates every entry
+// point: grid listeners, handleTileClick, submitWord, endTurn, updateUI.
+function retireGame(){
+    if(typeof game==='undefined'||!game)return;
+    game._dead=true;
+    if(game.timerInterval)clearInterval(game.timerInterval);
+    clearTimeout(game._loungeTimer);
+    FX.overlayUntil=0;FX.loungeUntil=0;FX.queue.length=0;
+    cocoSayReset();   // the old game's queued bubble lines die with it
+}
 function fxToast(build){FX.queue.push(build);if(!FX.pump)FX.pump=setTimeout(fxPump,0)}
 function fxPump(){
     const wait=FX.overlayUntil-Date.now();
@@ -6268,7 +6347,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v65';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v66';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){
