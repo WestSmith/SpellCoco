@@ -2,6 +2,13 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <!-- v67: Content Security Policy — every origin the game legitimately
+         talks to, nothing else. External scripts are pinned to cdnjs (PeerJS,
+         which also carries an SRI hash below); connect-src covers the two
+         Cloudflare relays, the PeerJS cloud broker, and the dictionary API.
+         'unsafe-inline' is required (the whole app is one inline script with
+         inline handlers) — the CSP's job here is blocking everything OFF-list. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://api.dictionaryapi.dev wss://spellcoco-relay.spellcoco.workers.dev wss://spellcoco-async.spellcoco.workers.dev https://spellcoco-async.spellcoco.workers.dev wss://0.peerjs.com https://0.peerjs.com; manifest-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'none'">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
     <meta name="color-scheme" content="dark">
     <title>SpellCoco</title>
@@ -11,6 +18,37 @@
     <link rel="icon" type="image/png" href="icon-192.png">
 
     <!--
+    ================================================================
+    SPELLCOCO v67 — SECURITY HARDENING (WIRE-DATA SANITATION)
+    ================================================================
+    From an external code audit. A hostile online opponent (or anyone
+    who learns a room code) could inject HTML/JS into the other
+    player's page: game states, stats syncs, fx relays, and custom-word
+    messages were rendered with innerHTML unvalidated.
+
+    - Wire-data sanitation layer (cleanPlayer/cleanPlayedWord/
+      sanitizeNetState & co.): every remote game state (relay + P2P +
+      saved resumes) is rebuilt from validated pieces at ingestion —
+      names stripped to name-safe chars, words must be A–Z, all
+      numbers coerced, tile chars/multipliers checked against the
+      real sets. Covers player cards, history, recap, and board.
+    - mergeStats: bestWord/longestWord rebuilt via cleanBestRec
+      (were copied wholesale off the wire into an innerHTML sink).
+    - fx relays (P2P + async): toast/overlay/celebration text is
+      escaped on receive (netSafeHtml — the TICON treat icon is the
+      one markup token restored); bubbleDelay coerced; SFX key gated
+      to own properties.
+    - wordok/wordno/addword now validate m.w BEFORE toasting (the
+      toast used to render the raw string even when addCustomWord
+      rejected it); wordreq unchanged (was already validated).
+    - asyncWelcome seat names + peek roster sanitized at ingestion.
+    - PeerJS CDN script now carries an SRI integrity hash (matches
+      cdnjs's published sha512) + crossorigin=anonymous.
+    - Content-Security-Policy meta: scripts pinned to self+cdnjs,
+      connect-src limited to the two relays, PeerJS cloud, and
+      dictionaryapi.dev; object/frame none.
+    No gameplay, netcode, or visual changes — legit values pass
+    through the sanitizers byte-identical.
     ================================================================
     SPELLCOCO v66 — ZOMBIE GAME FIX + BUBBLE CHOREOGRAPHY
     ================================================================
@@ -3334,7 +3372,7 @@
     </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js" integrity="sha512-XEKeWX+mI3Ov+tg2evDlVQFzVOIp4T8J3cNcCEPaEUGpxJV3eZaN8rHuvnFPvQpGJBHPmrozJDMpm2xcDvtmyQ==" crossorigin="anonymous"></script>
 <script>
 /*
  * SPELLCOCO v33 — see changelog at top of file. Core logic from v21
@@ -4036,10 +4074,10 @@ function asyncOnData(m){
             }
             break;
         }
-        case 'wordreq':if(typeof m.w==='string'&&/^[A-Z]{2,15}$/.test(m.w))showWordRequest(m.w);break;
-        case 'wordok':addCustomWord(m.w,true);if(game){game.showToast(`📖 ${oppName()} approved "${m.w}" — play it!`);quietUI()}break;
-        case 'wordno':if(game)game.showToast(`🙀 ${oppName()} vetoed "${m.w}"`);break;
-        case 'addword':addCustomWord(m.w,true);if(game){game.showToast(`📖 ${m.w} added by ${oppName()}`);quietUI()}break;
+        case 'wordreq':{const w=cleanNetWord(m.w);if(w)showWordRequest(w);break}
+        case 'wordok':{const w=cleanNetWord(m.w);if(!w)break;addCustomWord(w,true);if(game){game.showToast(`📖 ${oppName()} approved "${w}" — play it!`);quietUI()}break}
+        case 'wordno':{const w=cleanNetWord(m.w);if(w&&game)game.showToast(`🙀 ${oppName()} vetoed "${w}"`);break}
+        case 'addword':{const w=cleanNetWord(m.w);if(!w)break;addCustomWord(w,true);if(game){game.showToast(`📖 ${w} added by ${oppName()}`);quietUI()}break}
         // v62: undo-swap consent (async online). The requester holds lastSwap;
         // approval that arrives after the window closed just no-ops with a toast.
         case 'undoreq':showUndoRequest({from:m.from,to:m.to},false);break;
@@ -4053,6 +4091,9 @@ function asyncOnData(m){
 function quietUI(){if(!game)return;NET.quiet=true;try{game.updateUI()}finally{NET.quiet=false}}
 function asyncSyncWords(){if(localCustomWords&&localCustomWords.length)NET.send({type:'customs',words:localCustomWords});}
 function asyncWelcome(m){
+    // v67: seat names come from the other device's hello — strip anything
+    // that isn't name-shaped before they reach pills, cards, or toasts.
+    if(m&&Array.isArray(m.names))m.names=m.names.map(n=>n?cleanNameStr(n):n);
     // v61: our name's seat is being PLAYED on another live device right now.
     if(m.busy){
         // Already seated here? Then this was an identity TAP that collided with
@@ -4309,7 +4350,7 @@ function promptJoinIdentity(code){
     asyncPeek(code,(roster)=>{if(roster)applyRosterToJoinPanel(roster);});
 }
 function applyRosterToJoinPanel(roster){
-    const names=(roster.names||[]).filter(Boolean);
+    const names=(roster.names||[]).filter(Boolean).map(cleanNameStr);   // v67: peek roster is remote data too
     if(!names.length)return;
     const taken=new Set(names);
     const full=!!roster.full||names.length>=2;
@@ -4473,12 +4514,12 @@ function copyRoomCode(){
     }else{window.prompt('Copy this room code:',code);}
 }
 // Live pop-ups (toasts, celebrations) — shown when both players are online.
-function asyncFx(m){if(!game)return;if(m.toast)game.showToast(m.toast,true);if(m.overlay)game.showRoundOverlay(m.overlay.t,m.overlay.s,true);if(m.celebrate)game.showCelebration(m.celebrate,true);
+function asyncFx(m){if(!game)return;if(m.toast)game.showToast(netSafeHtml(m.toast),true);if(m.overlay)game.showRoundOverlay(netSafeHtml(m.overlay.t),netSafeHtml(m.overlay.s),true);if(m.celebrate)game.showCelebration(netSafeHtml(m.celebrate),true);
     // v62 FIX: async games dropped the fx `bubble` field entirely, so the
     // OPPONENT never saw Coco's speech (Keith saw his own 100+ lines; Shawn
     // saw none). Delay is sender-computed so it lands after the toasts.
-    if(m.bubble)setTimeout(()=>{if(game&&!game.over)cocoSpeak(m.bubble)},m.bubbleDelay||3400);
-    if(m.sfx&&SFX[m.sfx])SFX[m.sfx]();}
+    if(m.bubble)setTimeout(()=>{if(game&&!game.over)cocoSpeak(m.bubble)},cleanInt(m.bubbleDelay,20000)||3400);
+    if(m.sfx&&Object.prototype.hasOwnProperty.call(SFX,m.sfx)&&typeof SFX[m.sfx]==='function')SFX[m.sfx]();}
 let UI_MODE='local'; // v41: 'local' | 'solo' | 'host' | 'join' — NET.mode stays networking-only
 function setMode(m){
     NET.cleanup();UI_MODE=m;NET.mode=(m==='host'||m==='join')?m:'local';NET.setPill('');
@@ -4550,6 +4591,64 @@ function sanitizeGuestName(v){
     if(!n||/^coco$/i.test(n))n="Coco's Guest"; // "Coco" is taken — by Coco
     return n;
 }
+
+// ===================== v67: wire-data sanitation =====================
+// Everything that arrives over the network (relay game state, P2P messages,
+// synced stats, fx relays) is controlled by the OTHER device — and several
+// sinks (player cards, history, recap, stats box, toasts, overlays) render
+// with innerHTML. Rule: rebuild every remote string/number from validated
+// pieces AT INGESTION, before it can enter game state or touch the DOM.
+// Sanitation only, no policy: legit values pass through byte-identical.
+const PLAYED_WORD_RE=/^[A-Z]{2,25}$/;           // board words can use up to 25 tiles (custom-word adds stay 2–15)
+const TILE_MULT_SET=['DL','TL','2W','3W'];
+function cleanNameStr(v){return String(v==null?'':v).replace(/[^A-Za-z0-9 '\-]/g,'').replace(/\s+/g,' ').trim().slice(0,14)||'Player'}
+function cleanInt(v,max){v=Math.round(+v);return (isFinite(v)&&v>=0)?Math.min(max,v):0}
+function cleanWordStr(v){v=String(v==null?'':v).toUpperCase();return PLAYED_WORD_RE.test(v)?v:null}
+function cleanNetWord(v){v=String(v==null?'':v).trim().toUpperCase();return /^[A-Z]{2,15}$/.test(v)?v:null}   // the custom-word wire format
+function cleanChar(v){v=String(v==null?'':v).toUpperCase();return (v.length===1&&Object.prototype.hasOwnProperty.call(LETTERS,v))?v:'E'}
+function cleanMult(v){return TILE_MULT_SET.indexOf(v)>=0?v:null}
+function cleanBestRec(b){if(!b||typeof b!=='object')return null;const w=cleanWordStr(b.word);if(!w)return null;const out={word:w,score:cleanInt(b.score,99999)};if(b.player!=null)out.player=cleanNameStr(b.player);return out}
+function cleanSwapRec(s){if(!s||typeof s!=='object')return null;const w=cleanWordStr(s.word);if(!w)return null;return{from:cleanChar(s.from),to:cleanChar(s.to),word:w,score:cleanInt(s.score,99999)}}
+function cleanTileSnap(t){if(!t||typeof t!=='object')return null;return{char:cleanChar(t.char),multiplier:cleanMult(t.multiplier),baseValue:cleanInt(t.baseValue,99),effectiveValue:cleanInt(t.effectiveValue,999),hasGem:!!t.hasGem}}
+function cleanPlayedWord(w){
+    if(!w||typeof w!=='object')return null;const word=cleanWordStr(w.word);if(!word)return null;
+    return{word:word,score:cleanInt(w.score,99999),round:cleanInt(w.round,99),gemCount:cleanInt(w.gemCount,99),
+        wordMult:cleanInt(w.wordMult,9)||1,longBonus:cleanInt(w.longBonus,9999),
+        tiles:Array.isArray(w.tiles)?w.tiles.map(cleanTileSnap).filter(Boolean):[],
+        best:cleanBestRec(w.best),swapBest:cleanSwapRec(w.swapBest)};
+}
+function cleanAbilityLog(al){
+    const out={};if(!al||typeof al!=='object')return out;
+    Object.keys(al).forEach(k=>{const r=cleanInt(k,99);const l=al[k]||{};
+        out[r]={shuffles:cleanInt(l.shuffles,99),swaps:cleanInt(l.swaps,99),cocos:cleanInt(l.cocos,99),
+            times:cleanInt(l.times,99),hints:cleanInt(l.hints,99),zoomies:cleanInt(l.zoomies,99),gemsSpent:cleanInt(l.gemsSpent,9999)}});
+    return out;
+}
+function cleanPlayer(p,i){
+    if(!p||typeof p!=='object')return null;
+    return{id:cleanInt(p.id!=null?p.id:i,9),name:cleanNameStr(p.name),isCoco:!!p.isCoco,
+        mood:(p.mood==='sleepy'||p.mood==='cozy'||p.mood==='zoomies')?p.mood:null,
+        score:cleanInt(p.score,999999),gems:cleanInt(p.gems,9999),lastWord:cleanWordStr(p.lastWord)||'',
+        totalGems:cleanInt(p.totalGems,9999),gemBonus:cleanInt(p.gemBonus,9999),
+        wordsPlayed:Array.isArray(p.wordsPlayed)?p.wordsPlayed.map(cleanPlayedWord).filter(Boolean):[],
+        abilityLog:cleanAbilityLog(p.abilityLog)};
+}
+function sanitizeNetState(st){
+    if(!st||typeof st!=='object')return st;
+    st.round=cleanInt(st.round,99)||1;st.turnIndex=cleanInt(st.turnIndex,9);
+    st.startIndex=cleanInt(st.startIndex,9);st.timeLeft=cleanInt(st.timeLeft,9999);
+    st.cocoPendingFor=(st.cocoPendingFor==null)?null:cleanInt(st.cocoPendingFor,9);
+    st.players=Array.isArray(st.players)?st.players.map(cleanPlayer).filter(Boolean):[];
+    st.tiles=Array.isArray(st.tiles)?st.tiles.slice(0,25).map(td=>({char:cleanChar(td&&td.char),mult:cleanMult(td&&td.mult),gem:!!(td&&td.gem)})):[];
+    st.sel=Array.isArray(st.sel)?st.sel.map(v=>cleanInt(v,24)).filter((v,ix,a)=>a.indexOf(v)===ix):[];
+    if(st.finalPlayers!=null)st.finalPlayers=Array.isArray(st.finalPlayers)?st.finalPlayers.map(cleanPlayer).filter(Boolean):null;
+    return st;
+}
+// Remote fx strings (toasts/overlays/celebrations relayed from the other
+// device) are escaped wholesale, then the one legit markup token — the
+// treat icon span — is restored, so sender-side TICON toasts still render.
+function netSafeHtml(v){if(v==null)return v;return escHtml(v).split(escHtml(TICON)).join(TICON)}
+
 function pickSeat(n,t){
     const other=n===1?2:1;
     SEATS[n].type=t;
@@ -4589,8 +4688,11 @@ function mergeStats(r){
     let ch=false;
     ['games','draws'].forEach(k=>{if((r[k]||0)>(STATS[k]||0)){STATS[k]=r[k];ch=true}});
     ['Keith','Shawn'].forEach(n=>{const rv=(r.wins&&r.wins[n])||0;if(rv>(STATS.wins[n]||0)){STATS.wins[n]=rv;ch=true}});
-    if(r.bestWord&&r.bestWord.word&&(!STATS.bestWord||r.bestWord.score>STATS.bestWord.score)){STATS.bestWord=r.bestWord;ch=true}
-    if(r.longestWord&&r.longestWord.word&&(!STATS.longestWord||r.longestWord.word.length>STATS.longestWord.word.length)){STATS.longestWord=r.longestWord;ch=true}
+    // v67: bestWord/longestWord used to be copied wholesale off the wire and
+    // rendered with innerHTML in the stats box — rebuild from validated pieces.
+    const rb=cleanBestRec(r.bestWord),rl=cleanBestRec(r.longestWord);
+    if(rb&&(!STATS.bestWord||rb.score>STATS.bestWord.score)){STATS.bestWord=rb;ch=true}
+    if(rl&&(!STATS.longestWord||rl.word.length>STATS.longestWord.word.length)){STATS.longestWord=rl;ch=true}
     if(ch){lsSet('spellcoco.stats',STATS);renderStatsBox()}
 }
 function _hostGameP2P(){
@@ -4657,10 +4759,10 @@ function hostOnData(m){
         case 'customs':mergeRemoteWords(m.words);break;
         case 'stats':mergeStats(m.stats);break;
         case 'side':{if(typeof m.guest==='string'){NET.guestName=validPlayerName(m.guest);NET.oppName=NET.guestName;const el=document.getElementById('host-opp-side');if(el)el.innerText=`Opponent is playing as ${NET.guestName}`;}break}
-        case 'wordreq':if(typeof m.w==='string'&&/^[A-Z]{2,15}$/.test(m.w))showWordRequest(m.w);break;
-        case 'wordok':addCustomWord(m.w,true);if(game){game.showToast(`📖 ${oppName()} approved "${m.w}" — play it!`);game.updateUI()}break;
-        case 'wordno':if(game)game.showToast(`🙀 ${oppName()} vetoed "${m.w}"`);break;
-        case 'addword':addCustomWord(m.w,true);if(game){game.showToast(`📖 ${m.w} added by opponent`);game.updateUI()}break;
+        case 'wordreq':{const w=cleanNetWord(m.w);if(w)showWordRequest(w);break}
+        case 'wordok':{const w=cleanNetWord(m.w);if(!w)break;addCustomWord(w,true);if(game){game.showToast(`📖 ${oppName()} approved "${w}" — play it!`);game.updateUI()}break}
+        case 'wordno':{const w=cleanNetWord(m.w);if(w&&game)game.showToast(`🙀 ${oppName()} vetoed "${w}"`);break}
+        case 'addword':{const w=cleanNetWord(m.w);if(!w)break;addCustomWord(w,true);if(game){game.showToast(`📖 ${w} added by opponent`);game.updateUI()}break}
         case 'sel':if(game&&game.turnIndex!==NET.myIndex){NET.quiet=true;game.applySelection(m.ids||[]);NET.quiet=false}break;
         case 'act':if(game)game.handleRemoteAction(m);break;
     }
@@ -4682,14 +4784,14 @@ function guestOnData(m){
             break}
         case 'customs':mergeRemoteWords(m.words);break;
         case 'stats':mergeStats(m.stats);break;
-        case 'wordreq':if(typeof m.w==='string'&&/^[A-Z]{2,15}$/.test(m.w))showWordRequest(m.w);break;
-        case 'wordok':addCustomWord(m.w,true);if(game){game.showToast(`📖 ${oppName()} approved "${m.w}" — play it!`);game.updateUI()}break;
-        case 'wordno':if(game)game.showToast(`🙀 ${oppName()} vetoed "${m.w}"`);break;
-        case 'addword':addCustomWord(m.w,true);if(game)game.updateUI();break;
+        case 'wordreq':{const w=cleanNetWord(m.w);if(w)showWordRequest(w);break}
+        case 'wordok':{const w=cleanNetWord(m.w);if(!w)break;addCustomWord(w,true);if(game){game.showToast(`📖 ${oppName()} approved "${w}" — play it!`);game.updateUI()}break}
+        case 'wordno':{const w=cleanNetWord(m.w);if(w&&game)game.showToast(`🙀 ${oppName()} vetoed "${w}"`);break}
+        case 'addword':{const w=cleanNetWord(m.w);if(!w)break;addCustomWord(w,true);if(game)game.updateUI();break}
         case 'start':guestStart(m);break;
         case 'state':if(game)game.applyState(m.state);break;
         case 'timer':if(game){game.cocoTimerActive=m.on;game.timeLeft=m.t;game.updateTimerDisplay()}break;
-        case 'fx':if(game){if(m.toast)game.showToast(m.toast,true);if(m.overlay)game.showRoundOverlay(m.overlay.t,m.overlay.s,true);if(m.celebrate)game.showCelebration(m.celebrate,true);if(m.coco)game.showCocoOverlay(true);if(m.bubble)setTimeout(()=>{if(game&&!game.over)cocoSpeak(m.bubble)},m.bubbleDelay||3400);if(m.sfx&&SFX[m.sfx])SFX[m.sfx]()}break;
+        case 'fx':if(game){if(m.toast)game.showToast(netSafeHtml(m.toast),true);if(m.overlay)game.showRoundOverlay(netSafeHtml(m.overlay.t),netSafeHtml(m.overlay.s),true);if(m.celebrate)game.showCelebration(netSafeHtml(m.celebrate),true);if(m.coco)game.showCocoOverlay(true);if(m.bubble)setTimeout(()=>{if(game&&!game.over)cocoSpeak(m.bubble)},cleanInt(m.bubbleDelay,20000)||3400);if(m.sfx&&Object.prototype.hasOwnProperty.call(SFX,m.sfx)&&typeof SFX[m.sfx]==='function')SFX[m.sfx]()}break;
         case 'gameover':{if(game)game.over=true;recordGameStats(m.players);renderGameOver(m.players);break}
     }
 }
@@ -5425,6 +5527,7 @@ class Game{
     }
     static fromState(st){
         retireGame();   // v66: every fromState replaces the global game — retire the old one first
+        st=sanitizeNetState(st);   // v67: relay/P2P states are opponent-controlled — clean before use
         const g=Object.create(Game.prototype);
         g.timerInterval=null;g.timeLeft=st.timeLeft||0;g.cocoTimerActive=false;
         g.round=st.round;g.turnIndex=st.turnIndex;g.startIndex=(typeof st.startIndex==='number')?st.startIndex:0;g.selection=[];
@@ -5439,6 +5542,7 @@ class Game{
         return g;
     }
     applyState(st){
+        st=sanitizeNetState(st);   // v67: same rule as fromState — never trust the wire
         if(st.over)this.over=true;   // v58: an ending can arrive by state push too
         this.lastSwap=null;   // v62: an incoming board replaces ours — undo window closes
         this.round=st.round;this.turnIndex=st.turnIndex;if(typeof st.startIndex==='number')this.startIndex=st.startIndex;
@@ -5486,7 +5590,7 @@ class Game{
             case 'swap':{
                 if(!guestTurn)return;
                 const p=this.currentPlayer;
-                if(p.gems<CONFIG.costs.swap||!this.tiles[m.tileId]||!LETTERS[m.ch])return;
+                if(p.gems<CONFIG.costs.swap||!this.tiles[m.tileId]||!Object.prototype.hasOwnProperty.call(LETTERS,m.ch))return;
                 p.gems-=CONFIG.costs.swap;this.logAbility(p,'swap',CONFIG.costs.swap);
                 const t=this.tiles[m.tileId];t.char=m.ch;t.baseValue=LETTERS[m.ch].val;
                 this.showToast(`Swapped to ${m.ch}!`);SFX.swap();this.updateUI();
@@ -6347,7 +6451,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v66';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v67';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){
