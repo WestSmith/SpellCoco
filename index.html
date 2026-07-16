@@ -19,6 +19,21 @@
 
     <!--
     ================================================================
+    SPELLCOCO v67.4 — SECURITY: malformed selection + cocoPendingFor
+    ================================================================
+    Sixth audit pass — two availability issues, no XSS remaining.
+    - applySelection(ids) assumed an array and called .forEach — a
+      peer 'sel'/'submit' with ids:{} threw (and left NET.quiet
+      stuck, stalling later sync); string keys like "__proto__"
+      could touch inherited props. Now rebuilds ids to valid in-
+      range integer tile indices before use. The 'sel' handler also
+      restores NET.quiet via try/finally.
+    - cocoPendingFor was sanitized to 0–9 but not bounded to a real
+      seat; a value like 9 stays non-null forever and permanently
+      blocks new Coco attacks (never matches a player to clear).
+      Now coerced to null unless it's seat 0 or 1.
+    Availability hardening only; valid states unaffected.
+    ================================================================
     SPELLCOCO v67.3 — SECURITY: out-of-range startIndex (round stall)
     ================================================================
     Fifth audit pass. validPlayableState() checked turnIndex<2 but
@@ -4688,7 +4703,11 @@ function sanitizeNetState(st){
     if(!st||typeof st!=='object')return st;
     st.round=cleanInt(st.round,99)||1;st.turnIndex=cleanInt(st.turnIndex,9);
     st.startIndex=cleanInt(st.startIndex,9);st.timeLeft=cleanInt(st.timeLeft,9999);
-    st.cocoPendingFor=(st.cocoPendingFor==null)?null:cleanInt(st.cocoPendingFor,9);
+    // v67.4: cocoPendingFor must be null OR a real seat (0/1). An out-of-range
+    // value (e.g. 9) stays non-null forever — it can never match either player
+    // to clear itself, so it permanently blocks new Coco attacks. Anything that
+    // isn't a valid seat becomes null.
+    st.cocoPendingFor=(function(v){if(v==null)return null;const n=Number(v);return (n===0||n===1)?n:null;})(st.cocoPendingFor);
     st.players=Array.isArray(st.players)?st.players.map(cleanPlayer).filter(Boolean):[];
     st.tiles=Array.isArray(st.tiles)?st.tiles.slice(0,25).map(td=>({char:cleanChar(td&&td.char),mult:cleanMult(td&&td.mult),gem:!!(td&&td.gem)})):[];
     st.sel=Array.isArray(st.sel)?st.sel.map(v=>cleanInt(v,24)).filter((v,ix,a)=>a.indexOf(v)===ix):[];
@@ -4876,7 +4895,7 @@ function hostOnData(m){
         case 'wordok':{const w=cleanNetWord(m.w);if(!w)break;addCustomWord(w,true);if(game){game.showToast(`📖 ${oppName()} approved "${w}" — play it!`);game.updateUI()}break}
         case 'wordno':{const w=cleanNetWord(m.w);if(w&&game)game.showToast(`🙀 ${oppName()} vetoed "${w}"`);break}
         case 'addword':{const w=cleanNetWord(m.w);if(!w)break;addCustomWord(w,true);if(game){game.showToast(`📖 ${w} added by opponent`);game.updateUI()}break}
-        case 'sel':if(game&&game.turnIndex!==NET.myIndex){NET.quiet=true;game.applySelection(m.ids||[]);NET.quiet=false}break;
+        case 'sel':if(game&&game.turnIndex!==NET.myIndex){NET.quiet=true;try{game.applySelection(m.ids)}finally{NET.quiet=false}}break;   // v67.4: try/finally so a bad payload can't leave NET.quiet stuck (would stop later sync)
         case 'act':if(game)game.handleRemoteAction(m);break;
     }
 }
@@ -5674,9 +5693,14 @@ class Game{
         this.maybeCocoTimer();
     }
     applySelection(ids){
+        // v67.4: ids comes off the wire ('sel' sync + async 'submit') — a peer
+        // could send a non-array ({}, string) that throws on .forEach, or string
+        // keys like "__proto__" that touch inherited props. Rebuild it as a
+        // list of valid in-range integer tile indices before touching anything.
+        ids=Array.isArray(ids)?ids.filter(id=>Number.isInteger(id)&&id>=0&&id<this.tiles.length):[];
         this.selection.forEach(id=>{if(this.tiles[id])this.tiles[id].isSelected=false});
         this.selection=[];
-        (ids||[]).forEach(id=>{if(this.tiles[id]){this.tiles[id].isSelected=true;this.selection.push(id)}});
+        ids.forEach(id=>{if(this.tiles[id]){this.tiles[id].isSelected=true;this.selection.push(id)}});
         this.updateUI();
     }
     handleRemoteAction(m){
@@ -6569,7 +6593,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v67.3';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v67.4';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){
