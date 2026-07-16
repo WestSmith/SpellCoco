@@ -19,6 +19,16 @@
 
     <!--
     ================================================================
+    SPELLCOCO v67.3 — SECURITY: out-of-range startIndex (round stall)
+    ================================================================
+    Fifth audit pass. validPlayableState() checked turnIndex<2 but
+    NOT startIndex — the sanitizer permits 0–9, fromState keeps it,
+    and a round ends only when the next player index === startIndex
+    (endTurn). A hostile startIndex of 2–9 never matches, so rounds
+    never advance and the game runs indefinitely. FIX: also require
+    startIndex < players.length (turnIndex check generalized to the
+    same bound). One-line hardening; valid states unaffected.
+    ================================================================
     SPELLCOCO v67.2 — SECURITY: ending-state XSS + malformed-state crash
     ================================================================
     Third audit pass — one more recap XSS route + a crash hardening:
@@ -4694,7 +4704,8 @@ function sanitizeNetState(st){
 function validPlayableState(st){
     return !!(st && Array.isArray(st.players) && st.players.length===2 && st.players.every(Boolean)
         && Array.isArray(st.tiles) && st.tiles.length===25
-        && cleanInt(st.turnIndex,9)<2);
+        && cleanInt(st.turnIndex,9)<st.players.length
+        && cleanInt(st.startIndex,9)<st.players.length);   // v67.3: startIndex 2–9 would never trigger round-end (endTurn compares next===startIndex) → rounds stall forever
 }
 // Remote fx strings (toasts/overlays/celebrations relayed from the other
 // device) are escaped wholesale, then the one legit markup token — the
@@ -6558,7 +6569,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v67.2';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v67.3';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){
