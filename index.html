@@ -19,6 +19,24 @@
 
     <!--
     ================================================================
+    SPELLCOCO v67.2 — SECURITY: ending-state XSS + malformed-state crash
+    ================================================================
+    Third audit pass — one more recap XSS route + a crash hardening:
+    - asyncShowEnding(state) took the relay's RAW m.state (reject +
+      closing-state branches) and forwarded finalPlayers/players to
+      the recap innerHTML without cleanPlayers. Now it scrubs via
+      cleanPlayers inside the function, protecting every caller, and
+      bails if the cleaned list is empty.
+    - Malformed peer states (empty/short player or tile arrays, out-
+      of-range turnIndex) used to reach Game.fromState → st.tiles.map
+      / a missing currentPlayer → broke the guest's session. New
+      validPlayableState() gate (exactly 2 valid players + 25 valid
+      tiles + turnIndex<2): fromState returns null (validated BEFORE
+      retiring the live game), applyState no-ops, all 5 fromState
+      callers degrade gracefully (corrupt save cleared / start modal
+      re-shown), and renderGameOver ignores an empty player list.
+    No gameplay/visual change for valid states.
+    ================================================================
     SPELLCOCO v67.1 — SECURITY: 3 more peer-message XSS routes
     ================================================================
     Second audit pass caught three innerHTML sinks the v67 sweep
@@ -3894,6 +3912,7 @@ function hostRelayOpen(){
         document.getElementById('modal-start').classList.add('hidden');
         document.getElementById('coco-zone').classList.toggle('hidden',!CONFIG.cocoAttackEnabled);
         game=Game.fromState(sv.state);
+        if(!game){lsDel('spellcoco.save');document.getElementById('modal-start').classList.remove('hidden');return;}   // v67.2: corrupt save — don't crash
         NET.myIndex=game.players.findIndex(pl=>pl.name===NET.myName);
         NET.sendStart();
         game.showRoundOverlay(`Round ${game.round}`,`Resumed — ${game.currentPlayer.name}'s turn`);
@@ -4066,9 +4085,14 @@ function recordStatsOnce(ranked){
     recordGameStats(ranked);
 }
 function asyncShowEnding(state){
-    const ranked=(state&&state.finalPlayers&&state.finalPlayers.length)?state.finalPlayers
+    // v67.2: the reject/closing-state branches pass the relay's raw m.state
+    // straight here — finalPlayers/players reach the recap innerHTML — so this
+    // path (not just the direct 'gameover' op) must scrub. Sanitizing INSIDE
+    // asyncShowEnding protects every caller at once.
+    const raw=(state&&state.finalPlayers&&state.finalPlayers.length)?state.finalPlayers
         :(state&&state.players?[...state.players].sort((a,b)=>b.score-a.score):null);
-    if(!ranked)return;
+    const ranked=cleanPlayers(raw);
+    if(!ranked.length)return;   // empty after cleaning ⇒ malformed/hostile — ignore
     recordStatsOnce(ranked);
     regTurnSync();   // v59: mark finished in My Games on every ending path
     renderGameOver(ranked);
@@ -4206,6 +4230,7 @@ function asyncLoadGame(state,config){
     document.getElementById('modal-gameover').classList.add('hidden');
     document.getElementById('coco-zone').classList.toggle('hidden',!CONFIG.cocoAttackEnabled);
     game=Game.fromState(state);
+    if(!game){console.warn('SpellCoco: malformed room state — not loading');document.getElementById('modal-start').classList.remove('hidden');return;}   // v67.2
     NET.myIndex=NET.seat;
     NET.gameCode=NET.code;   // v58: this game object belongs to THIS room
     regTurnSync();   // v59: register/refresh this game in My Games right away
@@ -4660,6 +4685,17 @@ function sanitizeNetState(st){
     if(st.finalPlayers!=null)st.finalPlayers=Array.isArray(st.finalPlayers)?st.finalPlayers.map(cleanPlayer).filter(Boolean):null;
     return st;
 }
+// v67.2: a live board a guest will PLAY on needs exactly 2 valid players and a
+// full 25-tile grid — cleanPlayer/tiles drop malformed entries, so a hostile or
+// truncated 'start'/'state'/'gameover' payload leaves <2 players or <25 tiles.
+// fromState/applyState reject anything that fails this rather than crash on
+// st.tiles.map / a missing currentPlayer. (Recap-only paths don't need tiles —
+// they gate on players via cleanPlayers instead.)
+function validPlayableState(st){
+    return !!(st && Array.isArray(st.players) && st.players.length===2 && st.players.every(Boolean)
+        && Array.isArray(st.tiles) && st.tiles.length===25
+        && cleanInt(st.turnIndex,9)<2);
+}
 // Remote fx strings (toasts/overlays/celebrations relayed from the other
 // device) are escaped wholesale, then the one legit markup token — the
 // treat icon span — is restored, so sender-side TICON toasts still render.
@@ -4790,6 +4826,7 @@ function _hostGameP2P(){
                 document.getElementById('modal-start').classList.add('hidden');
                 document.getElementById('coco-zone').classList.toggle('hidden',!CONFIG.cocoAttackEnabled);
                 game=Game.fromState(sv.state);
+                if(!game){lsDel('spellcoco.save');document.getElementById('modal-start').classList.remove('hidden');return;}   // v67.2: corrupt save
                 NET.myIndex=game.players.findIndex(pl=>pl.name===NET.myName);
                 NET.sendStart();
                 game.showRoundOverlay(`Round ${game.round}`,`Resumed — ${game.currentPlayer.name}'s turn`);
@@ -4873,6 +4910,7 @@ function guestStart(m){
     document.getElementById('modal-gameover').classList.add('hidden');
     document.getElementById('coco-zone').classList.toggle('hidden',!CONFIG.cocoAttackEnabled);
     game=Game.fromState(m.state);
+    if(!game){console.warn('SpellCoco: host sent a malformed start — ignoring');document.getElementById('modal-start').classList.remove('hidden');return;}   // v67.2
     NET.myIndex=game.players.findIndex(p=>p.name===NET.myName);
     game.showRoundOverlay(`Round ${game.round}`,`${game.currentPlayer.name}'s turn`,true);
 }
@@ -4910,6 +4948,7 @@ function resumeSavedGame(){
     document.getElementById('modal-start').classList.add('hidden');
     document.getElementById('coco-zone').classList.toggle('hidden',!CONFIG.cocoAttackEnabled);
     game=Game.fromState(sv.state);
+    if(!game){lsDel('spellcoco.save');document.getElementById('modal-start').classList.remove('hidden');document.getElementById('resume-banner').classList.add('hidden');return;}   // v67.2: corrupt local save
     game.showRoundOverlay(`Round ${game.round}`,`${game.currentPlayer.name}'s turn — welcome back!`);
 }
 function discardSavedGame(){lsDel('spellcoco.save');document.getElementById('resume-banner').classList.add('hidden')}
@@ -5591,8 +5630,9 @@ class Game{
             sel:[...this.selection]};
     }
     static fromState(st){
-        retireGame();   // v66: every fromState replaces the global game — retire the old one first
         st=sanitizeNetState(st);   // v67: relay/P2P states are opponent-controlled — clean before use
+        if(!validPlayableState(st)){console.warn('SpellCoco: ignored a malformed game state');return null;}   // v67.2: validate BEFORE retiring the live game
+        retireGame();   // v66: every fromState replaces the global game — retire the old one first
         const g=Object.create(Game.prototype);
         g.timerInterval=null;g.timeLeft=st.timeLeft||0;g.cocoTimerActive=false;
         g.round=st.round;g.turnIndex=st.turnIndex;g.startIndex=(typeof st.startIndex==='number')?st.startIndex:0;g.selection=[];
@@ -5608,6 +5648,7 @@ class Game{
     }
     applyState(st){
         st=sanitizeNetState(st);   // v67: same rule as fromState — never trust the wire
+        if(!validPlayableState(st)){console.warn('SpellCoco: ignored a malformed state push');return;}   // v67.2: keep the current board rather than crash
         if(st.over)this.over=true;   // v58: an ending can arrive by state push too
         this.lastSwap=null;   // v62: an incoming board replaces ours — undo window closes
         this.round=st.round;this.turnIndex=st.turnIndex;if(typeof st.startIndex==='number')this.startIndex=st.startIndex;
@@ -6481,6 +6522,7 @@ function defineWord(w){
 }
 
 function renderGameOver(players){
+    if(!Array.isArray(players)||!players.length)return;   // v67.2: never render an empty/cleaned-away recap
     const rb=document.getElementById('btn-rematch');
     if(rb){rb.disabled=false;rb.innerText=NET.mode==='join'?'🔄 Ask for Rematch':'🔄 Rematch'}
     if(game)game.renderRecap(players);
@@ -6516,7 +6558,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v67.1';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v67.2';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){
