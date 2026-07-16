@@ -19,6 +19,22 @@
 
     <!--
     ================================================================
+    SPELLCOCO v67.1 — SECURITY: 3 more peer-message XSS routes
+    ================================================================
+    Second audit pass caught three innerHTML sinks the v67 sweep
+    missed (all confirmed exploitable by a hostile HOST/opponent):
+    - guestStart(m.config): the wire CONFIG was passed straight
+      through normalizeConfig, whose numeric fields (maxGems,
+      costs.*, cocoAttackCost) are interpolated into innerHTML.
+      normalizeConfig now runs sanitizeConfig — rebuilds CONFIG
+      from a trusted default, coercing every field to its type.
+    - gameover m.players → renderGameOver/recordGameStats → recap
+      interpolates names/words/scores into HTML. Both networking
+      paths now scrub via cleanPlayers (cleanPlayer per entry).
+    - undoreq m.from/m.to → undoreq-text.innerHTML. Now cleanChar
+      at ingestion AND at the sink (board chars only).
+    No gameplay/visual change — legit values pass through identical.
+    ================================================================
     SPELLCOCO v67 — SECURITY HARDENING (WIRE-DATA SANITATION)
     ================================================================
     From an external code audit. A hostile online opponent (or anyone
@@ -4017,7 +4033,7 @@ function asyncOnMessage(m){
             }
             break;
         case 'newgame':asyncLoadGame(m.state,m.config);break;
-        case 'gameover':if(game)game.over=true;recordStatsOnce(m.players);regTurnSync();renderGameOver(m.players);break;
+        case 'gameover':{if(game)game.over=true;const gp=cleanPlayers(m.players);recordStatsOnce(gp);regTurnSync();renderGameOver(gp);break}   // v67.1: scrub before the recap innerHTML
         case 'peer':if(m.present)asyncSyncWords();asyncPeer(m);break;
         case 'reject':
             // v64: seatless socket (server restarted / we never re-helloed) —
@@ -4080,7 +4096,7 @@ function asyncOnData(m){
         case 'addword':{const w=cleanNetWord(m.w);if(!w)break;addCustomWord(w,true);if(game){game.showToast(`📖 ${w} added by ${oppName()}`);quietUI()}break}
         // v62: undo-swap consent (async online). The requester holds lastSwap;
         // approval that arrives after the window closed just no-ops with a toast.
-        case 'undoreq':showUndoRequest({from:m.from,to:m.to},false);break;
+        case 'undoreq':showUndoRequest({from:cleanChar(m.from),to:cleanChar(m.to)},false);break;   // v67.1: from/to reach undoreq-text innerHTML
         case 'undook':if(game&&!game.applyUndoSwap())game.showToast('↩ Too late to undo — the board moved on');break;
         case 'undono':if(game)game.showToast(`🙀 ${oppName()} says the swap stands`);break;
     }
@@ -4649,6 +4665,55 @@ function sanitizeNetState(st){
 // treat icon span — is restored, so sender-side TICON toasts still render.
 function netSafeHtml(v){if(v==null)return v;return escHtml(v).split(escHtml(TICON)).join(TICON)}
 
+// v67.1: the CONFIG object arrives over the wire in guestStart(m.config). Its
+// numeric fields (maxGems, costs.*, cocoAttackCost) are later interpolated
+// into innerHTML, so a hostile HOST could ship `maxGems:'<img onerror=…>'`.
+// sanitizeConfig rebuilds it from a trusted default, coercing every field to
+// its correct type — closes the injection AND hardens gameplay against NaN.
+const CONFIG_DEFAULT={
+    rounds:5, maxGems:10, startGems:3, timerSeconds:30, bonusTime:15,
+    longWordMode:'keith',
+    longWordTiers:[{len:6,bonus:10},{len:7,bonus:15},{len:8,bonus:20},{len:9,bonus:25},{len:10,bonus:30},{len:11,bonus:40},{len:12,bonus:50}],
+    longWordStack:false, boardGemCount:9,
+    cocoAttackTime:35, cocoAttackCost:4, cocoAttackEnabled:true,
+    costs:{shuffle:1, swap:3, time:1, hint:2, zoomies:4},
+    enabledMults:{DL:true, TL:true, '2W':true, '3W':true}
+};
+function cfgNum(v,def,max){v=Math.round(+v);return (isFinite(v)&&v>=0&&v<=max)?v:def}
+function sanitizeConfig(c){
+    const D=JSON.parse(JSON.stringify(CONFIG_DEFAULT));
+    if(!c||typeof c!=='object')return D;
+    D.rounds=cfgNum(c.rounds,D.rounds,50);
+    D.maxGems=cfgNum(c.maxGems,D.maxGems,9999);
+    D.startGems=cfgNum(c.startGems,D.startGems,9999);
+    D.timerSeconds=cfgNum(c.timerSeconds,D.timerSeconds,99999);
+    D.bonusTime=cfgNum(c.bonusTime,D.bonusTime,99999);
+    D.boardGemCount=cfgNum(c.boardGemCount,D.boardGemCount,25)||1;
+    D.cocoAttackTime=cfgNum(c.cocoAttackTime,D.cocoAttackTime,99999);
+    D.cocoAttackCost=cfgNum(c.cocoAttackCost,D.cocoAttackCost,9999);
+    D.cocoAttackEnabled=(typeof c.cocoAttackEnabled==='boolean')?c.cocoAttackEnabled:D.cocoAttackEnabled;
+    D.longWordStack=!!c.longWordStack;
+    const presets=Object.keys(LW_PRESETS).concat('custom');
+    D.longWordMode=presets.indexOf(c.longWordMode)>=0?c.longWordMode:D.longWordMode;
+    if(Array.isArray(c.longWordTiers)){
+        D.longWordTiers=c.longWordTiers.slice(0,50).map(t=>t&&typeof t==='object'?{len:cfgNum(t.len,1,99),bonus:cfgNum(t.bonus,0,99999)}:null).filter(Boolean);
+    }
+    if(c.costs&&typeof c.costs==='object'){
+        Object.keys(D.costs).forEach(k=>{D.costs[k]=cfgNum(c.costs[k],D.costs[k],9999)});
+    }
+    if(!D.costs.hint)D.costs.hint=2;
+    if(!D.costs.zoomies)D.costs.zoomies=5;   // preserve the old normalizeConfig defaults
+    if(c.enabledMults&&typeof c.enabledMults==='object'){
+        ['DL','TL','2W','3W'].forEach(k=>{if(typeof c.enabledMults[k]==='boolean')D.enabledMults[k]=c.enabledMults[k]});
+    }
+    return D;
+}
+// v67.1: remote game-over payloads (m.players from both networking paths) go
+// straight to renderGameOver/recordGameStats — the recap interpolates names,
+// words, and scores into innerHTML — so they need the same cleanPlayer scrub
+// as a synced state does (fromState/applyState already sanitize their states).
+function cleanPlayers(arr){return Array.isArray(arr)?arr.map(cleanPlayer).filter(Boolean):[]}
+
 function pickSeat(n,t){
     const other=n===1?2:1;
     SEATS[n].type=t;
@@ -4792,7 +4857,7 @@ function guestOnData(m){
         case 'state':if(game)game.applyState(m.state);break;
         case 'timer':if(game){game.cocoTimerActive=m.on;game.timeLeft=m.t;game.updateTimerDisplay()}break;
         case 'fx':if(game){if(m.toast)game.showToast(netSafeHtml(m.toast),true);if(m.overlay)game.showRoundOverlay(netSafeHtml(m.overlay.t),netSafeHtml(m.overlay.s),true);if(m.celebrate)game.showCelebration(netSafeHtml(m.celebrate),true);if(m.coco)game.showCocoOverlay(true);if(m.bubble)setTimeout(()=>{if(game&&!game.over)cocoSpeak(m.bubble)},cleanInt(m.bubbleDelay,20000)||3400);if(m.sfx&&Object.prototype.hasOwnProperty.call(SFX,m.sfx)&&typeof SFX[m.sfx]==='function')SFX[m.sfx]()}break;
-        case 'gameover':{if(game)game.over=true;recordGameStats(m.players);renderGameOver(m.players);break}
+        case 'gameover':{if(game)game.over=true;const gp=cleanPlayers(m.players);recordGameStats(gp);renderGameOver(gp);break}   // v67.1: scrub before the recap innerHTML
     }
 }
 function guestStart(m){
@@ -4813,7 +4878,7 @@ function guestStart(m){
 }
 
 // ===================== v33: resume after refresh =====================
-function normalizeConfig(c){if(c&&c.costs&&!c.costs.hint)c.costs.hint=2;if(c&&c.costs&&!c.costs.zoomies)c.costs.zoomies=5;return c}
+function normalizeConfig(c){return sanitizeConfig(c)}   // v67.1: full type validation (was: only defaulted hint/zoomies — wire config reached innerHTML)
 function saveGameState(){
     if(NET.mode==='join'||NET.async||!game||game.over)return;
     lsSet('spellcoco.save',{config:CONFIG,state:game.serialize(),ts:Date.now(),online:NET.mode==='host',hostName:NET.myName});
@@ -5384,7 +5449,7 @@ function showUndoRequest(s,local){
     NET.pendingUndo=local?'local':'net';
     const who=local?((game&&game.players[s.by]&&game.players[s.by].name)||'Your opponent'):oppName();
     document.getElementById('undoreq-text').innerHTML=
-        `<strong>${who}</strong> wants to undo their letter swap (<strong>${s.from} → ${s.to}</strong>) and get their 3 treats back.`;
+        `<strong>${who}</strong> wants to undo their letter swap (<strong>${cleanChar(s.from)} → ${cleanChar(s.to)}</strong>) and get their 3 treats back.`;   // v67.1: sink-side guard (from/to are board chars)
     document.getElementById('modal-undoreq').classList.remove('hidden');
 }
 function answerUndoRequest(ok){
@@ -6451,7 +6516,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v67';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v67.1';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){
