@@ -22,15 +22,17 @@ Spell words by dragging through adjacent letters on a 5×5 board. Longer words e
 | Ability | Cost | Effect |
 |---|---|---|
 | 🔀 Shuffle | 1 treat | Re-deal the board (multipliers move too) |
+| 🌪 Zoomies | 4 treats | Brand-new letters everywhere (multipliers stay) |
 | 🔄 Swap | 3 treats | Replace any tile with a letter of your choice |
-| 💡 Hint | 2 treats | First letters of the best word on the board |
+| 💡 Hint | 2 treats | First two letters and the length of the best word on the board |
+| ⏱ +15s | 1 treat | Add time when you're on the clock |
 | 🐱 Coco Attack | 4 treats | Put your opponent on a 35-second timer |
 
 Play **local** (pass and play) or **online** — one player hosts and shares a 4-letter room code, the other joins from any device.
 
 ## Features
 
-- 178k-word dictionary with a custom word list you can grow in-game
+- 196k-word dictionary (NWL2023) with a custom word list you can grow in-game
 - Best-word reveal after every turn, plus an efficiency score in the recap
 - Tap any played word for its definition
 - All-time Keith vs. Shawn win tracker, synced between devices
