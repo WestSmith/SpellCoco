@@ -171,7 +171,8 @@ export class Room {
   async onMove(ws, m) {
     const me = this.info(ws);
     if (!seated(me)) { this.send(ws, { type: "__a", op: "reject", reason: "no-seat", q: m.q, state: null }); return; }
-    if (!validState(m.state)) { this.send(ws, { type: "__a", op: "reject", reason: "bad-state", state: null }); return; }
+    // Echo q: a bad state can't be fixed by re-pushing, so let the client retire it.
+    if (!validState(m.state)) { this.send(ws, { type: "__a", op: "reject", reason: "bad-state", q: m.q, state: null }); return; }
     const game = await this.state.storage.get("game");
     if (game && game.over && !m.state.over) { this.send(ws, { type: "__a", op: "reject", reason: "game-over", q: m.q, state: game }); return; }
     if (game && typeof game.turnIndex === "number" && game.turnIndex !== me.seat) {
@@ -209,7 +210,7 @@ export class Room {
   async onNewGame(ws, m) {
     const me = this.info(ws);
     if (!seated(me)) { this.send(ws, { type: "__a", op: "reject", reason: "no-seat", q: m.q, state: null }); return; }
-    if (!validState(m.state)) { this.send(ws, { type: "__a", op: "reject", reason: "bad-state", state: null }); return; }
+    if (!validState(m.state)) { this.send(ws, { type: "__a", op: "reject", reason: "bad-state", q: m.q, state: null }); return; }
     await this.state.storage.put("game", m.state);
     if (m.config && typeof m.config === "object") await this.state.storage.put("config", m.config);
     if (m.q != null) this.send(ws, { type: "__a", op: "moveok", q: m.q });
@@ -255,7 +256,7 @@ export class Room {
     let subs = await this.state.storage.get("push") || [];
     subs = subs.filter((s) => s && s.sub && s.sub.endpoint !== m.sub.endpoint && !(dev && s.dev === dev));
     subs.push({ name: me.name, dev, sub: { endpoint: m.sub.endpoint.slice(0, 1024), keys: (m.sub.keys && typeof m.sub.keys === "object") ? m.sub.keys : {} },
-      url: typeof m.url === "string" ? m.url.slice(0, 300) : null });
+      url: (typeof m.url === "string" && /^https:\/\//.test(m.url)) ? m.url.slice(0, 300) : null });
     while (subs.length > 8) subs.shift();
     await this.state.storage.put("push", subs);
     this.send(ws, { type: "__a", op: "pushok" });
@@ -300,6 +301,9 @@ export class Room {
   async touch() {
     try {
       const now = Date.now();
+      // Throttled to hourly: Coco-timer ticks push a move every second.
+      if (this._touched && now - this._touched < 36e5) return;
+      this._touched = now;
       await this.state.storage.put("lastWrite", now);
       const cur = await this.state.storage.getAlarm();
       const want = now + IDLE_WIPE_MS;
@@ -308,7 +312,9 @@ export class Room {
   }
   async alarm() {
     try {
-      if (this.sockets().length) { await this.state.storage.setAlarm(Date.now() + 7 * 864e5); return; }
+      const now = Date.now();
+      const live = this.sockets().some((s) => this.lastSeen(s, this.info(s)) > now - LIVE_MS);
+      if (live) { await this.state.storage.setAlarm(now + 7 * 864e5); return; }
       const last = (await this.state.storage.get("lastWrite")) || 0;
       if (Date.now() - last < IDLE_WIPE_MS) { await this.state.storage.setAlarm(last + IDLE_WIPE_MS); return; }
       await this.state.storage.deleteAll();   // also clears the alarm

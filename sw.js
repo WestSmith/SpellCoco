@@ -24,14 +24,15 @@ self.addEventListener('notificationclick', (e) => {
   e.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
     // v68: prefer a tab already on the game URL; only navigate a controlled
     // tab that is elsewhere, and never let a failed navigate() break the focus.
-    const target = new URL(url, self.location.href).href;
-    const same = list.find((c) => c.url === target) || list[0];
+    let target = null;
+    try { target = new URL(url, self.location.href).href; } catch (e) {}   // v69.1: a bad stored URL must not swallow the click
+    const same = (target && list.find((c) => c.url === target)) || list[0];
     if (same && 'focus' in same) {
-      if (same.url !== target && same.navigate) {
+      if (target && same.url !== target && same.navigate) {
         return same.navigate(target).then((cl) => (cl || same).focus()).catch(() => same.focus());
       }
       return same.focus();
     }
-    return clients.openWindow(url);
+    return clients.openWindow(target || './');
   }));
 });
