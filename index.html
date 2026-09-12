@@ -8,7 +8,7 @@
          Cloudflare relays, the PeerJS cloud broker, and the dictionary API.
          'unsafe-inline' is required (the whole app is one inline script with
          inline handlers) — the CSP's job here is blocking everything OFF-list. -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://api.dictionaryapi.dev wss://spellcoco-relay.spellcoco.workers.dev wss://spellcoco-async.spellcoco.workers.dev https://spellcoco-async.spellcoco.workers.dev wss://0.peerjs.com https://0.peerjs.com; manifest-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'none'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://api.dictionaryapi.dev wss://spellcoco-async.spellcoco.workers.dev https://spellcoco-async.spellcoco.workers.dev wss://0.peerjs.com https://0.peerjs.com; manifest-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'none'">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
     <meta name="color-scheme" content="dark">
     <title>SpellCoco</title>
@@ -19,6 +19,15 @@
 
     <!--
     ================================================================
+    SPELLCOCO v69 — SERVER HARDENING (worker source now lives in worker/)
+    - Worker: WebSocket hibernation (idle rooms no longer billed), seat
+      required for newgame, state validation + storage-error rejects,
+      config-derived Coco cost + non-active-seat check, seated-only side
+      channel, newgame acked with moveok{q}, 90-day idle-room wipe,
+      Workers Logs enabled. Wire protocol unchanged.
+    - Client: ASYNC_URL is a literal; the defunct relay host is dropped from
+      the CSP connect-src.
+
     SPELLCOCO v68 — BUG SWEEP (adversarially verified review, 2026-09-12)
     - FIX: NET.cleanup now leaves the async room for real (async flag, code,
       gameCode, seat, myIndex). A stale flag hijacked later LOCAL games:
@@ -4013,7 +4022,7 @@ function guestRelayPeerLeft(){
 // so the existing host-execution path is reused — and pushes the full serialized
 // state. The server persists it (turn-checked) and forwards to the other player.
 // Access is gated only by the unguessable room code / private link.
-const ASYNC_URL = RELAY_URL.replace('spellcoco-relay','spellcoco-async');
+const ASYNC_URL = 'wss://spellcoco-async.spellcoco.workers.dev';   // v69: literal — the relay worker no longer exists (RELAY_URL only feeds the dormant P2P/relay fallback)
 function genLongCode(){const a='ABCDEFGHJKMNPQRSTUVWXYZ23456789';let c='';for(let i=0;i<14;i++)c+=a[Math.floor(Math.random()*a.length)];return c}
 // v61: per-TAB device nonce. Lets the relay tell "the same tab reconnecting"
 // apart from "a second player who picked the same name" — two live tabs can
