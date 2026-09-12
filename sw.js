@@ -1,4 +1,4 @@
-/* SpellCoco service worker — v62: turn notifications (Web Push).
+/* SpellCoco service worker — v62: turn notifications (Web Push). v68: safer click handling.
    Deliberately NO fetch handler: the game stays fully network-served
    (GitHub Pages), this worker only exists so pushes can be shown. */
 self.addEventListener('install', (e) => self.skipWaiting());
@@ -22,8 +22,15 @@ self.addEventListener('notificationclick', (e) => {
   e.notification.close();
   const url = (e.notification.data && e.notification.data.url) || './';
   e.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
-    for (const c of list) {
-      if ('focus' in c) { if (c.navigate) c.navigate(url); return c.focus(); }
+    // v68: prefer a tab already on the game URL; only navigate a controlled
+    // tab that is elsewhere, and never let a failed navigate() break the focus.
+    const target = new URL(url, self.location.href).href;
+    const same = list.find((c) => c.url === target) || list[0];
+    if (same && 'focus' in same) {
+      if (same.url !== target && same.navigate) {
+        return same.navigate(target).then((cl) => (cl || same).focus()).catch(() => same.focus());
+      }
+      return same.focus();
     }
     return clients.openWindow(url);
   }));

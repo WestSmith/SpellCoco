@@ -19,6 +19,43 @@
 
     <!--
     ================================================================
+    SPELLCOCO v68 — BUG SWEEP (adversarially verified review, 2026-09-12)
+    - FIX: NET.cleanup now leaves the async room for real (async flag, code,
+      gameCode, seat, myIndex). A stale flag hijacked later LOCAL games:
+      netNudge reconnected to the old room on wake, every local move sent
+      "Reconnecting" toasts, local autosave stopped, local Coco Attack sent
+      a net op instead of starting the timer, stats were keyed by the old room.
+    - FIX: sanitizeConfig keeps CONFIG.solo — resumed vs-Coco games froze
+      (Coco never took a turn, human blocked on Coco's seat).
+    - FIX: Start treats = 0 no longer silently becomes 3; Zoomies fallback
+      cost is 4 everywhere (was 5 in two places, 4 in the default/UI).
+    - FIX: Shuffle cleared the selection AFTER tile ids moved, leaving
+      permanently highlighted ghost tiles. Order swapped + shuffleBoard scrubs.
+    - FIX: Coco-timer expiry's delayed endTurn is tracked/cancelled; endTurn
+      refuses to run on a finished game (double-advance / double treat bonus).
+    - FIX: ability modals (swap/shuffle/zoomies) close on turn change so they
+      can't charge the next player; confirmShuffle now checks turn/treats
+      (could go negative).
+    - FIX: Zoomies closes the undo-swap window (parity with Shuffle).
+    - FIX: tile tap fired twice (pointerdown + per-tile onclick); only the
+      primary pointer/button starts a selection now.
+    - FIX: audio unlock — playTone re-resumes a suspended context and the
+      first board tap calls initAudio (iOS guests/async loads were silent).
+    - FIX: definition lookup no longer caches network failures for the
+      session, a slower earlier lookup can't overwrite the word tapped last,
+      404 = "no entry" but 429/5xx = "couldn't reach" (also in cloudCheckWord).
+    - FIX: win-tracker merge coerces wire counters, merges the solo (Coco)
+      record, and keeps games >= results.
+    - FIX (async): newgame/rematch op is remembered (pendingStart) and re-sent
+      on a welcome that still shows the finished room — a dropped newgame
+      used to resurrect the old recap and double-count its stats. Coco-timer
+      ticks go through sendMove; only a sequenced moveok clears pendingMove.
+    - FIX (latent P2P/relay paths): remote submit paths are de-duplicated and
+      adjacency-checked; a second PeerJS joiner closes the first connection.
+    - FIX: serviceWorker.register rejection handled; sw.js notificationclick
+      only navigates a tab that isn't already on the game URL.
+    - REMOVED: v62test.html (stale pre-CSP client on the production relay).
+
     SPELLCOCO v67.5 — FIX: tied game showed a winner
     ================================================================
     A 293–293 Keith–Shawn game was recorded as a draw (the stats
@@ -3792,6 +3829,7 @@ const NET={
     mode:'local',peer:null,conn:null,ws:null,transport:'p2p',useRelay:true,useAsync:true,async:false,seat:null,everConnected:false,reconnectTries:0,reconnectTimer:null,myIndex:-1,myName:'Shawn',code:'',connected:false,quiet:false,
     hbTimer:null,hbWaiting:false,hbSupported:false,gameCode:'',_offNote:false, // v58: keepalive + offline-move bookkeeping
     pendingMove:null,moveSeq:0, // v64: last turn-completing move, held until the server acks it
+    pendingStart:null, // v68: the newgame op, held until the room reflects it (a dropped newgame used to resurrect the old recap + double-count stats)
     guestName:null,oppName:null, // v42: joiner's declared name (host side) / opponent's announced name
     open(){return this.transport==='relay' ? !!(this.ws&&this.ws.readyState===1&&this.connected) : !!(this.conn&&this.conn.open)},
     send(m){if(this.transport==='relay'){
@@ -3828,10 +3866,10 @@ const NET={
         // v42: tell the joiner their FINAL (possibly deduped) identity
         let gn=null;
         if(game&&this.myIndex>=0&&game.players[1-this.myIndex])gn=game.players[1-this.myIndex].name;
-        if(this.async){this.gameCode=this.code;this.pendingMove=null;/*v64: fresh game, fresh ledger*/lsDel('spellcoco.gover.'+this.code);this._regTurn=null;this.send({type:'__a',op:'newgame',state:game.serialize(),config:CONFIG});showInGameRoom();regTurnSync();return}
+        if(this.async){this.gameCode=this.code;this.pendingMove=null;/*v64: fresh game, fresh ledger*/lsDel('spellcoco.gover.'+this.code);this._regTurn=null;const sm={type:'__a',op:'newgame',state:game.serialize(),config:CONFIG,q:++this.moveSeq};this.pendingStart={m:sm,q:sm.q,code:this.code,at:Date.now()};this.send(sm);showInGameRoom();regTurnSync();return}
         this.send({type:'start',config:CONFIG,state:game.serialize(),customs:localCustomWords,guestName:gn});
     },
-    cleanup(){this.pendingMove=null;/*v64: never re-push into a different room*/if(this.peer){try{this.peer.destroy()}catch(e){}}this.peer=null;this.conn=null;if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.reconnectTries=0;this.transport=this.useRelay?'relay':'p2p';this.everConnected=false;this.connected=false;hbStop();}
+    cleanup(){this.pendingMove=null;this.pendingStart=null;/*v64: never re-push into a different room*/if(this.peer){try{this.peer.destroy()}catch(e){}}this.peer=null;this.conn=null;if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.reconnectTries=0;this.transport=this.useRelay?'relay':'p2p';this.everConnected=false;this.connected=false;/*v68: leave the async room for real — a stale async flag/code hijacked later local games (netNudge reconnect, sendMove, saveGameState skip, cocoAttack, stats key)*/this.async=false;this.code='';this.gameCode='';this.seat=null;this.myIndex=-1;hbStop();}
 };
 function genCode(){const a='ABCDEFGHJKMNPQRSTUVWXYZ23456789';let c='';for(let i=0;i<4;i++)c+=a[Math.floor(Math.random()*a.length)];return c}
 
@@ -4076,16 +4114,18 @@ function asyncOnMessage(m){
         case 'welcome':asyncWelcome(m);break;
         case 'pong':NET.hbSupported=true;NET.hbWaiting=false;break;   // v58 keepalive answered
         case 'moveok':   // v64: the server has our move on disk — stop re-pushing
-            if(NET.pendingMove&&(m.q==null||m.q>=NET.pendingMove.q))NET.pendingMove=null;
+            if(NET.pendingMove&&m.q!=null&&m.q>=NET.pendingMove.q)NET.pendingMove=null;   // v68: only a sequenced ack clears the tracked move
+            if(NET.pendingStart&&m.q!=null&&m.q>=NET.pendingStart.q)NET.pendingStart=null;
             break;
         case 'state':
+            NET.pendingStart=null;
             if(game){
                 game.applyState(m.state);
                 if(game.over){asyncShowEnding(m.state);}   // v58: the closing push arrived as a live state
                 else asyncTurnHint();
             }
             break;
-        case 'newgame':asyncLoadGame(m.state,m.config);break;
+        case 'newgame':NET.pendingStart=null;asyncLoadGame(m.state,m.config);break;
         case 'gameover':{if(game)game.over=true;const gp=cleanPlayers(m.players);recordStatsOnce(gp);regTurnSync();renderGameOver(gp);break}   // v67.1: scrub before the recap innerHTML
         case 'peer':if(m.present)asyncSyncWords();asyncPeer(m);break;
         case 'reject':
@@ -4235,6 +4275,12 @@ function asyncWelcome(m){
     asyncSyncWords();   // v54: share custom words on connect (consent + dictionary sync)
     registerPushWithRoom();   // v62: refresh this device's turn-alert subscription for this room
     NET.resendPending();   // v64: an unacked move survives the reconnect — push it again first thing
+    // v68: our newgame never landed (half-open socket) — the room still shows the
+    // finished game. Re-send the fresh board rather than resurrecting the recap.
+    if(NET.pendingStart&&NET.pendingStart.code===NET.code&&game&&!game.over&&(!m.state||m.state.over)){
+        NET.send(NET.pendingStart.m);showInGameRoom();asyncTurnHint();return;
+    }
+    NET.pendingStart=null;   // the room reflects a live game — nothing to re-push
     // v58: if WE moved while offline, the server is one move behind — its state
     // still shows it as OUR turn while our local board has already flipped. Turn
     // enforcement makes replaying safe (nobody else could have moved), so push
@@ -4551,7 +4597,7 @@ function updatePushUI(){
     el.innerHTML='<span class="ir-label">🔔 Turn alerts</span> <span class="ir-code" style="font-size:0.92rem;">'+(on?'ON':'OFF')+'</span> <span class="ir-hint">tap to turn '+(on?'off':'on')+'</span>';
     el.setAttribute('aria-label','Turn notifications are '+(on?'on':'off')+' — tap to toggle');
 }
-if('serviceWorker' in navigator){try{navigator.serviceWorker.register('sw.js')}catch(e){}}
+if('serviceWorker' in navigator){try{navigator.serviceWorker.register('sw.js').catch(()=>{})}catch(e){}}
 function hideInGameRoom(){
     const b=document.getElementById('ingame-room');if(b)b.classList.add('hidden');
     const r=document.getElementById('ingame-rejoin');if(r)r.classList.add('hidden');
@@ -4777,7 +4823,9 @@ function sanitizeConfig(c){
         Object.keys(D.costs).forEach(k=>{D.costs[k]=cfgNum(c.costs[k],D.costs[k],9999)});
     }
     if(!D.costs.hint)D.costs.hint=2;
-    if(!D.costs.zoomies)D.costs.zoomies=5;   // preserve the old normalizeConfig defaults
+    if(!D.costs.zoomies)D.costs.zoomies=D.costs.zoomies||CONFIG_DEFAULT.costs.zoomies;
+    // v68: keep the solo (vs Coco) marker through save/resume — dropping it froze resumed solo games
+    D.solo=(c.solo&&typeof c.solo==='object'&&c.solo.active)?{active:true,mood:(COCO_MOODS[c.solo.mood]?c.solo.mood:'cozy')}:null;
     if(c.enabledMults&&typeof c.enabledMults==='object'){
         ['DL','TL','2W','3W'].forEach(k=>{if(typeof c.enabledMults[k]==='boolean')D.enabledMults[k]=c.enabledMults[k]});
     }
@@ -4826,8 +4874,19 @@ function mergeRemoteWords(ws){(ws||[]).forEach(w=>{if(typeof w==='string'&&/^[A-
 function mergeStats(r){
     if(!r||typeof r!=='object')return;
     let ch=false;
-    ['games','draws'].forEach(k=>{if((r[k]||0)>(STATS[k]||0)){STATS[k]=r[k];ch=true}});
-    ['Keith','Shawn'].forEach(n=>{const rv=(r.wins&&r.wins[n])||0;if(rv>(STATS.wins[n]||0)){STATS.wins[n]=rv;ch=true}});
+    // v68: coerce every counter (a peer could ship arrays/booleans that persisted to localStorage)
+    ['games','draws'].forEach(k=>{const rv=cleanInt(r[k],999999);if(rv>(STATS[k]||0)){STATS[k]=rv;ch=true}});
+    ['Keith','Shawn'].forEach(n=>{const rv=cleanInt(r.wins&&r.wins[n],999999);if(rv>(STATS.wins[n]||0)){STATS.wins[n]=rv;ch=true}});
+    // v68: games can never be fewer than the results it holds
+    const results=(STATS.draws||0)+(STATS.wins.Keith||0)+(STATS.wins.Shawn||0);
+    if((STATS.games||0)<results){STATS.games=results;ch=true}
+    if(r.coco&&typeof r.coco==='object'){
+        if(!STATS.coco)STATS.coco={games:0,draws:0,wins:{}};
+        ['games','draws'].forEach(k=>{const rv=cleanInt(r.coco[k],999999);if(rv>(STATS.coco[k]||0)){STATS.coco[k]=rv;ch=true}});
+        if(r.coco.wins&&typeof r.coco.wins==='object')Object.keys(r.coco.wins).slice(0,20).forEach(n=>{const nm=cleanNameStr(n);if(nm!==n)return;const rv=cleanInt(r.coco.wins[n],999999);if(rv>(STATS.coco.wins[nm]||0)){STATS.coco.wins[nm]=rv;ch=true}});
+        const cr=(STATS.coco.draws||0)+Object.values(STATS.coco.wins).reduce((a,b)=>a+(b||0),0);
+        if((STATS.coco.games||0)<cr){STATS.coco.games=cr;ch=true}
+    }
     // v67: bestWord/longestWord used to be copied wholesale off the wire and
     // rendered with innerHTML in the stats box — rebuild from validated pieces.
     const rb=cleanBestRec(r.bestWord),rl=cleanBestRec(r.longestWord);
@@ -4849,6 +4908,7 @@ function _hostGameP2P(){
     });
     peer.on('connection',conn=>{
         if(NET.peer!==peer)return;
+        if(NET.conn&&NET.conn!==conn){try{NET.conn.close()}catch(e){}}   // v68: a second joiner replaces the first — the old pipe must not keep feeding hostOnData
         NET.conn=conn;
         conn.on('open',()=>{
             NET.connected=true;NET.oppPresent=true;
@@ -4873,6 +4933,7 @@ function _hostGameP2P(){
         });
         conn.on('data',m=>hostOnData(m));
         conn.on('close',()=>{
+            if(NET.conn!==conn)return;   // v68: a superseded connection closing must not mark the live one as gone
             NET.connected=false;NET.oppPresent=false;NET.setPill('⚠','bad','Online: disconnected');
             if(!(game&&!game.over))document.getElementById('host-status').innerText='Opponent left — waiting for someone to join…';
         });
@@ -5399,7 +5460,8 @@ if(_zoomSlot)_zoomSlot.innerHTML=COCO_ZOOM;
 // Sound
 let audioCtx=null,soundEnabled=false,soundVolume=0.5;
 function initAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==='suspended')audioCtx.resume()}
-function playTone(f,dur,type='sine',vol=1){if(!soundEnabled||!audioCtx)return;const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type=type;o.frequency.setValueAtTime(f,audioCtx.currentTime);g.gain.setValueAtTime(vol*soundVolume*0.3,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+dur);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+dur)}
+function playTone(f,dur,type='sine',vol=1){if(!soundEnabled||!audioCtx)return;if(audioCtx.state!=='running'){try{audioCtx.resume()}catch(e){}}   // v68: guests/async loads create the context outside a gesture — iOS keeps it suspended until a resume() lands inside one
+const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type=type;o.frequency.setValueAtTime(f,audioCtx.currentTime);g.gain.setValueAtTime(vol*soundVolume*0.3,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+dur);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+dur)}
 const SFX={tileSelect(){playTone(880,0.08,'sine',0.6)},tileDeselect(){playTone(440,0.06,'sine',0.3)},submit(){playTone(523,0.12,'sine',0.7);setTimeout(()=>playTone(659,0.12,'sine',0.7),80);setTimeout(()=>playTone(784,0.15,'sine',0.8),160)},longWord(){playTone(523,0.1,'sine',0.8);setTimeout(()=>playTone(659,0.1,'sine',0.8),100);setTimeout(()=>playTone(784,0.1,'sine',0.8),200);setTimeout(()=>playTone(1047,0.25,'sine',1),300)},invalid(){playTone(200,0.2,'square',0.4)},shuffle(){for(let i=0;i<5;i++)setTimeout(()=>playTone(300+Math.random()*400,0.05,'sine',0.3),i*40)},swap(){playTone(600,0.15,'triangle',0.5)},timerWarn(){playTone(440,0.1,'square',0.5)},gameOver(){[523,659,784,1047].forEach((f,i)=>setTimeout(()=>playTone(f,0.3,'sine',0.6),i*200))},cocoAttack(){playTone(330,0.15,'sawtooth',0.6);setTimeout(()=>playTone(440,0.15,'sawtooth',0.7),120);setTimeout(()=>playTone(550,0.2,'sawtooth',0.8),240)}};
 // v56: a soft purr when you pet the lounging Coco. Plays on a deliberate tap even
 // if game SFX are muted (the tap is the gesture that unlocks audio); the volume
@@ -5707,6 +5769,7 @@ class Game{
         // keys like "__proto__" that touch inherited props. Rebuild it as a
         // list of valid in-range integer tile indices before touching anything.
         ids=Array.isArray(ids)?ids.filter(id=>Number.isInteger(id)&&id>=0&&id<this.tiles.length):[];
+        ids=ids.filter((id,i)=>ids.indexOf(id)===i);   // v68: a tile can only be in the path once
         this.selection.forEach(id=>{if(this.tiles[id])this.tiles[id].isSelected=false});
         this.selection=[];
         ids.forEach(id=>{if(this.tiles[id]){this.tiles[id].isSelected=true;this.selection.push(id)}});
@@ -5719,6 +5782,8 @@ class Game{
             case 'submit':
                 if(!guestTurn)return;
                 this.applySelection(m.sel||[]);
+                // v68: the path must be a real chain of neighbours (a modified client could send [3,3,3] or far-apart tiles)
+                if(this.selection.some((id,i)=>i>0&&!this.isAdjacent(this.tiles[this.selection[i-1]],this.tiles[id]))){this.clearSelection();return}
                 this.submitWord();
                 break;
             case 'shuffle':{
@@ -5726,7 +5791,7 @@ class Game{
                 const p=this.currentPlayer;
                 if(p.gems<CONFIG.costs.shuffle)return;
                 p.gems-=CONFIG.costs.shuffle;this.logAbility(p,'shuffle',CONFIG.costs.shuffle);
-                this.shuffleBoard();this.clearSelection();
+                this.clearSelection();this.shuffleBoard();
                 this.showToast('Board shuffled!');SFX.shuffle();this.updateUI();
                 break;}
             case 'zoomies':{
@@ -5841,7 +5906,7 @@ class Game{
         // _swapModalAt guard (350ms, in performSwap/closeSwapModal) stops the
         // same touch's ghost click from "choosing" a letter in the picker that
         // opens under the finger.
-        grid.addEventListener('pointerdown',e=>{if(this._dead||this.over)return;if(!this.myTurn)return;const id=gt(e.clientX,e.clientY);if(this.pendingSwap){if(id!==null)this.openSwapModal(id);e.preventDefault();return}if(id!==null){this.isDragging=true;this.handleTileClick(id)}e.preventDefault()});
+        grid.addEventListener('pointerdown',e=>{if(soundEnabled)initAudio();/*v68: first tap unlocks audio on iOS*/if(this._dead||this.over)return;if(e.isPrimary===false||(e.button!==undefined&&e.button!==0))return;if(!this.myTurn)return;const id=gt(e.clientX,e.clientY);if(this.pendingSwap){if(id!==null)this.openSwapModal(id);e.preventDefault();return}if(id!==null){this.isDragging=true;this.handleTileClick(id)}e.preventDefault()});
         grid.addEventListener('pointermove',e=>{if(this._dead||!this.isDragging||this.pendingSwap)return;const id=gt(e.clientX,e.clientY);if(id!==null&&!this.selection.includes(id)){const l=this.selection[this.selection.length-1];if(l!==undefined&&this.isAdjacent(this.tiles[l],this.tiles[id]))this.selectTile(this.tiles[id])}e.preventDefault()});
         const end=()=>{this.isDragging=false};
         grid.addEventListener('pointerup',end);grid.addEventListener('pointercancel',end);grid.addEventListener('pointerleave',end);
@@ -5974,6 +6039,7 @@ class Game{
             .then(res=>{
                 this.cloudPending=false;
                 if(this.over)return;
+                if(!res.ok&&res.status!==404){this.showToast('Couldn’t reach the cloud dictionary — add it as a custom word if it’s real');SFX.invalid();return}   // v68: 429/5xx ≠ "not a word"
                 if(res.ok){
                     addCustomWord(w);
                     this.showToast('📖 '+w+' is real — added to custom words!');
@@ -5990,9 +6056,12 @@ class Game{
     }
 
     endTurn(){
-        if(this._dead)return;   // v66
+        if(this._dead||this.over)return;   // v66 / v68: never advance a finished game
         if(this.timerInterval)clearInterval(this.timerInterval);
+        clearTimeout(this._expireTimer);this._expireTimer=null;   // v68: a word submitted inside the expiry grace must not end the turn twice
         this.cocoTimerActive=false;clearDictChecker();this.pendingSwap=false;
+        // v68: ability modals belong to the turn that opened them — a forced turn change (timer expiry, synced state) must not let them charge the next player
+        ['modal-swap','modal-shuffle-confirm','modal-zoomies-confirm'].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('hidden')});
         this.lastSwap=null;   // v62: the undo-swap window closes with the turn
         // Round 1 only: shuffle gem positions after each turn — but NOT on the
         // last turn of the round (endRound → upgradeMultipliersForNewRound →
@@ -6024,6 +6093,7 @@ class Game{
 
     endGame(){
         if(this.timerInterval)clearInterval(this.timerInterval);
+        clearTimeout(this._expireTimer);this._expireTimer=null;
         SFX.gameOver();
         this.players.forEach(p=>{p.gemBonus=p.gems;p.score+=p.gems});
         this.over=true;
@@ -6189,7 +6259,8 @@ class Game{
             t.hasGem=false;
         });
         for(let i=this.tiles.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[this.tiles[i],this.tiles[j]]=[this.tiles[j],this.tiles[i]]}
-        this.tiles.forEach((t,i)=>{t.id=i;t.r=Math.floor(i/5);t.c=i%5});
+        this.tiles.forEach((t,i)=>{t.id=i;t.r=Math.floor(i/5);t.c=i%5;t.isSelected=false});   // v68: ids move — no ghost selection
+        this.selection=[];
         const shuffled=fisherYates([...Array(25).keys()]);
         let si=0;
         mults.forEach(m=>{if(si<shuffled.length)this.tiles[shuffled[si++]].multiplier=m});
@@ -6197,6 +6268,7 @@ class Game{
     }
     // v39: Coco Zoomies — every letter rerolled; mult types kept, new spots; treats re-scattered
     zoomiesBoard(){
+        this.lastSwap=null;   // v68: fresh board — the swap can't be traced back (parity with shuffleBoard)
         const mults=this.tiles.map(t=>t.multiplier).filter(Boolean);
         for(let i=0;i<25;i++){
             const ch=LETTER_BAG[Math.floor(Math.random()*LETTER_BAG.length)];
@@ -6254,10 +6326,10 @@ class Game{
         if(this.timerInterval)clearInterval(this.timerInterval);
         this.timerInterval=setInterval(()=>{
             this.timeLeft--;this.updateTimerDisplay();
-            if(NET.async){if(this.turnIndex===NET.myIndex)NET.send({type:'__a',op:'move',state:this.serialize()});}
+            if(NET.async){if(this.turnIndex===NET.myIndex)NET.sendMove(this.serialize());}   // v68: sequenced like every other push
             else if(NET.mode==='host')NET.send({type:'timer',on:true,t:this.timeLeft});
             if(this.timeLeft<=5&&this.timeLeft>0)SFX.timerWarn();
-            if(this.timeLeft<=0){clearInterval(this.timerInterval);this.cocoTimerActive=false;if(NET.mode==='host'&&!NET.async)NET.send({type:'timer',on:false,t:0});this.clearSelection();this.showToast("🐾 Coco says time's up!");setTimeout(()=>this.endTurn(),800)}
+            if(this.timeLeft<=0){clearInterval(this.timerInterval);this.cocoTimerActive=false;if(NET.mode==='host'&&!NET.async)NET.send({type:'timer',on:false,t:0});this.clearSelection();this.showToast("🐾 Coco says time's up!");clearTimeout(this._expireTimer);this._expireTimer=setTimeout(()=>{this._expireTimer=null;this.endTurn()},800)}
         },1000);
     }
     // Victim side: if it's my turn and a Coco attack is pending on me, start the
@@ -6397,7 +6469,7 @@ class Game{
         });
         const grid=document.getElementById('grid');grid.innerHTML='';
         const ls=this.selection.length>0?this.selection[this.selection.length-1]:-1;
-        this.tiles.forEach(tile=>{const el=tile.render(tile.id===ls);el.onclick=()=>this.handleTileClick(tile.id);grid.appendChild(el)});
+        this.tiles.forEach(tile=>{const el=tile.render(tile.id===ls);grid.appendChild(el)});
         const calc=this.calculateCurrentScore();
         const wd=document.getElementById('word-display'),sp=document.getElementById('score-preview');
         if(calc.word){
@@ -6525,6 +6597,7 @@ function retireGame(){
     if(typeof game==='undefined'||!game)return;
     game._dead=true;
     if(game.timerInterval)clearInterval(game.timerInterval);
+    clearTimeout(game._expireTimer);
     clearTimeout(game._loungeTimer);
     FX.overlayUntil=0;FX.loungeUntil=0;FX.queue.length=0;
     cocoSayReset();   // the old game's queued bubble lines die with it
@@ -6548,13 +6621,15 @@ function showDefineModal(w,html){
     document.getElementById('define-body').innerHTML=html;
     document.getElementById('modal-define').classList.remove('hidden');
 }
+let DEF_PENDING=null;
 function defineWord(w){
     w=String(w||'').toUpperCase();
     if(!/^[A-Z]{2,15}$/.test(w))return;
     if(DEF_CACHE[w]){showDefineModal(w,DEF_CACHE[w]);return}
     showDefineModal(w,'<span style="color:var(--ink-dim)">Looking it up…</span>');
+    DEF_PENDING=w;
     fetch('https://api.dictionaryapi.dev/api/v2/entries/en/'+w.toLowerCase())
-        .then(r=>{if(!r.ok)throw 0;return r.json()})
+        .then(r=>{if(r.status===404)return [];if(!r.ok)throw 0;return r.json()})
         .then(j=>{
             const out=[];
             ((j[0]&&j[0].meanings)||[]).slice(0,3).forEach(m=>{
@@ -6562,11 +6637,12 @@ function defineWord(w){
                 if(d)out.push(`<div style="margin-bottom:9px"><em style="color:var(--purple-hi)">${escHtml(m.partOfSpeech)}</em> — ${escHtml(d.definition)}</div>`);
             });
             const html=out.length?out.join(''):'No definition found — might be one of yours! 🐾';
-            DEF_CACHE[w]=html;showDefineModal(w,html);
+            DEF_CACHE[w]=html;if(DEF_PENDING===w)showDefineModal(w,html);   // v68: a slower earlier lookup must not overwrite the word tapped last
         })
         .catch(()=>{
-            const html='No definition found — might be one of yours! 🐾';
-            DEF_CACHE[w]=html;showDefineModal(w,html);
+            // v68: a network blip / rate limit isn't "no such word" — don't cache it
+            if(DEF_PENDING!==w)return;
+            showDefineModal(w,'Couldn’t reach the dictionary — try again in a moment 🐾');
         });
 }
 
@@ -6771,7 +6847,8 @@ function launchGame(){
     if(soundEnabled)initAudio();
     saveSettings();
 
-    const sg=parseInt(document.getElementById('cfg-start-gems').value)||3;
+    const sgRaw=parseInt(document.getElementById('cfg-start-gems').value);
+    const sg=Number.isFinite(sgRaw)?sgRaw:3;   // v68: 0 is a valid choice (was ||3)
     CONFIG.startGems=Math.max(0,Math.min(CONFIG.maxGems,sg));
 
     CONFIG.cocoAttackEnabled=document.getElementById('cfg-coco-enabled').checked;
@@ -6786,7 +6863,7 @@ function launchGame(){
     CONFIG.costs.hint=Math.max(1,Math.min(10,hc));
     document.getElementById('hint-cost-label').innerHTML=CONFIG.costs.hint+'<span class="ticon"></span>';
 
-    const zc=parseInt(document.getElementById('cfg-zoomies-cost').value)||5;
+    const zc=parseInt(document.getElementById('cfg-zoomies-cost').value)||4;
     CONFIG.costs.zoomies=Math.max(1,Math.min(10,zc));
 
     document.querySelectorAll('.mult-toggle').forEach(label=>{
@@ -6874,9 +6951,9 @@ function populateLwRef(){
 function closeHistoryModal(){document.getElementById('modal-history').classList.add('hidden')}
 function closeSwapModal(){if(game&&Date.now()-(game._swapModalAt||0)<350)return;document.getElementById('modal-swap').classList.add('hidden');if(game){game.pendingSwap=false;game.updateUI()}}
 function closeShuffleConfirm(){document.getElementById('modal-shuffle-confirm').classList.add('hidden')}
-function confirmShuffle(){document.getElementById('modal-shuffle-confirm').classList.add('hidden');if(game&&NET.mode==='join'){NET.send({type:'act',kind:'shuffle'});return}if(game){const p=game.currentPlayer;p.gems-=CONFIG.costs.shuffle;game.logAbility(p,'shuffle',CONFIG.costs.shuffle);game.shuffleBoard();game.clearSelection();game.showToast('Board shuffled!');SFX.shuffle();game.updateUI()}}
+function confirmShuffle(){document.getElementById('modal-shuffle-confirm').classList.add('hidden');if(game&&NET.mode==='join'){NET.send({type:'act',kind:'shuffle'});return}if(game){if(!game.myTurn||game.over)return;const p=game.currentPlayer;if(p.gems<CONFIG.costs.shuffle){game.showToast('Not enough treats!');SFX.invalid();return}p.gems-=CONFIG.costs.shuffle;game.logAbility(p,'shuffle',CONFIG.costs.shuffle);game.clearSelection();game.shuffleBoard();game.showToast('Board shuffled!');SFX.shuffle();game.updateUI()}}
 function closeZoomiesConfirm(){document.getElementById('modal-zoomies-confirm').classList.add('hidden')}
-function confirmZoomies(){document.getElementById('modal-zoomies-confirm').classList.add('hidden');if(game&&NET.mode==='join'){NET.send({type:'act',kind:'zoomies'});return}if(game){const p=game.currentPlayer;if(p.gems<CONFIG.costs.zoomies){game.showToast('Not enough treats!');SFX.invalid();return}p.gems-=CONFIG.costs.zoomies;game.logAbility(p,'zoomies',CONFIG.costs.zoomies);game.zoomiesBoard();game.clearSelection();game.showToast('🌪 Coco zoomies — fresh board!');SFX.cocoAttack();game.updateUI()}}
+function confirmZoomies(){document.getElementById('modal-zoomies-confirm').classList.add('hidden');if(game&&NET.mode==='join'){NET.send({type:'act',kind:'zoomies'});return}if(game){if(!game.myTurn||game.over)return;const p=game.currentPlayer;if(p.gems<CONFIG.costs.zoomies){game.showToast('Not enough treats!');SFX.invalid();return}p.gems-=CONFIG.costs.zoomies;game.logAbility(p,'zoomies',CONFIG.costs.zoomies);game.zoomiesBoard();game.clearSelection();game.showToast('🌪 Coco zoomies — fresh board!');SFX.cocoAttack();game.updateUI()}}
 </script>
 </body>
 </html>
