@@ -1,0 +1,36 @@
+name: checks
+on: [push, pull_request]
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax-check the inline app script
+        run: |
+          python3 - <<'PY'
+          import re,sys
+          h=open('index.html',encoding='utf-8').read()
+          blocks=re.findall(r'<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>',h,re.S)
+          if not blocks: sys.exit('inline <script> block not found')
+          open('/tmp/app.js','w',encoding='utf-8').write('\n'.join(blocks))
+          PY
+          node --check /tmp/app.js
+      - name: Syntax-check the service worker
+        run: node --check sw.js
+      - name: Syntax-check the relay worker (ES module)
+        run: cp worker/src/index.js /tmp/worker.mjs && node --check /tmp/worker.mjs
+      - name: manifest.json parses and its icons exist
+        run: |
+          node -e "
+            const m=JSON.parse(require('fs').readFileSync('manifest.json','utf8'));
+            for(const i of m.icons){ if(!require('fs').existsSync(i.src)) { console.error('missing icon', i.src); process.exit(1);} }
+          "
+      - name: APP_VERSION matches the newest CHANGELOG entry
+        run: |
+          V=$(grep -oP "APP_VERSION='\K[^']+" index.html)
+          H=$(grep -m1 -oP '^SPELLCOCO \Kv[0-9.]+' CHANGELOG.md)
+          echo "APP_VERSION=$V  CHANGELOG=$H"
+          [ -n "$V" ] && [ "$V" = "$H" ]
