@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <!-- v67: Content Security Policy — every origin the game legitimately
+    <!-- v67 (v69: relay host removed): Content Security Policy — every origin the game legitimately
          talks to, nothing else. External scripts are pinned to cdnjs (PeerJS,
          which also carries an SRI hash below); connect-src covers the two
          Cloudflare relays, the PeerJS cloud broker, and the dictionary API.
@@ -19,6 +19,18 @@
 
     <!--
     ================================================================
+    SPELLCOCO v69.1 — REGRESSION FIXES FROM THE v68/v69 REVIEW
+    - pendingStart re-send now runs before the move replay and sends the
+      current board; a reject{game-over} while a start is pending no longer
+      resurrects the old recap. Busy/full welcomes mid-game drop the socket
+      but keep the room identity (NET.disconnect) so netNudge can recover.
+      DEF_PENDING set before the cache hit; AudioContext.resume() rejections
+      swallowed; solo flag never accepted from a peer config; P2P superseded
+      pipe guarded; sw.js tolerates a bad push URL; APP_VERSION bumped.
+    - Worker: bad-state rejects echo q so the client retires the move;
+      lastWrite throttled to hourly; idle alarm ignores dead sockets; push
+      URLs must be https.
+
     SPELLCOCO v69 — SERVER HARDENING (worker source now lives in worker/)
     - Worker: WebSocket hibernation (idle rooms no longer billed), seat
       required for newgame, state validation + storage-error rejects,
@@ -3878,6 +3890,9 @@ const NET={
         if(this.async){this.gameCode=this.code;this.pendingMove=null;/*v64: fresh game, fresh ledger*/lsDel('spellcoco.gover.'+this.code);this._regTurn=null;const sm={type:'__a',op:'newgame',state:game.serialize(),config:CONFIG,q:++this.moveSeq};this.pendingStart={m:sm,q:sm.q,code:this.code,at:Date.now()};this.send(sm);showInGameRoom();regTurnSync();return}
         this.send({type:'start',config:CONFIG,state:game.serialize(),customs:localCustomWords,guestName:gn});
     },
+    // v69.1: drop the socket but keep the room identity, so a later netNudge can
+    // knock again (used on the busy/full welcome paths, which can happen mid-game).
+    disconnect(){if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.connected=false;hbStop();updateNetDots&&updateNetDots();},
     cleanup(){this.pendingMove=null;this.pendingStart=null;/*v64: never re-push into a different room*/if(this.peer){try{this.peer.destroy()}catch(e){}}this.peer=null;this.conn=null;if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.reconnectTries=0;this.transport=this.useRelay?'relay':'p2p';this.everConnected=false;this.connected=false;/*v68: leave the async room for real — a stale async flag/code hijacked later local games (netNudge reconnect, sendMove, saveGameState skip, cocoAttack, stats key)*/this.async=false;this.code='';this.gameCode='';this.seat=null;this.myIndex=-1;hbStop();}
 };
 function genCode(){const a='ABCDEFGHJKMNPQRSTUVWXYZ23456789';let c='';for(let i=0;i<4;i++)c+=a[Math.floor(Math.random()*a.length)];return c}
@@ -4146,6 +4161,7 @@ function asyncOnMessage(m){
             // not a scolding. Adopt the authoritative state quietly.
             if(NET.pendingMove&&m.q!=null&&m.q===NET.pendingMove.q){
                 NET.pendingMove=null;
+                if(NET.pendingStart&&m.reason==='game-over'){NET.pendingMove={m:m,q:m.q,at:Date.now()};break;}   // v69.1: the room still holds the OLD game — our newgame is being re-sent; keep the move for after it lands
                 if(m.state&&m.state.over){if(game)game.over=true;asyncShowEnding(m.state);}
                 else if(m.state&&game&&!game.over){game.applyState(m.state);asyncTurnHint();}
                 break;
@@ -4248,7 +4264,8 @@ function asyncWelcome(m){
         }
         const el=document.getElementById(UI_MODE==='join'?'join-status':'host-status');
         if(el)el.innerText='⚠ '+NET.myName+' is already playing in this room on another device';
-        NET.cleanup();return;
+        if(game&&!game.over)game.showToast('⚠ '+NET.myName+' is live on another device — this one is paused');   // v69.1: say it where a mid-game player can see it
+        NET.disconnect();return;
     }
     NET.__busyTries=0;
     // v55: room already holds two OTHER players and we aren't one of them. If this
@@ -4256,7 +4273,7 @@ function asyncWelcome(m){
     if(m.full){
         const known=recallId(NET.code);
         if(known&&m.names&&m.names.indexOf(known)>=0&&!NET.__rehello){NET.__rehello=true;ONLINE_LOCKED=false;NET.myName=known;pickSide(known);try{sendHello();}catch(e){}return;}
-        const el=document.getElementById(UI_MODE==='join'?'join-status':'host-status');if(el)el.innerText='⚠ This game already has two players';NET.cleanup();return;
+        const el=document.getElementById(UI_MODE==='join'?'join-status':'host-status');if(el)el.innerText='⚠ This game already has two players';if(game&&!game.over)game.showToast('⚠ This room already has two players');NET.disconnect();return;
     }
     // v55: identity-collision guard. The relay seats by NAME, so a JOIN-mode client
     // that lands on seat 0 has matched the HOST's name — take the open seat instead.
@@ -4283,13 +4300,18 @@ function asyncWelcome(m){
     announceSide();   // v55: tell the peer our FINAL identity so they can lock too
     asyncSyncWords();   // v54: share custom words on connect (consent + dictionary sync)
     registerPushWithRoom();   // v62: refresh this device's turn-alert subscription for this room
-    NET.resendPending();   // v64: an unacked move survives the reconnect — push it again first thing
     // v68: our newgame never landed (half-open socket) — the room still shows the
     // finished game. Re-send the fresh board rather than resurrecting the recap.
+    // v69.1: this must run BEFORE resendPending (a replayed move against the old
+    // finished room comes back reject{game-over,q} and would be taken as an ack
+    // that resurrects the recap), and it sends the CURRENT board, not the
+    // snapshot taken at Start (moves made since must not be wiped).
     if(NET.pendingStart&&NET.pendingStart.code===NET.code&&game&&!game.over&&(!m.state||m.state.over)){
-        NET.send(NET.pendingStart.m);showInGameRoom();asyncTurnHint();return;
+        const sm=Object.assign({},NET.pendingStart.m,{state:game.serialize()});
+        NET.pendingStart.m=sm;NET.send(sm);showInGameRoom();asyncTurnHint();return;
     }
     NET.pendingStart=null;   // the room reflects a live game — nothing to re-push
+    NET.resendPending();   // v64: an unacked move survives the reconnect — push it again first thing
     // v58: if WE moved while offline, the server is one move behind — its state
     // still shows it as OUR turn while our local board has already flipped. Turn
     // enforcement makes replaying safe (nobody else could have moved), so push
@@ -4310,7 +4332,7 @@ function asyncWelcome(m){
     }
 }
 function asyncLoadGame(state,config){
-    if(config)CONFIG=normalizeConfig(config);
+    if(config){CONFIG=normalizeConfig(config);CONFIG.solo=null;}   // v69.1: solo is never networked — a peer config must not switch us into vs-Coco mode
     soundEnabled=document.getElementById('sound-toggle').checked;
     document.getElementById('btn-mute').innerText=soundEnabled?'🔊':'🔇';
     if(soundEnabled)initAudio();
@@ -4940,7 +4962,7 @@ function _hostGameP2P(){
                 game.showRoundOverlay(`Round ${game.round}`,`Resumed — ${game.currentPlayer.name}'s turn`);
             }
         });
-        conn.on('data',m=>hostOnData(m));
+        conn.on('data',m=>{if(NET.conn===conn)hostOnData(m)});   // v69.1: a superseded pipe must not keep feeding the host
         conn.on('close',()=>{
             if(NET.conn!==conn)return;   // v68: a superseded connection closing must not mark the live one as gone
             NET.connected=false;NET.oppPresent=false;NET.setPill('⚠','bad','Online: disconnected');
@@ -5007,7 +5029,7 @@ function guestOnData(m){
     }
 }
 function guestStart(m){
-    CONFIG=normalizeConfig(m.config);
+    CONFIG=normalizeConfig(m.config);CONFIG.solo=null;   // v69.1: never from the wire
     if(typeof m.guestName==='string'&&m.guestName)NET.myName=validPlayerName(m.guestName); // v42: final (deduped) identity
     mergeRemoteWords(m.customs);
     soundEnabled=document.getElementById('sound-toggle').checked;
@@ -5468,8 +5490,9 @@ if(_zoomSlot)_zoomSlot.innerHTML=COCO_ZOOM;
 
 // Sound
 let audioCtx=null,soundEnabled=false,soundVolume=0.5;
-function initAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==='suspended')audioCtx.resume()}
-function playTone(f,dur,type='sine',vol=1){if(!soundEnabled||!audioCtx)return;if(audioCtx.state!=='running'){try{audioCtx.resume()}catch(e){}}   // v68: guests/async loads create the context outside a gesture — iOS keeps it suspended until a resume() lands inside one
+function audioResume(){try{const p=audioCtx&&audioCtx.resume();if(p&&p.catch)p.catch(()=>{})}catch(e){}}
+function initAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==='suspended')audioResume()}
+function playTone(f,dur,type='sine',vol=1){if(!soundEnabled||!audioCtx)return;if(audioCtx.state!=='running')audioResume();   // v68: guests/async loads create the context outside a gesture — iOS keeps it suspended until a resume() lands inside one
 const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type=type;o.frequency.setValueAtTime(f,audioCtx.currentTime);g.gain.setValueAtTime(vol*soundVolume*0.3,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+dur);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+dur)}
 const SFX={tileSelect(){playTone(880,0.08,'sine',0.6)},tileDeselect(){playTone(440,0.06,'sine',0.3)},submit(){playTone(523,0.12,'sine',0.7);setTimeout(()=>playTone(659,0.12,'sine',0.7),80);setTimeout(()=>playTone(784,0.15,'sine',0.8),160)},longWord(){playTone(523,0.1,'sine',0.8);setTimeout(()=>playTone(659,0.1,'sine',0.8),100);setTimeout(()=>playTone(784,0.1,'sine',0.8),200);setTimeout(()=>playTone(1047,0.25,'sine',1),300)},invalid(){playTone(200,0.2,'square',0.4)},shuffle(){for(let i=0;i<5;i++)setTimeout(()=>playTone(300+Math.random()*400,0.05,'sine',0.3),i*40)},swap(){playTone(600,0.15,'triangle',0.5)},timerWarn(){playTone(440,0.1,'square',0.5)},gameOver(){[523,659,784,1047].forEach((f,i)=>setTimeout(()=>playTone(f,0.3,'sine',0.6),i*200))},cocoAttack(){playTone(330,0.15,'sawtooth',0.6);setTimeout(()=>playTone(440,0.15,'sawtooth',0.7),120);setTimeout(()=>playTone(550,0.2,'sawtooth',0.8),240)}};
 // v56: a soft purr when you pet the lounging Coco. Plays on a deliberate tap even
@@ -6634,9 +6657,9 @@ let DEF_PENDING=null;
 function defineWord(w){
     w=String(w||'').toUpperCase();
     if(!/^[A-Z]{2,15}$/.test(w))return;
+    DEF_PENDING=w;   // v69.1: set before the cache check so a slower earlier lookup can't overwrite a cached hit
     if(DEF_CACHE[w]){showDefineModal(w,DEF_CACHE[w]);return}
     showDefineModal(w,'<span style="color:var(--ink-dim)">Looking it up…</span>');
-    DEF_PENDING=w;
     fetch('https://api.dictionaryapi.dev/api/v2/entries/en/'+w.toLowerCase())
         .then(r=>{if(r.status===404)return [];if(!r.ok)throw 0;return r.json()})
         .then(j=>{
@@ -6692,7 +6715,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v67.5';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v69.1';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){
