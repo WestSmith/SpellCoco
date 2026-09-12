@@ -1,0 +1,20 @@
+# SpellCoco async relay — deploy with `npx wrangler deploy` from this folder
+# (CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID in the environment).
+#
+# `name` and `class_name` MUST stay exactly as they are: the Durable Object
+# namespace holding every room is keyed by them, and the client hardcodes the
+# spellcoco-async.spellcoco.workers.dev hostname.
+# Never add a [[migrations]] block here — the Room class already exists; a
+# migration is only for creating, renaming, or deleting DO classes.
+# The VAPID_JWK secret lives on the worker (wrangler secret put), not here.
+name = "spellcoco-async"
+main = "src/index.js"
+compatibility_date = "2025-05-01"
+workers_dev = true
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+[observability]
+enabled = true
