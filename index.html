@@ -19,6 +19,15 @@
 
     <!--
     ================================================================
+    SPELLCOCO v67.5 — FIX: tied game showed a winner
+    ================================================================
+    A 293–293 Keith–Shawn game was recorded as a draw (the stats
+    code checks equal scores) but the recap banner crowned whoever
+    sat in seat 0: renderRecap took players[0] unconditionally.
+    Now a tied top score renders "It's a draw at N pts!" and both
+    tied players get the crown instead of "#2". Display only —
+    scoring and the all-time record are unchanged.
+    ================================================================
     SPELLCOCO v67.4 — SECURITY: malformed selection + cocoPendingFor
     ================================================================
     Sixth audit pass — two availability issues, no XSS remaining.
@@ -6033,7 +6042,12 @@ class Game{
 
     renderRecap(players){
         const winner=players[0];
-        document.getElementById('winner-banner').innerText=`👑 ${winner.name} Wins with ${winner.score} pts!`;
+        // v67.5: a tied top score is a draw — recordGameStats already counted it
+        // as one, but the banner used to crown whoever sat in seat 0.
+        const tied=players.length>1&&players[1].score===winner.score;
+        document.getElementById('winner-banner').innerText=tied
+            ?`🤝 It's a draw at ${winner.score} pts!`
+            :`👑 ${winner.name} Wins with ${winner.score} pts!`;
 
         let html='<div style="text-align:center;font-size:0.92rem;color:var(--ink-soft);margin-bottom:10px;">🏆 '+statsRecordLine()+'</div>';
         players.forEach((p,pi)=>{
@@ -6045,7 +6059,7 @@ class Game{
 
             html+=`<div class="recap-player">
                 <div class="recap-header">
-                    <div><span class="recap-rank">${pi===0?'👑':'#'+(pi+1)}</span> <span class="recap-name">${p.name}</span></div>
+                    <div><span class="recap-rank">${(pi===0||tied&&p.score===winner.score)?'👑':'#'+(pi+1)}</span> <span class="recap-name">${p.name}</span></div>
                     <span class="recap-total">${p.score} pts</span>
                 </div>
                 <div class="recap-stats">
@@ -6593,7 +6607,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v67.4';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v67.5';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){
