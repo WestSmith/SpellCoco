@@ -4,6 +4,56 @@ Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
 ```
 ================================================================
+SPELLCOCO v71 — AUDIT ROUND (2026-09-13)
+An external audit of v70 (docs/audit/2026-09-12-v70.md) found 13 issues.
+All 13 are addressed here; 61 regression tests run in CI.
+- FIX (online rollback): the relay now keeps a room REVISION. Every push
+  carries the revision the board was built on (`base`); a snapshot that
+  predates somebody ELSE's write (the opponent's move, a Coco Attack, a
+  rematch) is refused as reject{stale} instead of stored — the replayed
+  move after a lost ack used to roll the room back a whole turn, and a
+  selection sync racing a Coco Attack used to erase the attack and refund
+  the treats. A seat's own rapid pushes never trip it; pre-v71 clients
+  without `base` are accepted as before.
+- FIX (lost move): the tracked "your move is safe" move is now ALSO stored
+  in localStorage (spellcoco.pending.<room>); a refreshed or evicted tab
+  re-pushes it on the next welcome and shows it once the room accepts it.
+  If the room moved on meanwhile the player is told the move didn't land.
+- FIX (stats): the all-time record is sent over the async relay on every
+  welcome and when the opponent arrives — only the dormant P2P/legacy
+  paths ever sent it, so "synced between devices" was not true online.
+  (The merge is still take-the-maximum per counter, as before.)
+- FIX (missed rematch): recaps are deduplicated per MATCH — every game
+  has an id that rides serialize() and the gameover op — so a device that
+  missed an entire rematch records it when it returns, instead of skipping
+  it because the room's flag was still set from the previous game.
+- Worker: block forged server-only relay operations; allowlist supported
+  side messages; reject malformed playable states and final recaps before
+  persisting them. This validates shape, not authoritative game rules.
+- Coco Attack: activate restored games after installing the game and seat;
+  resume the saved countdown on its owning client, persist local ticks,
+  and cancel an old timer when an authoritative turn/ending replaces it.
+- Dictionary: bound both downloads (including body reads), index after
+  fallback, report readiness only after indexing, filter imports to A-Z,
+  and defensively skip unsupported letters in the swap solver.
+- Cloud assist: enable Submit for eligible unknown words; ignore late
+  responses after the game, turn, or selection changes.
+- Keyboard: native letter buttons, arrow navigation, Enter/Space selection,
+  Backspace/Escape, retained focus, and a keyboard-operable swap picker.
+- Guest identities: reserve suffix space and avoid an identical fallback.
+- Review fixes on the audit's own patch: incoming states coerce
+  over/cocoTimerActive to booleans (the stricter relay validation would
+  otherwise reject every later push from a client that received a stray
+  undefined); a Space-key activation can no longer double-fire through the
+  synthesized click.
+- Tests: Node regression suite (tests/) runs in CI. The audit's original
+  reproduction script is preserved in tests/reproduce-v70.mjs.
+- DEPLOY: worker/src/index.js must be redeployed (wrangler deploy) — the
+  client works against the old worker (no rev ⇒ no stale check), but the
+  rollback fix needs the new one.
+================================================================
+
+================================================================
 SPELLCOCO v70 — REVIEW ROUND 3 (2026-09-12)
 - FIX: reject{game-over} while a rematch is pending kept the move tracked
   correctly (v69.1 stored the reject itself and re-sent it every 20s,

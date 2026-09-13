@@ -10,10 +10,24 @@
 //   - Coco Attack cost/enabled come from the stored config, and the attacker
 //     must be the non-active seat.
 //   - only seated players may relay side-channel messages (stats, customs, fx).
+//     v71: and only the allow-listed async side messages (customs, stats, side,
+//     fx, wordreq/wordok/wordno/addword, undoreq/undook/undono). The dormant
+//     host-authoritative relay protocol (start/state/timer/act/sel/gameover as
+//     plain `type`) is NOT relayed any more — it is unreachable while the client
+//     hard-codes useAsync=true, and re-opening it would re-open the forgery hole.
 //   - newgame is acked with moveok {q} like a move.
 //   - rooms idle for 90 days are wiped by an alarm.
 //
-// Wire protocol (unchanged from v62): every game message is {type:'__a', op}.
+// v71 (2026-09-13): revisions. Every accepted write bumps a room-wide `rev`,
+//   and the room remembers, per seat, the newest rev that seat did NOT author
+//   (`fr`). A move/newgame carrying `base` (the rev the client's board was built
+//   on) is rejected as `stale` when base < fr[seat]: the opponent moved, a Coco
+//   Attack landed, or a rematch started since the client last looked, so the
+//   snapshot would roll that back. A client's own successive pushes (selection
+//   syncs) never trip it. Clients without `base` (pre-v71) are accepted as before.
+//   welcome/moveok/state/newgame/reject/gameover all carry the current rev.
+//
+// Wire protocol (v62 envelope + v71 rev/base): every game message is {type:'__a', op}.
 //   client → server: hello, peek, ping, move, newgame, gameover, coco, push, pushoff
 //   server → client: welcome, roster, pong, moveok, reject, state, newgame,
 //                    gameover, peer, pushok
@@ -42,14 +56,43 @@ export default {
   }
 };
 
+const record = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+const integer = (v, max) => Number.isInteger(v) && v >= 0 && v <= max;
+const seatIndex = (v) => v === 0 || v === 1;
+const word = (v) => typeof v === "string" && /^[A-Z]{2,15}$/.test(v);
+function validPlayer(p) {
+  return record(p) && typeof p.name === "string" && p.name.length > 0 && p.name.length <= 24
+    && integer(p.score, Number.MAX_SAFE_INTEGER) && integer(p.gems, 9999)
+    && (p.wordsPlayed == null || Array.isArray(p.wordsPlayed));
+}
 function validState(s) {
-  if (!s || typeof s !== "object" || Array.isArray(s)) return false;
-  if (!Array.isArray(s.players) || s.players.length !== 2) return false;
-  if (!Array.isArray(s.tiles) || s.tiles.length !== 25) return false;
-  try { if (JSON.stringify(s).length > MAX_STATE_BYTES) return false; } catch { return false; }
+  if (!record(s)) return false;
+  if (!Array.isArray(s.players) || s.players.length !== 2 || !s.players.every(validPlayer)) return false;
+  if (!seatIndex(s.turnIndex) || !seatIndex(s.startIndex) || !integer(s.round, 99) || s.round < 1) return false;
+  if (!Array.isArray(s.tiles) || s.tiles.length !== 25 || !s.tiles.every((t) =>
+    record(t) && typeof t.char === "string" && /^[A-Z]$/.test(t.char)
+    && [null, "DL", "TL", "2W", "3W"].includes(t.mult) && typeof t.gem === "boolean")) return false;
+  if (!Array.isArray(s.sel) || s.sel.some((id) => !integer(id, 24)) || new Set(s.sel).size !== s.sel.length) return false;
+  if (typeof s.over !== "boolean" || typeof s.cocoTimerActive !== "boolean" || !integer(s.timeLeft, Number.MAX_SAFE_INTEGER)) return false;
+  if (s.cocoPendingFor != null && !seatIndex(s.cocoPendingFor)) return false;
+  if (s.finalPlayers != null && (!Array.isArray(s.finalPlayers) || s.finalPlayers.length !== 2 || !s.finalPlayers.every(validPlayer))) return false;
+  try { if (new TextEncoder().encode(JSON.stringify(s)).byteLength > MAX_STATE_BYTES) return false; } catch { return false; }
   return true;
 }
+function validSideMessage(m) {
+  switch (m.type) {
+    case "customs": return Array.isArray(m.words) && m.words.every(word);
+    case "stats": return record(m.stats);
+    case "side": return typeof m.host === "string" || typeof m.guest === "string";
+    case "fx": return true; // The client sanitizes each supported effect field.
+    case "wordreq": case "wordok": case "wordno": case "addword": return word(m.w);
+    case "undoreq": return typeof m.from === "string" && typeof m.to === "string" && /^[A-Z]$/.test(m.from) && /^[A-Z]$/.test(m.to);
+    case "undook": case "undono": return true;
+    default: return false;
+  }
+}
 function seated(info) { return !!info && info.seat != null && info.seat !== -1; }
+const revOf = (v) => (Number.isInteger(v) && v >= 0) ? v : null;
 
 export class Room {
   constructor(state, env) {
@@ -109,10 +152,32 @@ export class Room {
       if (m.op === "coco") return this.onCoco(ws, m);
       if (m.op === "push") return this.onPush(ws, m);
       if (m.op === "pushoff") return this.onPushOff(ws, m);
+      return; // Reserved protocol: never forward client-forged server messages.
     }
     // Side channel (customs, stats, fx, word/undo requests): seated players only.
-    if (!seated(inf)) return;
+    if (!seated(inf) || !validSideMessage(m)) return;
     this.toOthers(ws, m);
+  }
+
+  // ---- v71 revisions ----
+  async rev() { return (await this.state.storage.get("rev")) || 0; }
+  // Is `base` (the rev the client's snapshot was built on) older than the last
+  // write somebody ELSE made? Missing/invalid base ⇒ legacy client ⇒ no check.
+  async stale(seat, base) {
+    base = revOf(base);
+    if (base == null) return false;
+    const fr = (await this.state.storage.get("fr")) || [0, 0];
+    return base < (fr[seat] || 0);
+  }
+  // Record an accepted write by `by` (a seat, or -1 for a server-side change
+  // such as Coco Attack): bump rev, and mark it foreign to every other seat.
+  async bump(by) {
+    const r = (await this.rev()) + 1;
+    const fr = (await this.state.storage.get("fr")) || [0, 0];
+    for (const s of [0, 1]) if (s !== by) fr[s] = r;
+    await this.state.storage.put("rev", r);
+    await this.state.storage.put("fr", fr);
+    return r;
   }
 
   // A player announces who they are; assign/restore their seat by NAME so the
@@ -157,7 +222,7 @@ export class Room {
     this.setInfo(ws, { seat, name, last: Date.now() });
     const game = await this.state.storage.get("game") || null;
     const config = await this.state.storage.get("config") || null;
-    this.send(ws, { type: "__a", op: "welcome", seat, full: seat === -1, names: seats.map((s) => s ? s.name : null), state: game, config });
+    this.send(ws, { type: "__a", op: "welcome", seat, full: seat === -1, names: seats.map((s) => s ? s.name : null), state: game, config, rev: await this.rev() });
     if (seat !== -1) this.toOthers(ws, { type: "__a", op: "peer", seat, name, present: true });
     await this.touch();
   }
@@ -174,9 +239,14 @@ export class Room {
     // Echo q: a bad state can't be fixed by re-pushing, so let the client retire it.
     if (!validState(m.state)) { this.send(ws, { type: "__a", op: "reject", reason: "bad-state", q: m.q, state: null }); return; }
     const game = await this.state.storage.get("game");
-    if (game && game.over && !m.state.over) { this.send(ws, { type: "__a", op: "reject", reason: "game-over", q: m.q, state: game }); return; }
+    const rev = await this.rev();
+    if (game && game.over && !m.state.over) { this.send(ws, { type: "__a", op: "reject", reason: "game-over", q: m.q, state: game, rev }); return; }
+    // v71: the snapshot was built before somebody else's write landed — storing it
+    // would roll that write back (the READING-style replay after a lost ack, or a
+    // selection sync racing a Coco Attack). The client adopts the state we return.
+    if (game && await this.stale(me.seat, m.base)) { this.send(ws, { type: "__a", op: "reject", reason: "stale", q: m.q, state: game, rev }); return; }
     if (game && typeof game.turnIndex === "number" && game.turnIndex !== me.seat) {
-      this.send(ws, { type: "__a", op: "reject", reason: "not-your-turn", q: m.q, state: game }); return;
+      this.send(ws, { type: "__a", op: "reject", reason: "not-your-turn", q: m.q, state: game, rev }); return;
     }
     if (game && game.over) {
       m.state.over = true;
@@ -184,8 +254,9 @@ export class Room {
     }
     await this.state.storage.put("game", m.state);
     if (m.config && typeof m.config === "object") await this.state.storage.put("config", m.config);
-    this.send(ws, { type: "__a", op: "moveok", q: m.q });
-    this.toOthers(ws, { type: "__a", op: "state", state: m.state });
+    const nrev = await this.bump(me.seat);
+    this.send(ws, { type: "__a", op: "moveok", q: m.q, rev: nrev });
+    this.toOthers(ws, { type: "__a", op: "state", state: m.state, rev: nrev });
     await this.touch();
     if (!m.state.over && typeof m.state.turnIndex === "number")
       this.notifySeat(m.state.turnIndex, `${me.name || "Your opponent"} played — your move!`).catch(() => {});
@@ -196,12 +267,17 @@ export class Room {
   async onGameOver(ws, m) {
     const me = this.info(ws);
     if (!seated(me)) { this.send(ws, { type: "__a", op: "reject", reason: "no-seat", state: null }); return; }
+    if (!Array.isArray(m.players) || m.players.length !== 2 || !m.players.every(validPlayer)) {
+      this.send(ws, { type: "__a", op: "reject", reason: "bad-state", state: null }); return;
+    }
     const game = await this.state.storage.get("game");
     if (game && typeof game === "object") {
       game.over = true;
       if (Array.isArray(m.players)) game.finalPlayers = m.players.slice(0, 2);
+      if (!validState(game)) { this.send(ws, { type: "__a", op: "reject", reason: "bad-state", state: null }); return; }
       await this.state.storage.put("game", game);
     }
+    m.rev = await this.bump(me.seat);
     this.toOthers(ws, m);
     await this.touch();
     this.notifySeat(1 - me.seat, "Game over — open SpellCoco for the recap \u{1F3C6}").catch(() => {});
@@ -211,10 +287,15 @@ export class Room {
     const me = this.info(ws);
     if (!seated(me)) { this.send(ws, { type: "__a", op: "reject", reason: "no-seat", q: m.q, state: null }); return; }
     if (!validState(m.state)) { this.send(ws, { type: "__a", op: "reject", reason: "bad-state", q: m.q, state: null }); return; }
+    // v71: a rematch pushed from a board that predates the opponent's own rematch
+    // (both tapped Rematch while apart) would wipe theirs — same stale rule as moves.
+    const game = await this.state.storage.get("game");
+    if (game && await this.stale(me.seat, m.base)) { this.send(ws, { type: "__a", op: "reject", reason: "stale", q: m.q, state: game, rev: await this.rev() }); return; }
     await this.state.storage.put("game", m.state);
     if (m.config && typeof m.config === "object") await this.state.storage.put("config", m.config);
-    if (m.q != null) this.send(ws, { type: "__a", op: "moveok", q: m.q });
-    this.toOthers(ws, { type: "__a", op: "newgame", state: m.state, config: m.config || null });
+    const nrev = await this.bump(me.seat);
+    if (m.q != null) this.send(ws, { type: "__a", op: "moveok", q: m.q, rev: nrev });
+    this.toOthers(ws, { type: "__a", op: "newgame", state: m.state, config: m.config || null, rev: nrev });
     await this.touch();
     this.notifySeat(1 - me.seat, `${me.name || "Your opponent"} started a new game — come play!`).catch(() => {});
   }
@@ -240,7 +321,7 @@ export class Room {
     atk.gems -= cost;
     game.cocoPendingFor = victim;
     await this.state.storage.put("game", game);
-    const msg = { type: "__a", op: "state", state: game };
+    const msg = { type: "__a", op: "state", state: game, rev: await this.bump(-1) };   // v71: foreign to BOTH seats — a selection sync in flight must not erase the mark
     this.send(ws, msg);
     this.toOthers(ws, msg);
     await this.touch();

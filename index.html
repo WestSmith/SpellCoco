@@ -597,6 +597,7 @@
         }
 
         .tile{
+            padding:0;border:none;
             background:linear-gradient(175deg,var(--tile-face) 0%,var(--tile-face-alt) 100%);
             color:var(--tile-ink);
             min-width:0;min-height:0; /* v43: let 1fr tracks rule, not content */
@@ -617,6 +618,7 @@
             touch-action:none;
             text-shadow:0 1px 0 rgba(255,255,255,0.45);
         }
+        .tile:focus-visible,.swap-tile:focus-visible{outline:3px solid var(--coco-eyes-hi);outline-offset:3px;}
         .tile:active:not(.selected):not(.path-tile){
             transform:translateY(4px);
             box-shadow:0 1px 0 var(--tile-shadow), inset 0 1px 0 rgba(255,255,255,0.3);
@@ -2071,7 +2073,7 @@
     </div>
 
     <div class="grid-panel">
-        <div class="grid-frame"><div class="grid" id="grid"></div></div>
+        <div class="grid-frame"><div class="grid" id="grid" role="group" aria-label="Letter board" aria-describedby="board-keys"></div><span id="board-keys" class="sr-only">Arrow keys move between tiles. Enter or Space selects a letter. Backspace removes the last letter. Escape clears the word.</span></div>
     </div>
 </div>
 
@@ -2350,9 +2352,9 @@
     </div>
 </div>
 
-<div id="modal-swap" class="modal hidden">
+<div id="modal-swap" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="swap-heading" onkeydown="handleSwapKey(event)">
     <div class="modal-content">
-        <h3>Choose a Letter</h3>
+        <h3 id="swap-heading">Choose a Letter</h3>
         <p style="font-size:0.95rem;color:var(--ink-soft);margin-bottom:8px;">Replace the selected tile</p>
         <div class="swap-grid" id="swap-options"></div>
         <button class="btn-clear" style="margin-top:16px;max-width:none;width:100%;" onclick="closeSwapModal()">Cancel</button>
@@ -2627,7 +2629,7 @@ function findBestWordWithSwap(tiles){
         if(nx)take(id,nx,t.char,t.baseValue,swap);
         if(!swap){
             for(const ch in node.children){
-                if(ch===t.char)continue;
+                if(ch===t.char||!Object.prototype.hasOwnProperty.call(LETTERS,ch))continue;
                 take(id,node.children[ch],ch,LETTERS[ch].val,{id:id,from:t.char,to:ch});
             }
         }
@@ -2786,6 +2788,23 @@ const NET={
     hbTimer:null,hbWaiting:false,hbSupported:false,gameCode:'',_offNote:false, // v58: keepalive + offline-move bookkeeping
     pendingMove:null,moveSeq:0, // v64: last turn-completing move, held until the server acks it
     pendingStart:null, // v68: the newgame op, held until the room reflects it (a dropped newgame used to resurrect the old recap + double-count stats)
+    rev:null, // v71: the room revision our board was built on — every push carries it as `base`, and the relay refuses a snapshot that predates somebody else's write
+    noteRev(r){if(Number.isInteger(r)&&r>=0&&(this.rev==null||r>this.rev))this.rev=r},
+    pendKey(){return 'spellcoco.pending.'+this.code},
+    // v71: the tracked move also lives in localStorage — "your move is safe" used
+    // to mean "safe until the tab is refreshed or evicted".
+    savePending(){if(this.pendingMove&&this.code)lsSet(this.pendKey(),{m:this.pendingMove.m,q:this.pendingMove.q,at:this.pendingMove.at})},
+    clearPending(){this.pendingMove=null;if(this.code)lsDel(this.pendKey())},
+    // Called on every welcome: pick up a move a previous page load never got acked.
+    // Its `base` is the revision it was made on, so a stale replay is refused by
+    // the relay (reject{stale}) rather than rolling the room back.
+    restorePending(){
+        if(!this.async||this.pendingMove||!this.code)return;
+        const p=lsGet(this.pendKey(),null);
+        if(!p||!p.m||typeof p.m!=='object'||p.m.type!=='__a'||p.m.op!=='move'||!p.m.state||typeof p.m.state!=='object'||!Number.isInteger(p.q)){lsDel(this.pendKey());return}
+        this.pendingMove={m:p.m,q:p.q,at:p.at||Date.now(),restored:true};
+        if(p.q>this.moveSeq)this.moveSeq=p.q;
+    },
     guestName:null,oppName:null, // v42: joiner's declared name (host side) / opponent's announced name
     open(){return this.transport==='relay' ? !!(this.ws&&this.ws.readyState===1&&this.connected) : !!(this.conn&&this.conn.open)},
     send(m){if(this.transport==='relay'){
@@ -2805,12 +2824,13 @@ const NET={
     // re-pushes come back as reject not-your-turn with our q = implicit ack).
     sendMove(state){
         const m={type:'__a',op:'move',state:state,q:++this.moveSeq};
-        if(this.async&&(state.over||state.turnIndex!==this.myIndex))this.pendingMove={m:m,q:m.q,at:Date.now()};
+        if(this.async&&Number.isInteger(this.rev))m.base=this.rev;   // v71: the revision this board was built on
+        if(this.async&&(state.over||state.turnIndex!==this.myIndex)){this.pendingMove={m:m,q:m.q,at:Date.now()};this.savePending();}
         this.send(m);
     },
     resendPending(){
         if(!this.async||!this.pendingMove)return;
-        if(game&&this.pendingMove.m.state&&!this.pendingMove.m.state.over&&game.over){this.pendingMove=null;return} // game ended meanwhile
+        if(game&&this.pendingMove.m.state&&!this.pendingMove.m.state.over&&game.over){this.clearPending();return} // game ended meanwhile
         if(this.ws&&this.ws.readyState===1){try{this.ws.send(JSON.stringify(this.pendingMove.m))}catch(e){}}
     },
     setPill(icon,cls,label){const p=document.getElementById('net-pill');if(!p)return;
@@ -2822,13 +2842,13 @@ const NET={
         // v42: tell the joiner their FINAL (possibly deduped) identity
         let gn=null;
         if(game&&this.myIndex>=0&&game.players[1-this.myIndex])gn=game.players[1-this.myIndex].name;
-        if(this.async){this.gameCode=this.code;this.pendingMove=null;/*v64: fresh game, fresh ledger*/lsDel('spellcoco.gover.'+this.code);this._regTurn=null;const sm={type:'__a',op:'newgame',state:game.serialize(),config:CONFIG,q:++this.moveSeq};this.pendingStart={m:sm,q:sm.q,code:this.code,at:Date.now()};this.send(sm);showInGameRoom();regTurnSync();return}
+        if(this.async){this.gameCode=this.code;this.clearPending();/*v64: fresh game, fresh ledger*/lsDel('spellcoco.gover.'+this.code);this._regTurn=null;const sm={type:'__a',op:'newgame',state:game.serialize(),config:CONFIG,q:++this.moveSeq};if(Number.isInteger(this.rev))sm.base=this.rev;this.pendingStart={m:sm,q:sm.q,code:this.code,at:Date.now()};this.send(sm);showInGameRoom();regTurnSync();return}
         this.send({type:'start',config:CONFIG,state:game.serialize(),customs:localCustomWords,guestName:gn});
     },
     // v69.1: drop the socket but keep the room identity, so a later netNudge can
     // knock again (used on the busy/full welcome paths, which can happen mid-game).
     disconnect(){if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.connected=false;this.__busyTries=0;this.__rehello=false;this.__reseat=false;/*v70: the next knock gets the full recovery ladder again*/hbStop();updateNetDots();},
-    cleanup(){this.pendingMove=null;this.pendingStart=null;/*v64: never re-push into a different room*/if(this.peer){try{this.peer.destroy()}catch(e){}}this.peer=null;this.conn=null;if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.reconnectTries=0;this.transport=this.useRelay?'relay':'p2p';this.everConnected=false;this.connected=false;/*v68: leave the async room for real — a stale async flag/code hijacked later local games (netNudge reconnect, sendMove, saveGameState skip, cocoAttack, stats key)*/this.async=false;this.code='';this.gameCode='';this.seat=null;this.myIndex=-1;hbStop();}
+    cleanup(){this.pendingMove=null;this.pendingStart=null;/*v64: never re-push into a different room*/if(this.peer){try{this.peer.destroy()}catch(e){}}this.peer=null;this.conn=null;if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.reconnectTries=0;this.transport=this.useRelay?'relay':'p2p';this.everConnected=false;this.connected=false;/*v68: leave the async room for real — a stale async flag/code hijacked later local games (netNudge reconnect, sendMove, saveGameState skip, cocoAttack, stats key)*/this.async=false;this.code='';this.gameCode='';this.seat=null;this.myIndex=-1;this.rev=null;/*v71: revisions are per room*/hbStop();}
 };
 function genCode(){const a='ABCDEFGHJKMNPQRSTUVWXYZ23456789';let c='';for(let i=0;i<4;i++)c+=a[Math.floor(Math.random()*a.length)];return c}
 
@@ -2945,6 +2965,7 @@ function hostRelayOpen(){
         game=Game.fromState(sv.state);
         if(!game){lsDel('spellcoco.save');document.getElementById('modal-start').classList.remove('hidden');return;}   // v67.2: corrupt save — don't crash
         NET.myIndex=game.players.findIndex(pl=>pl.name===NET.myName);
+        game.activate();
         NET.sendStart();
         game.showRoundOverlay(`Round ${game.round}`,`Resumed — ${game.currentPlayer.name}'s turn`);
     }
@@ -3072,27 +3093,37 @@ function asyncOnMessage(m){
     switch(m.op){
         case 'welcome':asyncWelcome(m);break;
         case 'pong':NET.hbSupported=true;NET.hbWaiting=false;break;   // v58 keepalive answered
-        case 'moveok':   // v64: the server has our move on disk — stop re-pushing
-            if(NET.pendingMove&&m.q!=null&&m.q>=NET.pendingMove.q)NET.pendingMove=null;   // v68: only a sequenced ack clears the tracked move
+        case 'moveok':{   // v64: the server has our move on disk — stop re-pushing
+            NET.noteRev(m.rev);
+            const pm=NET.pendingMove;
+            if(pm&&m.q!=null&&m.q>=pm.q){   // v68: only a sequenced ack clears the tracked move
+                NET.clearPending();
+                // v71: a move restored from a previous page load just landed — the board
+                // on screen is the room's PRE-move state (welcome loaded it), so show ours.
+                if(pm.restored&&game&&pm.m.state&&!game.over){game.applyState(pm.m.state);if(game.over)asyncShowEnding(pm.m.state);else asyncTurnHint();}
+            }
             if(NET.pendingStart&&m.q!=null&&m.q>=NET.pendingStart.q)NET.pendingStart=null;
-            break;
+            break}
         case 'state':
-            NET.pendingStart=null;
+            NET.pendingStart=null;NET.noteRev(m.rev);
             if(game){
                 game.applyState(m.state);
                 if(game.over){asyncShowEnding(m.state);}   // v58: the closing push arrived as a live state
                 else asyncTurnHint();
             }
             break;
-        case 'newgame':NET.pendingStart=null;asyncLoadGame(m.state,m.config);break;
-        case 'gameover':{if(game)game.over=true;const gp=cleanPlayers(m.players);recordStatsOnce(gp);regTurnSync();renderGameOver(gp);break}   // v67.1: scrub before the recap innerHTML
-        case 'peer':if(m.present)asyncSyncWords();asyncPeer(m);break;
+        case 'newgame':NET.pendingStart=null;NET.noteRev(m.rev);asyncLoadGame(m.state,m.config);break;
+        case 'gameover':{NET.noteRev(m.rev);if(game)game.over=true;const gp=cleanPlayers(m.players);recordStatsOnce(gp,cleanGameId(m.gid)||(game&&game.id));regTurnSync();renderGameOver(gp);break}   // v67.1: scrub before the recap innerHTML
+        case 'peer':if(m.present){asyncSyncWords();NET.send({type:'stats',stats:STATS});}asyncPeer(m);break;   // v71: the all-time record now travels the async relay too
         case 'reject':
             // v64: seatless socket (server restarted / we never re-helloed) —
             // re-introduce ourselves; the welcome re-pushes any pending move.
             if(m.reason==='no-seat'){sendHello();break;}
             // v70: a newgame the server refuses can't be fixed by re-sending — stop, and let the next welcome load the room
             if(NET.pendingStart&&m.q!=null&&m.q===NET.pendingStart.q&&m.reason==='bad-state'){NET.pendingStart=null;break;}
+            NET.noteRev(m.rev);
+            // v71: our rematch lost the race — the opponent's rematch is already in the room; play that one
+            if(NET.pendingStart&&m.q!=null&&m.q===NET.pendingStart.q&&m.reason==='stale'){NET.pendingStart=null;if(m.state)asyncLoadGame(m.state);break;}
             // v64: a re-push of an ALREADY-accepted move bounces off turn
             // enforcement — the echoed q proves it's ours, so it's an ack,
             // not a scolding. Adopt the authoritative state quietly.
@@ -3101,28 +3132,40 @@ function asyncOnMessage(m){
                 // newgame hasn't landed yet — keep the move tracked, unchanged, so it
                 // re-lands after the newgame does. (Never store the reject itself.)
                 if(NET.pendingStart&&m.reason==='game-over')break;
-                NET.pendingMove=null;
+                // v71: stale = the room moved on (opponent played / Coco Attack landed /
+                // rematch) while our move sat unacked — it was NOT applied; say so.
+                const lost=m.reason==='stale'&&m.state&&!m.state.over&&m.state.turnIndex===NET.myIndex;
+                NET.clearPending();
                 if(m.state&&m.state.over){if(game)game.over=true;asyncShowEnding(m.state);}
                 else if(m.state&&game&&!game.over){game.applyState(m.state);asyncTurnHint();}
+                if(lost&&game&&!game.over)game.note('🙀 The board changed while you were away — your last move didn’t land. Play it again!');
                 break;
             }
             // v58: rejects carry the authoritative state so a diverged client self-heals
             if(m.state&&m.state.over){if(game)game.over=true;asyncShowEnding(m.state);break;}
             if(m.state&&game&&!game.over)game.applyState(m.state);
-            if(game&&!game.over){if(m.reason==='error')game.note('📡 The room hiccupped — your move will be re-sent');else if(m.reason!=='bad-state')game.note('⏳ Hang on — not your turn yet');}
+            if(game&&!game.over){if(m.reason==='error')game.note('📡 The room hiccupped — your move will be re-sent');else if(m.reason!=='bad-state'&&m.reason!=='stale')game.note('⏳ Hang on — not your turn yet');}   // v71: a stale selection sync is adopted silently
             break;
     }
 }
 // v58: one recap per finished room — a player who missed the live ending still
 // gets their stats recorded on rejoin, and nobody double-counts.
-function recordStatsOnce(ranked){
+// v71: keyed by MATCH, not just room — a device that missed a whole rematch
+// (played and finished elsewhere) used to skip its recap because the room's
+// flag was still set from the previous game. The flag now holds the id of the
+// match it recorded; a different id is a different game. Legacy states without
+// an id keep the old room-level rule (flag = 1).
+function recordStatsOnce(ranked,gid){
     if(NET.async&&NET.code){
         const k='spellcoco.gover.'+NET.code;
-        if(lsGet(k,null))return;
-        lsSet(k,1);
+        const tag=cleanGameId(gid)||1,prev=lsGet(k,null);
+        if(prev&&(prev===tag||prev===1||tag===1))return;
+        lsSet(k,tag);
     }
     recordGameStats(ranked);
 }
+function cleanGameId(v){return (typeof v==='string'&&/^[A-Za-z0-9]{4,24}$/.test(v))?v:null}
+function newGameId(){let s='';const a='abcdefghijklmnopqrstuvwxyz0123456789';for(let i=0;i<10;i++)s+=a[Math.floor(Math.random()*a.length)];return s}
 function asyncShowEnding(state){
     // v67.2: the reject/closing-state branches pass the relay's raw m.state
     // straight here — finalPlayers/players reach the recap innerHTML — so this
@@ -3132,7 +3175,7 @@ function asyncShowEnding(state){
         :(state&&state.players?[...state.players].sort((a,b)=>b.score-a.score):null);
     const ranked=cleanPlayers(raw);
     if(!ranked.length)return;   // empty after cleaning ⇒ malformed/hostile — ignore
-    recordStatsOnce(ranked);
+    recordStatsOnce(ranked,state&&state.id);
     regTurnSync();   // v59: mark finished in My Games on every ending path
     renderGameOver(ranked);
 }
@@ -3239,6 +3282,8 @@ function asyncWelcome(m){
     }
     announceSide();   // v55: tell the peer our FINAL identity so they can lock too
     asyncSyncWords();   // v54: share custom words on connect (consent + dictionary sync)
+    NET.send({type:'stats',stats:STATS});   // v71: the all-time record never crossed the async relay (only the dormant P2P/legacy paths sent it)
+    NET.restorePending();   // v71: a move from a previous page load that never got acked
     registerPushWithRoom();   // v62: refresh this device's turn-alert subscription for this room
     // v68: our newgame never landed (half-open socket) — the room still shows the
     // finished game. Re-send the fresh board rather than resurrecting the recap.
@@ -3252,6 +3297,9 @@ function asyncWelcome(m){
     }
     NET.pendingStart=null;   // the room reflects a live game — nothing to re-push
     NET.resendPending();   // v64: an unacked move survives the reconnect — push it again first thing
+    // v71: NET.rev is adopted from the welcome only where the ROOM's state is adopted
+    // (asyncLoadGame below). The offline-move re-push keeps the older rev its board
+    // was built on, so the relay can tell whether the room moved on meanwhile.
     // v58: if WE moved while offline, the server is one move behind — its state
     // still shows it as OUR turn while our local board has already flipped. Turn
     // enforcement makes replaying safe (nobody else could have moved), so push
@@ -3262,8 +3310,9 @@ function asyncWelcome(m){
         showInGameRoom();
         asyncTurnHint();
     }
-    else if(m.state){asyncLoadGame(m.state,m.config);}
+    else if(m.state){NET.noteRev(m.rev);asyncLoadGame(m.state,m.config);}
     else{
+        NET.noteRev(m.rev);
         const hs=document.getElementById('host-status');if(hs)hs.innerText='✓ Connected — press Start to begin, and share the code with '+(NET.oppName||'your opponent')+'.';
         const js=document.getElementById('join-status');if(js)js.innerText='✓ Connected — waiting for the game to start…';
         const sb=document.querySelector('#modal-start .btn-start');
@@ -3285,6 +3334,7 @@ function asyncLoadGame(state,config){
     if(!game){console.warn('SpellCoco: malformed room state — not loading');document.getElementById('modal-start').classList.remove('hidden');return;}   // v67.2
     NET.myIndex=NET.seat;
     NET.gameCode=NET.code;   // v58: this game object belongs to THIS room
+    game.activate();
     regTurnSync();   // v59: register/refresh this game in My Games right away
     if(game.over){asyncShowEnding(state);return;}   // v58: finished room → recap, not a live board
     lsDel('spellcoco.gover.'+NET.code);   // v58: fresh live game — let its ending record
@@ -3407,7 +3457,9 @@ let ONLINE_LOCKED=false;
 function openSeatName(takenName){
     if(takenName==='Shawn')return 'Keith';
     if(takenName==='Keith')return 'Shawn';
-    return sanitizeGuestName((takenName||'Player')+' 2');   // guest/unknown: stay distinct
+    const name=sanitizeGuestName(takenName||'Player');
+    const alternative=name.slice(0,12)+' 2';
+    return alternative===name?name.slice(0,12)+' 3':alternative;
 }
 function lockIdentity(name){
     ONLINE_LOCKED=true;
@@ -3735,6 +3787,8 @@ function sanitizeNetState(st){
     // to clear itself, so it permanently blocks new Coco attacks. Anything that
     // isn't a valid seat becomes null.
     st.cocoPendingFor=(function(v){if(v==null)return null;const n=Number(v);return (n===0||n===1)?n:null;})(st.cocoPendingFor);
+    st.id=cleanGameId(st.id);   // v71: match id or null
+    st.cocoTimerActive=!!st.cocoTimerActive;st.over=!!st.over;   // v71: the relay now requires booleans — a stray undefined here would get every later push rejected bad-state
     st.players=Array.isArray(st.players)?st.players.map(cleanPlayer).filter(Boolean):[];
     st.tiles=Array.isArray(st.tiles)?st.tiles.slice(0,25).map(td=>({char:cleanChar(td&&td.char),mult:cleanMult(td&&td.mult),gem:!!(td&&td.gem)})):[];
     st.sel=Array.isArray(st.sel)?st.sel.map(v=>cleanInt(v,24)).filter((v,ix,a)=>a.indexOf(v)===ix):[];
@@ -3899,6 +3953,7 @@ function _hostGameP2P(){
                 game=Game.fromState(sv.state);
                 if(!game){lsDel('spellcoco.save');document.getElementById('modal-start').classList.remove('hidden');return;}   // v67.2: corrupt save
                 NET.myIndex=game.players.findIndex(pl=>pl.name===NET.myName);
+                game.activate();
                 NET.sendStart();
                 game.showRoundOverlay(`Round ${game.round}`,`Resumed — ${game.currentPlayer.name}'s turn`);
             }
@@ -3984,6 +4039,7 @@ function guestStart(m){
     game=Game.fromState(m.state);
     if(!game){console.warn('SpellCoco: host sent a malformed start — ignoring');document.getElementById('modal-start').classList.remove('hidden');return;}   // v67.2
     NET.myIndex=game.players.findIndex(p=>p.name===NET.myName);
+    game.activate();
     game.showRoundOverlay(`Round ${game.round}`,`${game.currentPlayer.name}'s turn`,true);
 }
 
@@ -4021,6 +4077,7 @@ function resumeSavedGame(){
     document.getElementById('coco-zone').classList.toggle('hidden',!CONFIG.cocoAttackEnabled);
     game=Game.fromState(sv.state);
     if(!game){lsDel('spellcoco.save');document.getElementById('modal-start').classList.remove('hidden');document.getElementById('resume-banner').classList.add('hidden');return;}   // v67.2: corrupt local save
+    game.activate();
     game.showRoundOverlay(`Round ${game.round}`,`${game.currentPlayer.name}'s turn — welcome back!`);
 }
 function discardSavedGame(){lsDel('spellcoco.save');document.getElementById('resume-banner').classList.add('hidden')}
@@ -4588,25 +4645,39 @@ function exportCustomWords(){
     st.innerText=`✓ Exported ${localCustomWords.length} word${localCustomWords.length!==1?'s':''}`;st.style.color='var(--pink-hi)';
 }
 
+// A word list must be representable by the board's A–Z tiles.
+function parseWordList(text,max=25){return [...new Set(String(text).split(/\r?\n/).map(w=>w.trim().toUpperCase()).filter(w=>/^[A-Z]+$/.test(w)&&w.length>=2&&w.length<=max))]}
+function fetchWordList(url){
+    const ac=new AbortController();let timer;
+    const timeout=new Promise((_,reject)=>{timer=setTimeout(()=>{ac.abort();reject(new Error('Word list timed out'))},20000)});
+    return Promise.race([fetch(url,{signal:ac.signal}).then(r=>{if(!r.ok)throw new Error('Word list unavailable');return r.text()}),timeout]).finally(()=>clearTimeout(timer));
+}
 window.addEventListener('DOMContentLoaded',()=>{
     buildTrie(BUILT_IN_WORDS);
-    // v70: fetch both lists in parallel but build the 196k-word trie ONCE — each
-    // file used to trigger its own full rebuild, so a warm-cached dictionary.txt
-    // arriving first meant two multi-hundred-ms main-thread stalls.
-    const dictP=fetch('dictionary.txt').then(r=>{if(r.ok)return r.text();throw new Error}).then(t=>{const ws=t.split(/\r?\n/).map(w=>w.trim().toUpperCase()).filter(w=>w.length>=2);BASE_WORDS=ws;DICTIONARY=new Set(ws);dictFileLoaded=true;const ds=document.getElementById('dict-status');ds.innerText=`✓ ${ws.length.toLocaleString()} words!`;ds.style.color='var(--pink-hi)';return true}).catch(()=>{console.log('Built-in dict');return false});
-    const custP=fetch('custom_words.txt').then(r=>{if(r.ok)return r.text();throw new Error}).then(t=>{const ws=t.split(/\r?\n/).map(w=>w.trim().toUpperCase()).filter(w=>/^[A-Z]{2,15}$/.test(w));if(ws.length){customWords=ws;const st=document.getElementById('custom-status');st.innerText='\u2713 '+ws.length+' custom words (auto)';st.style.color='var(--pink-hi)'}return ws.length>0}).catch(()=>false);
-    const dictOrTimeout=Promise.race([dictP,new Promise(r=>setTimeout(()=>r(false),20000))]);
-    Promise.all([dictOrTimeout,custP]).then(([d,c])=>{if(d||c)rebuildWithCustom()});
-    dictP.then(d=>{if(d)dictOrTimeout.then(x=>{if(!x)rebuildWithCustom()})});   // late dictionary after the timeout: rebuild once more
+    // Healthy downloads still share one rebuild; either request may time out.
+    const dictP=fetchWordList('dictionary.txt').then(t=>{const ws=parseWordList(t);if(!ws.length)return false;BASE_WORDS=ws;return true}).catch(()=>false);
+    const custP=fetchWordList('custom_words.txt').then(t=>{customWords=parseWordList(t,15);const st=document.getElementById('custom-status');st.innerText='✓ '+customWords.length+' custom words (auto)';return true}).catch(()=>false);
+    Promise.all([dictP,custP]).then(([loaded])=>rebuildWithCustom(()=>{
+        dictFileLoaded=loaded;
+        const ds=document.getElementById('dict-status');
+        ds.innerText=loaded?`✓ ${BASE_WORDS.length.toLocaleString()} words!`:'Using the small built-in dictionary';
+        ds.style.color=loaded?'var(--pink-hi)':'var(--ink-dim)';
+    }));
 });
-function loadDictionary(input){const f=input.files[0];if(!f)return;const r=new FileReader;r.onload=e=>{processDictionaryText(e.target.result);dictFileLoaded=true};r.readAsText(f)}
-function processDictionaryText(text){const ws=text.split(/\r?\n/).map(w=>w.trim().toUpperCase()).filter(w=>w.length>=2);BASE_WORDS=ws;DICTIONARY=new Set(ws);document.getElementById('dict-status').innerText=`✓ ${ws.length.toLocaleString()} words!`;document.getElementById('dict-status').style.color='var(--pink-hi)';rebuildWithCustom()}
+function loadDictionary(input){const f=input.files[0];if(!f)return;const r=new FileReader;r.onload=e=>processDictionaryText(e.target.result);r.readAsText(f)}
+function processDictionaryText(text){
+    const ws=parseWordList(text);const ds=document.getElementById('dict-status');
+    if(!ws.length){ds.innerText='No usable words — use 2–25 letters, A–Z only';return false}
+    dictFileLoaded=false;BASE_WORDS=ws;ds.innerText='Building dictionary…';
+    rebuildWithCustom(()=>{dictFileLoaded=true;ds.innerText=`✓ ${ws.length.toLocaleString()} words (A–Z only)`;ds.style.color='var(--pink-hi)'});
+    return true;
+}
 
 function loadCustomWords(input){
     const f=input.files[0];if(!f)return;
     const r=new FileReader;
     r.onload=e=>{
-        customWords=e.target.result.split(/\r?\n/).map(w=>w.trim().toUpperCase()).filter(w=>w.length>=2);
+        customWords=parseWordList(e.target.result,15);
         const stat=document.getElementById('custom-status');
         stat.innerText=`✓ ${customWords.length} custom word${customWords.length!==1?'s':''}`;
         stat.style.color='var(--pink-hi)';
@@ -4615,13 +4686,14 @@ function loadCustomWords(input){
     r.readAsText(f);
 }
 
-function rebuildWithCustom(){
+function rebuildWithCustom(onReady){
     DICTIONARY=new Set(BASE_WORDS);
     customWords.forEach(w=>DICTIONARY.add(w));
     localCustomWords.forEach(w=>DICTIONARY.add(w));
     const st=document.getElementById('trie-status');st.classList.remove('hidden');
     setTimeout(()=>{
         buildTrie([...DICTIONARY]);
+        if(onReady)onReady();
         const total=DICTIONARY.size;
         st.innerHTML='✓ Index ready';st.style.color='var(--pink-hi)';
         if(game)game.showToast(`📖 ${total.toLocaleString()} words`);
@@ -4666,7 +4738,7 @@ function clearDictChecker(){document.getElementById('dict-check-input').value=''
 class Tile{
     constructor(id,r,c,char){this.id=id;this.r=r;this.c=c;this.char=char;this.baseValue=LETTERS[char].val;this.multiplier=null;this.hasGem=false;this.isSelected=false;this.isNew=false}
     static ML={'DL':'×2L','TL':'×3L','2W':'×2W','3W':'×3W'};
-    render(isLast){const el=document.createElement('div');let cls='tile';if(this.isSelected)cls+=isLast?' selected':' path-tile';if(this.isNew)cls+=' new-tile';el.className=cls;el.dataset.id=this.id;let h=`<span>${this.char}</span><span class="tile-value">${this.baseValue}</span>`;if(this.multiplier)h+=`<div class="tile-multiplier mod-${this.multiplier}">${Tile.ML[this.multiplier]}</div>`;if(this.hasGem)h+=`<div class="tile-gem"></div>`;el.innerHTML=h;if(this.isNew)this.isNew=false;return el}
+    render(isLast){const el=document.createElement('button');el.type='button';el.setAttribute('aria-pressed',String(this.isSelected));el.setAttribute('aria-label',`${this.char}, ${this.baseValue} points${this.multiplier?", "+Tile.ML[this.multiplier]:""}${this.hasGem?", treat":""}`);let cls='tile';if(this.isSelected)cls+=isLast?' selected':' path-tile';if(this.isNew)cls+=' new-tile';el.className=cls;el.dataset.id=this.id;let h=`<span>${this.char}</span><span class="tile-value">${this.baseValue}</span>`;if(this.multiplier)h+=`<span class="tile-multiplier mod-${this.multiplier}">${Tile.ML[this.multiplier]}</span>`;if(this.hasGem)h+=`<span class="tile-gem"></span>`;el.innerHTML=h;if(this.isNew)this.isNew=false;return el}
 }
 
 // Game
@@ -4686,6 +4758,7 @@ class Game{
             abilityLog:{}
         }));
         retireGame();   // v66: kill the OLD game's grid listeners/timers before this one takes over
+        this.id=newGameId();   // v71: match id — rides serialize() so both seats (and the room) agree which game a recap belongs to
         this.timerInterval=null;this.timeLeft=0;this.cocoTimerActive=false;this.over=false;
         this.round=1;this.startIndex=(opts&&typeof opts.startIndex==='number'&&opts.startIndex>=0&&opts.startIndex<this.players.length)?opts.startIndex:0;this.turnIndex=this.startIndex;this.tiles=[];this.selection=[];
         this.pendingSwap=false;this.isDragging=false;this.cocoPending=false;this.lastSwap=null;
@@ -4706,7 +4779,7 @@ class Game{
     }
 
     serialize(){
-        return {round:this.round,turnIndex:this.turnIndex,startIndex:this.startIndex,
+        return {id:this.id||null,round:this.round,turnIndex:this.turnIndex,startIndex:this.startIndex,
             players:JSON.parse(JSON.stringify(this.players)),
             tiles:this.tiles.map(t=>({char:t.char,mult:t.multiplier,gem:t.hasGem})),
             cocoTimerActive:this.cocoTimerActive,timeLeft:this.timeLeft,cocoPendingFor:(this.cocoPendingFor==null?null:this.cocoPendingFor),
@@ -4718,23 +4791,41 @@ class Game{
         if(!validPlayableState(st)){console.warn('SpellCoco: ignored a malformed game state');return null;}   // v67.2: validate BEFORE retiring the live game
         retireGame();   // v66: every fromState replaces the global game — retire the old one first
         const g=Object.create(Game.prototype);
-        g.timerInterval=null;g.timeLeft=st.timeLeft||0;g.cocoTimerActive=false;
+        g.timerInterval=null;g.timeLeft=st.timeLeft||0;g.cocoTimerActive=!!st.cocoTimerActive;
         g.round=st.round;g.turnIndex=st.turnIndex;g.startIndex=(typeof st.startIndex==='number')?st.startIndex:0;g.selection=[];
         g.pendingSwap=false;g.isDragging=false;g.lastSwap=null;g.over=!!st.over;   // v58: restore the over flag (v62: +undo window resets)
+        g.id=cleanGameId(st.id);   // v71: null for pre-v71 saves/rooms
         g.players=st.players;
         g.tiles=st.tiles.map((td,i)=>{const t=new Tile(i,Math.floor(i/5),i%5,td.char);t.multiplier=td.mult;t.hasGem=td.gem;return t});
         (st.sel||[]).forEach(id=>{if(g.tiles[id]){g.tiles[id].isSelected=true;g.selection.push(id)}});
         NET.quiet=true;g.updateUI();NET.quiet=false;
         g.setupTouchDrag();
         g.cocoPending=false;g.cocoPendingFor=(st.cocoPendingFor==null?null:st.cocoPendingFor);
-        g.maybeCoco();g.maybeCocoTimer();
         return g;
+    }
+    activate(){
+        if(this._dead||game!==this)return;
+        if(this.over){clearInterval(this.timerInterval);this.timerInterval=null;clearTimeout(this._expireTimer);this._expireTimer=null;return}
+        this.maybeCoco();
+        const ownsTimer=NET.async?this.turnIndex===NET.myIndex:NET.mode!=='join';
+        if(this.cocoTimerActive&&ownsTimer){
+            if(!this.timerInterval){this.startCocoTimer(true);this.updateUI()}
+        }else{
+            if(this.timerInterval)clearInterval(this.timerInterval);
+            this.timerInterval=null;
+            if(!this.cocoTimerActive)this.maybeCocoTimer();
+        }
     }
     applyState(st){
         st=sanitizeNetState(st);   // v67: same rule as fromState — never trust the wire
         if(!validPlayableState(st)){console.warn('SpellCoco: ignored a malformed state push');return;}   // v67.2: keep the current board rather than crash
+        if(st.over||st.turnIndex!==this.turnIndex||st.round!==this.round){
+            clearInterval(this.timerInterval);this.timerInterval=null;
+            clearTimeout(this._expireTimer);this._expireTimer=null;
+        }
         if(st.over)this.over=true;   // v58: an ending can arrive by state push too
         this.lastSwap=null;   // v62: an incoming board replaces ours — undo window closes
+        if(cleanGameId(st.id))this.id=st.id;   // v71
         this.round=st.round;this.turnIndex=st.turnIndex;if(typeof st.startIndex==='number')this.startIndex=st.startIndex;
         this.players=st.players;
         this.cocoTimerActive=st.cocoTimerActive;this.timeLeft=st.timeLeft;this.cocoPendingFor=(st.cocoPendingFor==null?null:st.cocoPendingFor);
@@ -4744,7 +4835,7 @@ class Game{
         this.selection=[];
         sel.forEach(id=>{if(this.tiles[id]){this.tiles[id].isSelected=true;this.selection.push(id)}});
         NET.quiet=true;this.updateUI();NET.quiet=false;
-        this.maybeCocoTimer();
+        this.activate();
     }
     applySelection(ids){
         // v67.4: ids comes off the wire ('sel' sync + async 'submit') — a peer
@@ -4879,8 +4970,30 @@ class Game{
         this.replenishGems();
     }
 
+    focusTile(id){
+        if(!Number.isInteger(id)||id<0||id>=25)return;
+        this._gridFocus=id;
+        const grid=document.getElementById('grid');
+        grid.querySelectorAll('.tile').forEach(el=>el.tabIndex=Number(el.dataset.id)===id?0:-1);
+        const el=grid.querySelector(`[data-id="${id}"]`);if(el)el.focus({preventScroll:true});
+    }
+    handleGridKey(e){
+        if(this._dead||this.over)return;
+        const tile=e.target.closest('.tile');if(!tile)return;
+        const id=Number(tile.dataset.id);if(!Number.isInteger(id))return;
+        const row=Math.floor(id/5),col=id%5;
+        const next={ArrowLeft:col>0?id-1:id,ArrowRight:col<4?id+1:id,ArrowUp:row>0?id-5:id,ArrowDown:row<4?id+5:id,Home:row*5,End:row*5+4};
+        if(Object.prototype.hasOwnProperty.call(next,e.key)){e.preventDefault();this.focusTile(next[e.key]);return}
+        if(!this.myTurn)return;
+        if(e.key==='Enter'||e.key===' '){e.preventDefault();this._kbAt=Date.now();if(!e.repeat)this.handleTileClick(id)}   // v71: _kbAt lets the click listener drop the keyup-synthesized click that Space can still produce
+        else if(e.key==='Escape'){e.preventDefault();if(this.pendingSwap)this.cancelSwap();else this.clearSelection()}
+        else if(e.key==='Backspace'){e.preventDefault();if(this.selection.length)this.handleTileClick(this.selection[this.selection.length-1])}
+    }
     setupTouchDrag(){
         const grid=document.getElementById('grid');
+        grid.addEventListener('keydown',e=>this.handleGridKey(e));
+        // Keyboard/assistive activation has detail 0; pointer input stays single-fired.
+        grid.addEventListener('click',e=>{if(this._dead||this.over||e.detail!==0||Date.now()-(this._kbAt||0)<400)return;const t=e.target.closest('.tile');if(t)this.handleTileClick(Number(t.dataset.id))});
         const gt=(x,y)=>{const el=document.elementFromPoint(x,y);if(!el)return null;const t=el.closest('.tile');return t?parseInt(t.dataset.id):null};
         // v62: swap-target taps are handled RIGHT HERE in pointerdown. The old
         // path early-returned and waited for a `click`, which iOS Safari doesn't
@@ -5016,13 +5129,18 @@ class Game{
     // (addCustomWord also broadcasts to the opponent in online games, so the
     // host will accept the guest's resubmit) and the submit retries itself.
     cloudCheckWord(w){
-        this.cloudPending=true;
-        this.note('📡 Checking '+w+'…');
+        if(this.cloudPending||this._dead||this.over)return;
+        const request={round:this.round,turn:this.turnIndex,selection:this.selection.join(',')};
+        this.cloudRequest=request;this.cloudPending=true;
+        const current=()=>game===this&&!this._dead&&!this.over&&this.cloudRequest===request
+            &&this.round===request.round&&this.turnIndex===request.turn
+            &&this.selection.join(',')===request.selection&&this.calculateCurrentScore().word===w;
+        quietUI();this.note('📡 Checking '+w+'…');
         // v70: an 8s abort — a hung request used to leave cloudPending stuck, blocking every later submit
         const ac=new AbortController(),tmo=setTimeout(()=>ac.abort(),8000);
         fetch('https://api.dictionaryapi.dev/api/v2/entries/en/'+w.toLowerCase(),{signal:ac.signal})
             .then(res=>{
-                if(this.over)return;
+                if(!current())return;
                 if(!res.ok&&res.status!==404){this.showToast('Couldn’t reach the cloud dictionary — add it as a custom word if it’s real');SFX.invalid();return}   // v68: 429/5xx ≠ "not a word"
                 if(res.ok){
                     addCustomWord(w);
@@ -5033,15 +5151,16 @@ class Game{
                 }
             })
             .catch(()=>{
-                if(this.over)return;
+                if(!current())return;
                 this.showToast('Couldn’t reach the cloud dictionary — add it as a custom word if it’s real');SFX.invalid();
             })
-            .finally(()=>{clearTimeout(tmo);this.cloudPending=false;});
+            .finally(()=>{clearTimeout(tmo);if(this.cloudRequest===request){this.cloudRequest=null;this.cloudPending=false;if(game===this&&!this._dead&&!this.over)quietUI()}});
     }
 
     endTurn(){
         if(this._dead||this.over)return;   // v66 / v68: never advance a finished game
         if(this.timerInterval)clearInterval(this.timerInterval);
+        this.timerInterval=null;
         clearTimeout(this._expireTimer);this._expireTimer=null;   // v68: a word submitted inside the expiry grace must not end the turn twice
         this.cocoTimerActive=false;clearDictChecker();this.pendingSwap=false;
         // v68: ability modals belong to the turn that opened them — a forced turn change (timer expiry, synced state) must not let them charge the next player
@@ -5077,6 +5196,7 @@ class Game{
 
     endGame(){
         if(this.timerInterval)clearInterval(this.timerInterval);
+        this.timerInterval=null;
         clearTimeout(this._expireTimer);this._expireTimer=null;
         SFX.gameOver();
         this.players.forEach(p=>{p.gemBonus=p.gems;p.score+=p.gems});
@@ -5085,10 +5205,10 @@ class Game{
         // closing state pushed to the server stays seat-accurate.
         const ranked=[...this.players].sort((a,b)=>b.score-a.score);
         lsDel('spellcoco.save');
-        recordStatsOnce(ranked);
+        recordStatsOnce(ranked,this.id);
         if(NET.async){
             NET.sendMove(this.serialize());   // closing push (over:true) — v64: tracked until acked
-            NET.send({type:'__a',op:'gameover',players:JSON.parse(JSON.stringify(ranked))});
+            NET.send({type:'__a',op:'gameover',players:JSON.parse(JSON.stringify(ranked)),gid:this.id});   // v71: which match this recap belongs to
         }else if(NET.mode==='host')NET.send({type:'gameover',players:JSON.parse(JSON.stringify(ranked))});
         regTurnSync();   // v59: flip this game to "finished" in My Games (endGame skips updateUI)
         renderGameOver(ranked);
@@ -5263,14 +5383,14 @@ class Game{
         mults.forEach(m=>{if(si<idx.length)this.tiles[idx[si++]].multiplier=m});
         this.replenishGems();
     }
-    openSwapModal(tileId){this.swapTargetId=tileId;this._swapModalAt=Date.now();const g=document.getElementById('swap-options');g.innerHTML='';for(let ch of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'){const d=document.createElement('div');d.className='swap-tile';d.innerText=ch;d.onclick=()=>this.performSwap(ch);g.appendChild(d)}document.getElementById('modal-swap').classList.remove('hidden')}
+    openSwapModal(tileId){this.swapTargetId=tileId;this._swapModalAt=Date.now();const g=document.getElementById('swap-options');g.innerHTML='';for(let ch of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'){const d=document.createElement('button');d.type='button';d.className='swap-tile';d.innerText=ch;d.onclick=()=>this.performSwap(ch);g.appendChild(d)}document.getElementById('modal-swap').classList.remove('hidden');const first=g.querySelector('button');if(first)first.focus()}
     performSwap(ch){
         if(Date.now()-(this._swapModalAt||0)<350)return;   // v62: ghost-tap guard — the touch that OPENED the picker can't also pick
         if(NET.mode==='join'){document.getElementById('modal-swap').classList.add('hidden');this.pendingSwap=false;NET.send({type:'act',kind:'swap',tileId:this.swapTargetId,ch:ch});return}
         const p=this.currentPlayer;if(p.gems<CONFIG.costs.swap){this.note('Not enough treats!');SFX.invalid();this.pendingSwap=false;document.getElementById('modal-swap').classList.add('hidden');this.updateUI();return}p.gems-=CONFIG.costs.swap;this.logAbility(p,'swap',CONFIG.costs.swap);const t=this.tiles[this.swapTargetId];
         // v62: remember the swap so it can be UNDONE (consent-based) this turn
         this.lastSwap={tileId:this.swapTargetId,from:t.char,fromVal:t.baseValue,to:ch,by:this.turnIndex,round:this.round};
-        t.char=ch;t.baseValue=LETTERS[ch].val;document.getElementById('modal-swap').classList.add('hidden');this.pendingSwap=false;this.showToast(`Swapped to ${ch}!`);SFX.swap();this.updateUI()}
+        t.char=ch;t.baseValue=LETTERS[ch].val;document.getElementById('modal-swap').classList.add('hidden');this.pendingSwap=false;this.showToast(`Swapped to ${ch}!`);SFX.swap();this.updateUI();this.focusTile(this.swapTargetId)}
 
     cocoAttack(){
         // v52: async Coco Attack — the attacker isn't the turn authority, so the
@@ -5301,20 +5421,23 @@ class Game{
     }
     // The countdown itself. Runs on the player under attack (the current player).
     // In async, pushes state each tick so the attacker watches the clock too.
-    startCocoTimer(){
+    startCocoTimer(resume=false){
         this.cocoTimerActive=true;
-        if(!this.timeLeft||this.timeLeft<=0)this.timeLeft=CONFIG.cocoAttackTime;
+        if(!resume&&(!this.timeLeft||this.timeLeft<=0))this.timeLeft=CONFIG.cocoAttackTime;
         SFX.cocoAttack();this.showCocoOverlay();
         this.showToast(`🐾 Coco Attack! ${this.currentPlayer.name} has ${this.timeLeft}s!`);
         this.updateTimerDisplay();
         if(this.timerInterval)clearInterval(this.timerInterval);
-        this.timerInterval=setInterval(()=>{
-            this.timeLeft--;this.updateTimerDisplay();
+        this.timerInterval=null;
+        const tick=()=>{
+            this.timeLeft=Math.max(0,this.timeLeft-1);this.updateTimerDisplay();
             if(NET.async){if(this.turnIndex===NET.myIndex)NET.sendMove(this.serialize());}   // v68: sequenced like every other push
             else if(NET.mode==='host')NET.send({type:'timer',on:true,t:this.timeLeft});
+            if(!NET.async)saveGameState();
             if(this.timeLeft<=5&&this.timeLeft>0)SFX.timerWarn();
-            if(this.timeLeft<=0){clearInterval(this.timerInterval);this.cocoTimerActive=false;if(NET.mode==='host'&&!NET.async)NET.send({type:'timer',on:false,t:0});this.clearSelection();this.showToast("🐾 Coco says time's up!");clearTimeout(this._expireTimer);this._expireTimer=setTimeout(()=>{this._expireTimer=null;this.endTurn()},800)}
-        },1000);
+            if(this.timeLeft<=0){clearInterval(this.timerInterval);this.timerInterval=null;this.cocoTimerActive=false;if(NET.mode==='host'&&!NET.async)NET.send({type:'timer',on:false,t:0});this.clearSelection();this.showToast("🐾 Coco says time's up!");clearTimeout(this._expireTimer);this._expireTimer=setTimeout(()=>{this._expireTimer=null;this.endTurn()},800)}
+        };
+        if(this.timeLeft<=0)tick();else this.timerInterval=setInterval(tick,1000);
     }
     // Victim side: if it's my turn and a Coco attack is pending on me, start the
     // countdown now and clear the mark (pushes the cleared state out).
@@ -5451,9 +5574,14 @@ class Game{
             d.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();this.showPlayerHistory(i)}};
             pList.appendChild(d);
         });
-        const grid=document.getElementById('grid');grid.innerHTML='';
+        const grid=document.getElementById('grid');
+        const active=document.activeElement;
+        const focused=active&&grid.contains(active)?Number(active.dataset.id):null;
+        if(Number.isInteger(focused))this._gridFocus=focused;
+        grid.innerHTML='';
         const ls=this.selection.length>0?this.selection[this.selection.length-1]:-1;
-        this.tiles.forEach(tile=>{const el=tile.render(tile.id===ls);grid.appendChild(el)});
+        this.tiles.forEach(tile=>{const el=tile.render(tile.id===ls);el.tabIndex=tile.id===(this._gridFocus||0)?0:-1;grid.appendChild(el)});
+        if(Number.isInteger(focused))this.focusTile(focused);
         const calc=this.calculateCurrentScore();
         const wd=document.getElementById('word-display'),sp=document.getElementById('score-preview');
         if(calc.word){
@@ -5468,7 +5596,10 @@ class Game{
             }
         }else{wd.innerText=this.pendingSwap?'Tap a tile to swap':(solo&&!this.myTurn?'🐾 Coco is hunting for a word…':'Tap letters to spell');wd.className='empty';sp.innerText='';srAnnounceTurn(this)}
         const myTurn=this.myTurn;
-        document.getElementById('btn-submit').disabled=!calc.isValid||!myTurn;
+        const submit=document.getElementById('btn-submit');
+        const canCheck=cloudAssistOn()&&/^[A-Z]{2,15}$/.test(calc.word);
+        submit.disabled=this.over||!myTurn||!!this.cloudPending||(!calc.isValid&&!canCheck);
+        submit.innerText=this.cloudPending?'Checking…':'Submit';
         document.getElementById('btn-clear').disabled=this.selection.length===0||!myTurn;
         const p=this.currentPlayer;
         document.getElementById('btn-shuffle').disabled=!myTurn||this.pendingSwap||p.gems<CONFIG.costs.shuffle;
@@ -5674,7 +5805,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v70';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v71';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){
@@ -5940,7 +6071,15 @@ function populateLwRef(){
     lwRefEl.classList.remove('hidden');
 }
 function closeHistoryModal(){document.getElementById('modal-history').classList.add('hidden')}
-function closeSwapModal(){if(game&&Date.now()-(game._swapModalAt||0)<350)return;document.getElementById('modal-swap').classList.add('hidden');if(game){game.pendingSwap=false;game.updateUI()}}
+function handleSwapKey(e){
+    if(e.key==='Escape'){e.preventDefault();closeSwapModal();return}
+    if(e.key!=='Tab')return;
+    const buttons=[...document.getElementById('modal-swap').querySelectorAll('button')];
+    const first=buttons[0],last=buttons[buttons.length-1];
+    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}
+    else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}
+}
+function closeSwapModal(){if(game&&Date.now()-(game._swapModalAt||0)<350)return;document.getElementById('modal-swap').classList.add('hidden');if(game){game.pendingSwap=false;game.updateUI();game.focusTile(game.swapTargetId)}}
 function closeShuffleConfirm(){document.getElementById('modal-shuffle-confirm').classList.add('hidden')}
 function confirmShuffle(){document.getElementById('modal-shuffle-confirm').classList.add('hidden');if(game&&NET.mode==='join'){NET.send({type:'act',kind:'shuffle'});return}if(game){if(!game.myTurn||game.over)return;const p=game.currentPlayer;if(p.gems<CONFIG.costs.shuffle){game.showToast('Not enough treats!');SFX.invalid();return}p.gems-=CONFIG.costs.shuffle;game.logAbility(p,'shuffle',CONFIG.costs.shuffle);game.clearSelection();game.shuffleBoard();game.showToast('Board shuffled!');SFX.shuffle();game.updateUI()}}
 function closeZoomiesConfirm(){document.getElementById('modal-zoomies-confirm').classList.add('hidden')}
