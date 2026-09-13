@@ -1,15 +1,18 @@
 # Review handoff: remaining online correctness work
 
-This proposal implements audit findings **3, 4, 5, 6, 7, 8, 11, 12 and 13**.
-Findings **1, 2, 9 and 10 remain unfixed**. In particular, the current relay
-still accepts stale whole-state snapshots after a turn cycles back, and an
-unacknowledged move still disappears on refresh. The passing regression suite
-does not cover those as corrected behavior.
+The audit's patch implemented findings **3, 4, 5, 6, 7, 8, 11, 12 and 13** and
+left **1, 2, 9 and 10** with the designs below. The v71 review round shipped
+narrower fixes for those four (tests in `tests/sync.test.mjs`):
 
-This is a draft for Claude/maintainer evaluation. No merge or Worker deployment
-is part of this change. Cloudflare resources related to legal research are
-explicitly outside scope. This branch changes only repository files; it has no
-access tokens, account identifiers or deployment automation.
+| Finding | What shipped in v71 | Still deferred from the design below |
+| --- | --- | --- |
+| 1 | Room revision + per-seat "foreign write" marker; a `move`/`newgame` whose `base` predates another seat's write (or a Coco Attack) is refused as `reject{stale}` with the current state. Compare-and-swap, not a rewrite of the protocol. | Server-computed scoring / validated actions (a modified active client can still invent a score); per-operation idempotency receipts (duplicates are still handled by the turn check + echoed `q`); selection-only messages. |
+| 2 | The tracked move is persisted in `localStorage` per room, restored on welcome, re-pushed with its original `base`, and shown once acked; a stale refusal tells the player. | IndexedDB outbox with multiple queued operations; same-seat multi-tab serialization. |
+| 9 | `stats` is sent on every async welcome and peer arrival. | Result-ledger merge: counters are still merged by maximum, so disjoint device histories under-count. |
+| 10 | Every game carries a match id (`state.id`, `gameover.gid`); recap dedup is per match, legacy id-less states keep the room-level rule. | Server-side completion events and a catch-up endpoint. |
+
+The rest of this document is the audit's original design proposal, kept for
+the deferred items.
 
 ## Implemented scope and review points
 

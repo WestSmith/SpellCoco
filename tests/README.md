@@ -8,14 +8,18 @@ node --test tests/*.test.mjs
 
 No package installation or network access is needed. `helpers.mjs` loads the
 actual inline JavaScript and Worker module into deterministic DOM, timer,
-storage and socket doubles. Tests cover nine findings from the
-[v70 audit](../docs/audit/2026-09-12-v70.md), plus related compatibility and
-failure paths. The GitHub checks workflow runs this command.
+storage and socket doubles. Tests cover all thirteen findings from the
+[v70 audit](../docs/audit/2026-09-12-v70.md) — `sync.test.mjs` holds the
+revision / durable-pending-move / statistics / per-match recap cases — plus
+related compatibility and failure paths. The GitHub checks workflow runs this
+command.
 
 The doubles do not implement browser layout, native event synthesis, real
 WebSockets, Durable Object transactions, push delivery or iOS suspension.
-They do not prove that the outstanding concurrency/statistics issues are fixed.
-Those require the [protocol follow-up](../docs/audit/proposed-follow-ups.md).
+They exercise the relay's revision check with in-memory storage, not real
+Durable Object transactions, two real browsers, or push delivery. The
+[follow-up document](../docs/audit/proposed-follow-ups.md) records what was
+shipped for findings 1, 2, 9 and 10 versus the fuller designs it proposed.
 
 Manual localhost checks performed for this proposal:
 

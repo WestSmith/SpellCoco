@@ -2788,6 +2788,23 @@ const NET={
     hbTimer:null,hbWaiting:false,hbSupported:false,gameCode:'',_offNote:false, // v58: keepalive + offline-move bookkeeping
     pendingMove:null,moveSeq:0, // v64: last turn-completing move, held until the server acks it
     pendingStart:null, // v68: the newgame op, held until the room reflects it (a dropped newgame used to resurrect the old recap + double-count stats)
+    rev:null, // v71: the room revision our board was built on — every push carries it as `base`, and the relay refuses a snapshot that predates somebody else's write
+    noteRev(r){if(Number.isInteger(r)&&r>=0&&(this.rev==null||r>this.rev))this.rev=r},
+    pendKey(){return 'spellcoco.pending.'+this.code},
+    // v71: the tracked move also lives in localStorage — "your move is safe" used
+    // to mean "safe until the tab is refreshed or evicted".
+    savePending(){if(this.pendingMove&&this.code)lsSet(this.pendKey(),{m:this.pendingMove.m,q:this.pendingMove.q,at:this.pendingMove.at})},
+    clearPending(){this.pendingMove=null;if(this.code)lsDel(this.pendKey())},
+    // Called on every welcome: pick up a move a previous page load never got acked.
+    // Its `base` is the revision it was made on, so a stale replay is refused by
+    // the relay (reject{stale}) rather than rolling the room back.
+    restorePending(){
+        if(!this.async||this.pendingMove||!this.code)return;
+        const p=lsGet(this.pendKey(),null);
+        if(!p||!p.m||typeof p.m!=='object'||p.m.type!=='__a'||p.m.op!=='move'||!p.m.state||typeof p.m.state!=='object'||!Number.isInteger(p.q)){lsDel(this.pendKey());return}
+        this.pendingMove={m:p.m,q:p.q,at:p.at||Date.now(),restored:true};
+        if(p.q>this.moveSeq)this.moveSeq=p.q;
+    },
     guestName:null,oppName:null, // v42: joiner's declared name (host side) / opponent's announced name
     open(){return this.transport==='relay' ? !!(this.ws&&this.ws.readyState===1&&this.connected) : !!(this.conn&&this.conn.open)},
     send(m){if(this.transport==='relay'){
@@ -2807,12 +2824,13 @@ const NET={
     // re-pushes come back as reject not-your-turn with our q = implicit ack).
     sendMove(state){
         const m={type:'__a',op:'move',state:state,q:++this.moveSeq};
-        if(this.async&&(state.over||state.turnIndex!==this.myIndex))this.pendingMove={m:m,q:m.q,at:Date.now()};
+        if(this.async&&Number.isInteger(this.rev))m.base=this.rev;   // v71: the revision this board was built on
+        if(this.async&&(state.over||state.turnIndex!==this.myIndex)){this.pendingMove={m:m,q:m.q,at:Date.now()};this.savePending();}
         this.send(m);
     },
     resendPending(){
         if(!this.async||!this.pendingMove)return;
-        if(game&&this.pendingMove.m.state&&!this.pendingMove.m.state.over&&game.over){this.pendingMove=null;return} // game ended meanwhile
+        if(game&&this.pendingMove.m.state&&!this.pendingMove.m.state.over&&game.over){this.clearPending();return} // game ended meanwhile
         if(this.ws&&this.ws.readyState===1){try{this.ws.send(JSON.stringify(this.pendingMove.m))}catch(e){}}
     },
     setPill(icon,cls,label){const p=document.getElementById('net-pill');if(!p)return;
@@ -2824,13 +2842,13 @@ const NET={
         // v42: tell the joiner their FINAL (possibly deduped) identity
         let gn=null;
         if(game&&this.myIndex>=0&&game.players[1-this.myIndex])gn=game.players[1-this.myIndex].name;
-        if(this.async){this.gameCode=this.code;this.pendingMove=null;/*v64: fresh game, fresh ledger*/lsDel('spellcoco.gover.'+this.code);this._regTurn=null;const sm={type:'__a',op:'newgame',state:game.serialize(),config:CONFIG,q:++this.moveSeq};this.pendingStart={m:sm,q:sm.q,code:this.code,at:Date.now()};this.send(sm);showInGameRoom();regTurnSync();return}
+        if(this.async){this.gameCode=this.code;this.clearPending();/*v64: fresh game, fresh ledger*/lsDel('spellcoco.gover.'+this.code);this._regTurn=null;const sm={type:'__a',op:'newgame',state:game.serialize(),config:CONFIG,q:++this.moveSeq};if(Number.isInteger(this.rev))sm.base=this.rev;this.pendingStart={m:sm,q:sm.q,code:this.code,at:Date.now()};this.send(sm);showInGameRoom();regTurnSync();return}
         this.send({type:'start',config:CONFIG,state:game.serialize(),customs:localCustomWords,guestName:gn});
     },
     // v69.1: drop the socket but keep the room identity, so a later netNudge can
     // knock again (used on the busy/full welcome paths, which can happen mid-game).
     disconnect(){if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.connected=false;this.__busyTries=0;this.__rehello=false;this.__reseat=false;/*v70: the next knock gets the full recovery ladder again*/hbStop();updateNetDots();},
-    cleanup(){this.pendingMove=null;this.pendingStart=null;/*v64: never re-push into a different room*/if(this.peer){try{this.peer.destroy()}catch(e){}}this.peer=null;this.conn=null;if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.reconnectTries=0;this.transport=this.useRelay?'relay':'p2p';this.everConnected=false;this.connected=false;/*v68: leave the async room for real — a stale async flag/code hijacked later local games (netNudge reconnect, sendMove, saveGameState skip, cocoAttack, stats key)*/this.async=false;this.code='';this.gameCode='';this.seat=null;this.myIndex=-1;hbStop();}
+    cleanup(){this.pendingMove=null;this.pendingStart=null;/*v64: never re-push into a different room*/if(this.peer){try{this.peer.destroy()}catch(e){}}this.peer=null;this.conn=null;if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.reconnectTries=0;this.transport=this.useRelay?'relay':'p2p';this.everConnected=false;this.connected=false;/*v68: leave the async room for real — a stale async flag/code hijacked later local games (netNudge reconnect, sendMove, saveGameState skip, cocoAttack, stats key)*/this.async=false;this.code='';this.gameCode='';this.seat=null;this.myIndex=-1;this.rev=null;/*v71: revisions are per room*/hbStop();}
 };
 function genCode(){const a='ABCDEFGHJKMNPQRSTUVWXYZ23456789';let c='';for(let i=0;i<4;i++)c+=a[Math.floor(Math.random()*a.length)];return c}
 
@@ -3075,27 +3093,37 @@ function asyncOnMessage(m){
     switch(m.op){
         case 'welcome':asyncWelcome(m);break;
         case 'pong':NET.hbSupported=true;NET.hbWaiting=false;break;   // v58 keepalive answered
-        case 'moveok':   // v64: the server has our move on disk — stop re-pushing
-            if(NET.pendingMove&&m.q!=null&&m.q>=NET.pendingMove.q)NET.pendingMove=null;   // v68: only a sequenced ack clears the tracked move
+        case 'moveok':{   // v64: the server has our move on disk — stop re-pushing
+            NET.noteRev(m.rev);
+            const pm=NET.pendingMove;
+            if(pm&&m.q!=null&&m.q>=pm.q){   // v68: only a sequenced ack clears the tracked move
+                NET.clearPending();
+                // v71: a move restored from a previous page load just landed — the board
+                // on screen is the room's PRE-move state (welcome loaded it), so show ours.
+                if(pm.restored&&game&&pm.m.state&&!game.over){game.applyState(pm.m.state);if(game.over)asyncShowEnding(pm.m.state);else asyncTurnHint();}
+            }
             if(NET.pendingStart&&m.q!=null&&m.q>=NET.pendingStart.q)NET.pendingStart=null;
-            break;
+            break}
         case 'state':
-            NET.pendingStart=null;
+            NET.pendingStart=null;NET.noteRev(m.rev);
             if(game){
                 game.applyState(m.state);
                 if(game.over){asyncShowEnding(m.state);}   // v58: the closing push arrived as a live state
                 else asyncTurnHint();
             }
             break;
-        case 'newgame':NET.pendingStart=null;asyncLoadGame(m.state,m.config);break;
-        case 'gameover':{if(game)game.over=true;const gp=cleanPlayers(m.players);recordStatsOnce(gp);regTurnSync();renderGameOver(gp);break}   // v67.1: scrub before the recap innerHTML
-        case 'peer':if(m.present)asyncSyncWords();asyncPeer(m);break;
+        case 'newgame':NET.pendingStart=null;NET.noteRev(m.rev);asyncLoadGame(m.state,m.config);break;
+        case 'gameover':{NET.noteRev(m.rev);if(game)game.over=true;const gp=cleanPlayers(m.players);recordStatsOnce(gp,cleanGameId(m.gid)||(game&&game.id));regTurnSync();renderGameOver(gp);break}   // v67.1: scrub before the recap innerHTML
+        case 'peer':if(m.present){asyncSyncWords();NET.send({type:'stats',stats:STATS});}asyncPeer(m);break;   // v71: the all-time record now travels the async relay too
         case 'reject':
             // v64: seatless socket (server restarted / we never re-helloed) —
             // re-introduce ourselves; the welcome re-pushes any pending move.
             if(m.reason==='no-seat'){sendHello();break;}
             // v70: a newgame the server refuses can't be fixed by re-sending — stop, and let the next welcome load the room
             if(NET.pendingStart&&m.q!=null&&m.q===NET.pendingStart.q&&m.reason==='bad-state'){NET.pendingStart=null;break;}
+            NET.noteRev(m.rev);
+            // v71: our rematch lost the race — the opponent's rematch is already in the room; play that one
+            if(NET.pendingStart&&m.q!=null&&m.q===NET.pendingStart.q&&m.reason==='stale'){NET.pendingStart=null;if(m.state)asyncLoadGame(m.state);break;}
             // v64: a re-push of an ALREADY-accepted move bounces off turn
             // enforcement — the echoed q proves it's ours, so it's an ack,
             // not a scolding. Adopt the authoritative state quietly.
@@ -3104,28 +3132,40 @@ function asyncOnMessage(m){
                 // newgame hasn't landed yet — keep the move tracked, unchanged, so it
                 // re-lands after the newgame does. (Never store the reject itself.)
                 if(NET.pendingStart&&m.reason==='game-over')break;
-                NET.pendingMove=null;
+                // v71: stale = the room moved on (opponent played / Coco Attack landed /
+                // rematch) while our move sat unacked — it was NOT applied; say so.
+                const lost=m.reason==='stale'&&m.state&&!m.state.over&&m.state.turnIndex===NET.myIndex;
+                NET.clearPending();
                 if(m.state&&m.state.over){if(game)game.over=true;asyncShowEnding(m.state);}
                 else if(m.state&&game&&!game.over){game.applyState(m.state);asyncTurnHint();}
+                if(lost&&game&&!game.over)game.note('🙀 The board changed while you were away — your last move didn’t land. Play it again!');
                 break;
             }
             // v58: rejects carry the authoritative state so a diverged client self-heals
             if(m.state&&m.state.over){if(game)game.over=true;asyncShowEnding(m.state);break;}
             if(m.state&&game&&!game.over)game.applyState(m.state);
-            if(game&&!game.over){if(m.reason==='error')game.note('📡 The room hiccupped — your move will be re-sent');else if(m.reason!=='bad-state')game.note('⏳ Hang on — not your turn yet');}
+            if(game&&!game.over){if(m.reason==='error')game.note('📡 The room hiccupped — your move will be re-sent');else if(m.reason!=='bad-state'&&m.reason!=='stale')game.note('⏳ Hang on — not your turn yet');}   // v71: a stale selection sync is adopted silently
             break;
     }
 }
 // v58: one recap per finished room — a player who missed the live ending still
 // gets their stats recorded on rejoin, and nobody double-counts.
-function recordStatsOnce(ranked){
+// v71: keyed by MATCH, not just room — a device that missed a whole rematch
+// (played and finished elsewhere) used to skip its recap because the room's
+// flag was still set from the previous game. The flag now holds the id of the
+// match it recorded; a different id is a different game. Legacy states without
+// an id keep the old room-level rule (flag = 1).
+function recordStatsOnce(ranked,gid){
     if(NET.async&&NET.code){
         const k='spellcoco.gover.'+NET.code;
-        if(lsGet(k,null))return;
-        lsSet(k,1);
+        const tag=cleanGameId(gid)||1,prev=lsGet(k,null);
+        if(prev&&(prev===tag||prev===1||tag===1))return;
+        lsSet(k,tag);
     }
     recordGameStats(ranked);
 }
+function cleanGameId(v){return (typeof v==='string'&&/^[A-Za-z0-9]{4,24}$/.test(v))?v:null}
+function newGameId(){let s='';const a='abcdefghijklmnopqrstuvwxyz0123456789';for(let i=0;i<10;i++)s+=a[Math.floor(Math.random()*a.length)];return s}
 function asyncShowEnding(state){
     // v67.2: the reject/closing-state branches pass the relay's raw m.state
     // straight here — finalPlayers/players reach the recap innerHTML — so this
@@ -3135,7 +3175,7 @@ function asyncShowEnding(state){
         :(state&&state.players?[...state.players].sort((a,b)=>b.score-a.score):null);
     const ranked=cleanPlayers(raw);
     if(!ranked.length)return;   // empty after cleaning ⇒ malformed/hostile — ignore
-    recordStatsOnce(ranked);
+    recordStatsOnce(ranked,state&&state.id);
     regTurnSync();   // v59: mark finished in My Games on every ending path
     renderGameOver(ranked);
 }
@@ -3242,6 +3282,8 @@ function asyncWelcome(m){
     }
     announceSide();   // v55: tell the peer our FINAL identity so they can lock too
     asyncSyncWords();   // v54: share custom words on connect (consent + dictionary sync)
+    NET.send({type:'stats',stats:STATS});   // v71: the all-time record never crossed the async relay (only the dormant P2P/legacy paths sent it)
+    NET.restorePending();   // v71: a move from a previous page load that never got acked
     registerPushWithRoom();   // v62: refresh this device's turn-alert subscription for this room
     // v68: our newgame never landed (half-open socket) — the room still shows the
     // finished game. Re-send the fresh board rather than resurrecting the recap.
@@ -3255,6 +3297,9 @@ function asyncWelcome(m){
     }
     NET.pendingStart=null;   // the room reflects a live game — nothing to re-push
     NET.resendPending();   // v64: an unacked move survives the reconnect — push it again first thing
+    // v71: NET.rev is adopted from the welcome only where the ROOM's state is adopted
+    // (asyncLoadGame below). The offline-move re-push keeps the older rev its board
+    // was built on, so the relay can tell whether the room moved on meanwhile.
     // v58: if WE moved while offline, the server is one move behind — its state
     // still shows it as OUR turn while our local board has already flipped. Turn
     // enforcement makes replaying safe (nobody else could have moved), so push
@@ -3265,8 +3310,9 @@ function asyncWelcome(m){
         showInGameRoom();
         asyncTurnHint();
     }
-    else if(m.state){asyncLoadGame(m.state,m.config);}
+    else if(m.state){NET.noteRev(m.rev);asyncLoadGame(m.state,m.config);}
     else{
+        NET.noteRev(m.rev);
         const hs=document.getElementById('host-status');if(hs)hs.innerText='✓ Connected — press Start to begin, and share the code with '+(NET.oppName||'your opponent')+'.';
         const js=document.getElementById('join-status');if(js)js.innerText='✓ Connected — waiting for the game to start…';
         const sb=document.querySelector('#modal-start .btn-start');
@@ -3741,6 +3787,8 @@ function sanitizeNetState(st){
     // to clear itself, so it permanently blocks new Coco attacks. Anything that
     // isn't a valid seat becomes null.
     st.cocoPendingFor=(function(v){if(v==null)return null;const n=Number(v);return (n===0||n===1)?n:null;})(st.cocoPendingFor);
+    st.id=cleanGameId(st.id);   // v71: match id or null
+    st.cocoTimerActive=!!st.cocoTimerActive;st.over=!!st.over;   // v71: the relay now requires booleans — a stray undefined here would get every later push rejected bad-state
     st.players=Array.isArray(st.players)?st.players.map(cleanPlayer).filter(Boolean):[];
     st.tiles=Array.isArray(st.tiles)?st.tiles.slice(0,25).map(td=>({char:cleanChar(td&&td.char),mult:cleanMult(td&&td.mult),gem:!!(td&&td.gem)})):[];
     st.sel=Array.isArray(st.sel)?st.sel.map(v=>cleanInt(v,24)).filter((v,ix,a)=>a.indexOf(v)===ix):[];
@@ -4710,6 +4758,7 @@ class Game{
             abilityLog:{}
         }));
         retireGame();   // v66: kill the OLD game's grid listeners/timers before this one takes over
+        this.id=newGameId();   // v71: match id — rides serialize() so both seats (and the room) agree which game a recap belongs to
         this.timerInterval=null;this.timeLeft=0;this.cocoTimerActive=false;this.over=false;
         this.round=1;this.startIndex=(opts&&typeof opts.startIndex==='number'&&opts.startIndex>=0&&opts.startIndex<this.players.length)?opts.startIndex:0;this.turnIndex=this.startIndex;this.tiles=[];this.selection=[];
         this.pendingSwap=false;this.isDragging=false;this.cocoPending=false;this.lastSwap=null;
@@ -4730,7 +4779,7 @@ class Game{
     }
 
     serialize(){
-        return {round:this.round,turnIndex:this.turnIndex,startIndex:this.startIndex,
+        return {id:this.id||null,round:this.round,turnIndex:this.turnIndex,startIndex:this.startIndex,
             players:JSON.parse(JSON.stringify(this.players)),
             tiles:this.tiles.map(t=>({char:t.char,mult:t.multiplier,gem:t.hasGem})),
             cocoTimerActive:this.cocoTimerActive,timeLeft:this.timeLeft,cocoPendingFor:(this.cocoPendingFor==null?null:this.cocoPendingFor),
@@ -4745,6 +4794,7 @@ class Game{
         g.timerInterval=null;g.timeLeft=st.timeLeft||0;g.cocoTimerActive=!!st.cocoTimerActive;
         g.round=st.round;g.turnIndex=st.turnIndex;g.startIndex=(typeof st.startIndex==='number')?st.startIndex:0;g.selection=[];
         g.pendingSwap=false;g.isDragging=false;g.lastSwap=null;g.over=!!st.over;   // v58: restore the over flag (v62: +undo window resets)
+        g.id=cleanGameId(st.id);   // v71: null for pre-v71 saves/rooms
         g.players=st.players;
         g.tiles=st.tiles.map((td,i)=>{const t=new Tile(i,Math.floor(i/5),i%5,td.char);t.multiplier=td.mult;t.hasGem=td.gem;return t});
         (st.sel||[]).forEach(id=>{if(g.tiles[id]){g.tiles[id].isSelected=true;g.selection.push(id)}});
@@ -4775,6 +4825,7 @@ class Game{
         }
         if(st.over)this.over=true;   // v58: an ending can arrive by state push too
         this.lastSwap=null;   // v62: an incoming board replaces ours — undo window closes
+        if(cleanGameId(st.id))this.id=st.id;   // v71
         this.round=st.round;this.turnIndex=st.turnIndex;if(typeof st.startIndex==='number')this.startIndex=st.startIndex;
         this.players=st.players;
         this.cocoTimerActive=st.cocoTimerActive;this.timeLeft=st.timeLeft;this.cocoPendingFor=(st.cocoPendingFor==null?null:st.cocoPendingFor);
@@ -4934,7 +4985,7 @@ class Game{
         const next={ArrowLeft:col>0?id-1:id,ArrowRight:col<4?id+1:id,ArrowUp:row>0?id-5:id,ArrowDown:row<4?id+5:id,Home:row*5,End:row*5+4};
         if(Object.prototype.hasOwnProperty.call(next,e.key)){e.preventDefault();this.focusTile(next[e.key]);return}
         if(!this.myTurn)return;
-        if(e.key==='Enter'||e.key===' '){e.preventDefault();if(!e.repeat)this.handleTileClick(id)}
+        if(e.key==='Enter'||e.key===' '){e.preventDefault();this._kbAt=Date.now();if(!e.repeat)this.handleTileClick(id)}   // v71: _kbAt lets the click listener drop the keyup-synthesized click that Space can still produce
         else if(e.key==='Escape'){e.preventDefault();if(this.pendingSwap)this.cancelSwap();else this.clearSelection()}
         else if(e.key==='Backspace'){e.preventDefault();if(this.selection.length)this.handleTileClick(this.selection[this.selection.length-1])}
     }
@@ -4942,7 +4993,7 @@ class Game{
         const grid=document.getElementById('grid');
         grid.addEventListener('keydown',e=>this.handleGridKey(e));
         // Keyboard/assistive activation has detail 0; pointer input stays single-fired.
-        grid.addEventListener('click',e=>{if(this._dead||this.over||e.detail!==0)return;const t=e.target.closest('.tile');if(t)this.handleTileClick(Number(t.dataset.id))});
+        grid.addEventListener('click',e=>{if(this._dead||this.over||e.detail!==0||Date.now()-(this._kbAt||0)<400)return;const t=e.target.closest('.tile');if(t)this.handleTileClick(Number(t.dataset.id))});
         const gt=(x,y)=>{const el=document.elementFromPoint(x,y);if(!el)return null;const t=el.closest('.tile');return t?parseInt(t.dataset.id):null};
         // v62: swap-target taps are handled RIGHT HERE in pointerdown. The old
         // path early-returned and waited for a `click`, which iOS Safari doesn't
@@ -5154,10 +5205,10 @@ class Game{
         // closing state pushed to the server stays seat-accurate.
         const ranked=[...this.players].sort((a,b)=>b.score-a.score);
         lsDel('spellcoco.save');
-        recordStatsOnce(ranked);
+        recordStatsOnce(ranked,this.id);
         if(NET.async){
             NET.sendMove(this.serialize());   // closing push (over:true) — v64: tracked until acked
-            NET.send({type:'__a',op:'gameover',players:JSON.parse(JSON.stringify(ranked))});
+            NET.send({type:'__a',op:'gameover',players:JSON.parse(JSON.stringify(ranked)),gid:this.id});   // v71: which match this recap belongs to
         }else if(NET.mode==='host')NET.send({type:'gameover',players:JSON.parse(JSON.stringify(ranked))});
         regTurnSync();   // v59: flip this game to "finished" in My Games (endGame skips updateUI)
         renderGameOver(ranked);
