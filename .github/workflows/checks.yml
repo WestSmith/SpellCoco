@@ -22,6 +22,8 @@ jobs:
         run: node --check sw.js
       - name: Syntax-check the relay worker (ES module)
         run: cp worker/src/index.js /tmp/worker.mjs && node --check /tmp/worker.mjs
+      - name: Regression tests (no network or installed packages)
+        run: node --test tests/*.test.mjs
       - name: manifest.json parses and its icons exist
         run: |
           node -e "

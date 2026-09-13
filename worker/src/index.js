@@ -42,12 +42,40 @@ export default {
   }
 };
 
+const record = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+const integer = (v, max) => Number.isInteger(v) && v >= 0 && v <= max;
+const seatIndex = (v) => v === 0 || v === 1;
+const word = (v) => typeof v === "string" && /^[A-Z]{2,15}$/.test(v);
+function validPlayer(p) {
+  return record(p) && typeof p.name === "string" && p.name.length > 0 && p.name.length <= 24
+    && integer(p.score, Number.MAX_SAFE_INTEGER) && integer(p.gems, 9999)
+    && (p.wordsPlayed == null || Array.isArray(p.wordsPlayed));
+}
 function validState(s) {
-  if (!s || typeof s !== "object" || Array.isArray(s)) return false;
-  if (!Array.isArray(s.players) || s.players.length !== 2) return false;
-  if (!Array.isArray(s.tiles) || s.tiles.length !== 25) return false;
-  try { if (JSON.stringify(s).length > MAX_STATE_BYTES) return false; } catch { return false; }
+  if (!record(s)) return false;
+  if (!Array.isArray(s.players) || s.players.length !== 2 || !s.players.every(validPlayer)) return false;
+  if (!seatIndex(s.turnIndex) || !seatIndex(s.startIndex) || !integer(s.round, 99) || s.round < 1) return false;
+  if (!Array.isArray(s.tiles) || s.tiles.length !== 25 || !s.tiles.every((t) =>
+    record(t) && typeof t.char === "string" && /^[A-Z]$/.test(t.char)
+    && [null, "DL", "TL", "2W", "3W"].includes(t.mult) && typeof t.gem === "boolean")) return false;
+  if (!Array.isArray(s.sel) || s.sel.some((id) => !integer(id, 24)) || new Set(s.sel).size !== s.sel.length) return false;
+  if (typeof s.over !== "boolean" || typeof s.cocoTimerActive !== "boolean" || !integer(s.timeLeft, Number.MAX_SAFE_INTEGER)) return false;
+  if (s.cocoPendingFor != null && !seatIndex(s.cocoPendingFor)) return false;
+  if (s.finalPlayers != null && (!Array.isArray(s.finalPlayers) || s.finalPlayers.length !== 2 || !s.finalPlayers.every(validPlayer))) return false;
+  try { if (new TextEncoder().encode(JSON.stringify(s)).byteLength > MAX_STATE_BYTES) return false; } catch { return false; }
   return true;
+}
+function validSideMessage(m) {
+  switch (m.type) {
+    case "customs": return Array.isArray(m.words) && m.words.every(word);
+    case "stats": return record(m.stats);
+    case "side": return typeof m.host === "string" || typeof m.guest === "string";
+    case "fx": return true; // The client sanitizes each supported effect field.
+    case "wordreq": case "wordok": case "wordno": case "addword": return word(m.w);
+    case "undoreq": return typeof m.from === "string" && typeof m.to === "string" && /^[A-Z]$/.test(m.from) && /^[A-Z]$/.test(m.to);
+    case "undook": case "undono": return true;
+    default: return false;
+  }
 }
 function seated(info) { return !!info && info.seat != null && info.seat !== -1; }
 
@@ -109,9 +137,10 @@ export class Room {
       if (m.op === "coco") return this.onCoco(ws, m);
       if (m.op === "push") return this.onPush(ws, m);
       if (m.op === "pushoff") return this.onPushOff(ws, m);
+      return; // Reserved protocol: never forward client-forged server messages.
     }
     // Side channel (customs, stats, fx, word/undo requests): seated players only.
-    if (!seated(inf)) return;
+    if (!seated(inf) || !validSideMessage(m)) return;
     this.toOthers(ws, m);
   }
 
@@ -196,10 +225,14 @@ export class Room {
   async onGameOver(ws, m) {
     const me = this.info(ws);
     if (!seated(me)) { this.send(ws, { type: "__a", op: "reject", reason: "no-seat", state: null }); return; }
+    if (!Array.isArray(m.players) || m.players.length !== 2 || !m.players.every(validPlayer)) {
+      this.send(ws, { type: "__a", op: "reject", reason: "bad-state", state: null }); return;
+    }
     const game = await this.state.storage.get("game");
     if (game && typeof game === "object") {
       game.over = true;
       if (Array.isArray(m.players)) game.finalPlayers = m.players.slice(0, 2);
+      if (!validState(game)) { this.send(ws, { type: "__a", op: "reject", reason: "bad-state", state: null }); return; }
       await this.state.storage.put("game", game);
     }
     this.toOthers(ws, m);

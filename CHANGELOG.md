@@ -4,6 +4,28 @@ Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
 ```
 ================================================================
+SPELLCOCO v71 — AUDIT FIXES (PROPOSED)
+- Worker: block forged server-only relay operations; allowlist supported
+  side messages; reject malformed playable states and final recaps before
+  persisting them. This validates shape, not authoritative game rules.
+- Coco Attack: activate restored games after installing the game and seat;
+  resume the saved countdown on its owning client, persist local ticks,
+  and cancel an old timer when an authoritative turn/ending replaces it.
+- Dictionary: bound both downloads (including body reads), index after
+  fallback, report readiness only after indexing, filter imports to A-Z,
+  and defensively skip unsupported letters in the swap solver.
+- Cloud assist: enable Submit for eligible unknown words; ignore late
+  responses after the game, turn, or selection changes.
+- Keyboard: native letter buttons, arrow navigation, Enter/Space selection,
+  Backspace/Escape, retained focus, and a keyboard-operable swap picker.
+- Guest identities: reserve suffix space and avoid an identical fallback.
+- Tests: Node regression suite in CI. The audit and follow-up designs are
+  in docs/audit/. Revision/idempotency, durable pending moves, statistics
+  exchange and per-match results remain open; no deployment accompanies
+  this proposal.
+================================================================
+
+================================================================
 SPELLCOCO v70 — REVIEW ROUND 3 (2026-09-12)
 - FIX: reject{game-over} while a rematch is pending kept the move tracked
   correctly (v69.1 stored the reject itself and re-sent it every 20s,
