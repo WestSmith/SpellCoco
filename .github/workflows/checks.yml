@@ -18,8 +18,8 @@ jobs:
           open('/tmp/app.js','w',encoding='utf-8').write('\n'.join(blocks))
           PY
           node --check /tmp/app.js
-      - name: Syntax-check the service worker
-        run: node --check sw.js
+      - name: Syntax-check the service worker and word engine
+        run: node --check sw.js && node --check engine.js
       - name: Syntax-check the relay worker (ES module)
         run: cp worker/src/index.js /tmp/worker.mjs && node --check /tmp/worker.mjs
       - name: Regression tests (no network or installed packages)
@@ -36,3 +36,16 @@ jobs:
           H=$(grep -m1 -oP '^SPELLCOCO \Kv[0-9.]+' CHANGELOG.md)
           echo "APP_VERSION=$V  CHANGELOG=$H"
           [ -n "$V" ] && [ "$V" = "$H" ]
+      - name: engine.js is loaded with the current version (cache-busting query)
+        run: |
+          V=$(grep -oP "APP_VERSION='\K[^']+" index.html)
+          E=$(grep -oP 'src="engine\.js\?v=\K[^"]+' index.html)
+          echo "APP_VERSION=$V  engine.js?v=$E"
+          [ -n "$E" ] && [ "$E" = "$V" ]
+      - name: Size budgets (a big jump here is usually an accident)
+        run: |
+          check() { S=$(stat -c %s "$1"); echo "$1: $S bytes (budget $2)"; [ "$S" -le "$2" ] || { echo "::error file=$1::$1 is $S bytes, over its $2-byte budget"; exit 1; }; }
+          check dictionary.txt 2500000
+          check index.html 450000
+          check engine.js 32000
+          check sw.js 8000

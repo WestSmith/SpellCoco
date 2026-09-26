@@ -1,8 +1,64 @@
 /* SpellCoco service worker — v62: turn notifications (Web Push). v68: safer click handling.
-   Deliberately NO fetch handler: the game stays fully network-served
-   (GitHub Pages), this worker only exists so pushes can be shown. */
+   v73: caching. Before this the worker had no fetch handler, so the 2 MB word
+   list was downloaded on every launch and nothing worked offline.
+   - dictionary.txt: stale-while-revalidate. The cached copy answers at once
+     and a background request (usually a cheap 304) refreshes it for next time.
+   - every other same-origin GET (the page, engine.js, custom_words.txt, icons):
+     network first, so an online player always gets the current build; the
+     cached copy is only used when the network fails (offline local/solo play).
+   Cross-origin requests (the relay, PeerJS, Wiktionary) are never touched. */
+const CACHE = 'spellcoco-rt-1';
+
 self.addEventListener('install', (e) => self.skipWaiting());
-self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+self.addEventListener('activate', (e) => e.waitUntil(
+  caches.keys()
+    .then((keys) => Promise.all(keys.filter((k) => k.startsWith('spellcoco-') && k !== CACHE).map((k) => caches.delete(k))))
+    .catch(() => {})
+    .then(() => self.clients.claim())
+));
+
+// One entry per path: a navigation is stored without its query (?join=CODE),
+// and a new engine.js?v=… replaces the previous build's copy.
+function cacheKey(req) {
+  const u = new URL(req.url);
+  if (req.mode === 'navigate') u.search = '';
+  u.hash = '';
+  return u.href;
+}
+function keep(req, res) {
+  if (!res || !res.ok || res.type !== 'basic') return Promise.resolve();
+  const copy = res.clone(), key = cacheKey(req), path = new URL(key).pathname;
+  return caches.open(CACHE).then((c) => c.put(key, copy)
+    .then(() => c.keys())
+    .then((reqs) => Promise.all(reqs.filter((r) => { const u = new URL(r.url); return u.pathname === path && r.url !== key; }).map((r) => c.delete(r)))))
+    .catch(() => {});
+}
+function fromNetwork(req, e) {
+  return fetch(req).then((res) => { e.waitUntil(keep(req, res)); return res; });
+}
+const cached = (req) => caches.match(cacheKey(req));
+
+self.addEventListener('fetch', (e) => {
+  const req = e.request;
+  if (req.method !== 'GET') return;
+  let url;
+  try { url = new URL(req.url); } catch (err) { return; }
+  if (url.origin !== self.location.origin || req.headers.has('range')) return;
+  if (url.pathname.endsWith('/sw.js')) return;
+  if (url.pathname.endsWith('/dictionary.txt')) {
+    e.respondWith(cached(req).then((hit) => {
+      const fresh = fromNetwork(req, e);
+      if (hit) { e.waitUntil(fresh.catch(() => {})); return hit; }
+      return fresh;
+    }));
+    return;
+  }
+  e.respondWith(fromNetwork(req, e).catch(() => cached(req).then((hit) => {
+    if (hit || req.mode !== 'navigate') return hit;
+    // Offline navigation to a path we never cached (…/index.html vs …/): the app shell.
+    return caches.match(new URL('./', self.location.href).href).then((h) => h || caches.match(new URL('index.html', self.location.href).href));
+  }).then((r) => r || Response.error())));
+});
 
 self.addEventListener('push', (e) => {
   let d = {};

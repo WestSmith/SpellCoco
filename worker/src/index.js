@@ -27,8 +27,16 @@
 //   syncs) never trip it. Clients without `base` (pre-v71) are accepted as before.
 //   welcome/moveok/state/newgame/reject/gameover all carry the current rev.
 //
+// v73 (2026-09-26): live selections. While a player spells a word their client
+//   sends {type:'livesel', ids, r, t} (tile ids, round, turn) instead of pushing
+//   the whole game after every letter — the room used to store (and bump the
+//   revision for) each one. livesel is relayed to the opponent for display and
+//   never stored. The welcome advertises caps:['livesel']; clients only switch
+//   to it when they see that, so an old deployment keeps getting full states.
+//
 // Wire protocol (v62 envelope + v71 rev/base): every game message is {type:'__a', op}.
 //   client → server: hello, peek, ping, move, newgame, gameover, coco, push, pushoff
+//   side channel (seated, relayed as-is): customs, stats, side, fx, word*, undo*, livesel
 //   server → client: welcome, roster, pong, moveok, reject, state, newgame,
 //                    gameover, peer, pushok
 
@@ -38,6 +46,7 @@ const LIVE_MS = 45e3;              // a seat with no traffic for this long count
 const MAX_STATE_BYTES = 512 * 1024;
 const IDLE_WIPE_MS = 90 * 864e5;   // rooms untouched this long are deleted
 const OPEN = 1;
+const CAPS = ["livesel"];          // v73: features this deployment understands (sent in welcome)
 
 export default {
   async fetch(request, env) {
@@ -88,6 +97,8 @@ function validSideMessage(m) {
     case "wordreq": case "wordok": case "wordno": case "addword": return word(m.w);
     case "undoreq": return typeof m.from === "string" && typeof m.to === "string" && /^[A-Z]$/.test(m.from) && /^[A-Z]$/.test(m.to);
     case "undook": case "undono": return true;
+    case "livesel": return Array.isArray(m.ids) && m.ids.length <= 25 && m.ids.every((id) => integer(id, 24))
+      && new Set(m.ids).size === m.ids.length && integer(m.r, 99) && seatIndex(m.t);
     default: return false;
   }
 }
@@ -156,6 +167,7 @@ export class Room {
     }
     // Side channel (customs, stats, fx, word/undo requests): seated players only.
     if (!seated(inf) || !validSideMessage(m)) return;
+    if (m.type === "livesel") { this.toOthers(ws, { type: "livesel", ids: m.ids, r: m.r, t: m.t }); return; }   // display-only; never stored
     this.toOthers(ws, m);
   }
 
@@ -222,7 +234,7 @@ export class Room {
     this.setInfo(ws, { seat, name, last: Date.now() });
     const game = await this.state.storage.get("game") || null;
     const config = await this.state.storage.get("config") || null;
-    this.send(ws, { type: "__a", op: "welcome", seat, full: seat === -1, names: seats.map((s) => s ? s.name : null), state: game, config, rev: await this.rev() });
+    this.send(ws, { type: "__a", op: "welcome", seat, full: seat === -1, names: seats.map((s) => s ? s.name : null), state: game, config, rev: await this.rev(), caps: CAPS });
     if (seat !== -1) this.toOthers(ws, { type: "__a", op: "peer", seat, name, present: true });
     await this.touch();
   }

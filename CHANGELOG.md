@@ -4,6 +4,42 @@ Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
 ```
 ================================================================
+SPELLCOCO v73 — EFFICIENCY ROUND (2026-09-26)
+- Online: spelling a word no longer pushes the whole game after every
+  letter. The relay stored each push (several Durable Object writes and a
+  revision bump per letter). Selections now go out as a small display-only
+  `livesel` message that is relayed but never stored; the full state is
+  sent only when something real changes. The relay advertises support in
+  its welcome (`caps`); against an older relay the client keeps the old
+  behaviour, so the client and the relay can be deployed in either order.
+  A same-turn state push (a Coco Attack landing mid-word) keeps the word
+  being spelled.
+- Local games no longer rewrite the save on every letter.
+- Board: a selection repaint rebuilds only the tiles whose look changed
+  (it used to recreate all 25 buttons per letter while dragging).
+- Dictionary: new engine.js. The index is a trie in typed arrays, ~4 MB
+  instead of ~84 MB, built in ~0.1 s instead of ~0.8 s (desktop) and in a
+  Web Worker, so the page never freezes while it loads. No 196k-word Set
+  or array is kept beside it. Adding or removing a custom word updates the
+  index in place instead of rebuilding it. Custom words now count as soon
+  as the page starts, not only after the full list loads.
+- Solvers: one shared search (about 40% faster), memoized per board and
+  dictionary, and pre-computed in idle time after the board changes, so
+  submitting a word no longer runs the swap search (tens of ms on a phone)
+  before the score appears. Hint and Coco reuse the same result.
+- Service worker: dictionary.txt is served from cache and refreshed in the
+  background; every other file is network-first with a cached fallback, so
+  local and solo games work offline after one visit. Cross-origin requests
+  are untouched.
+- CI: syntax-checks engine.js, checks the engine.js?v= query matches
+  APP_VERSION, and enforces size budgets.
+- Tests: 18 new (84 total).
+- Deploy note: the relay change (worker/) is needed for the storage saving;
+  until it is deployed, clients behave as in v72 online.
+================================================================
+
+```
+================================================================
 SPELLCOCO v72 — DICTIONARY LOOKUPS (2026-09-26)
 - FIX (definitions): tapping a word always said "Couldn't reach the
   dictionary". api.dictionaryapi.dev now takes ~20s to answer and returns

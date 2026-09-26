@@ -42,7 +42,7 @@ Three ways to play:
 - All-time Keith vs. Shawn win tracker, synced between devices (each counter merges by taking the higher value)
 - Resume unfinished games — local or online; online games are held server-side, so close the tab and come back tomorrow
 - My Online Games list on the start screen shows whose turn it is in every room you're in
-- Installable as an app (Add to Home Screen)
+- Installable as an app (Add to Home Screen); after one online visit, local and solo games work offline
 - Bi pride palette with Coco's ginger, cream, and green as the reward colors
 
 ## For Coco
