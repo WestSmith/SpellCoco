@@ -140,6 +140,11 @@ test('swap solver defensively ignores unsupported trie children', () => {
   assert.doesNotThrow(() => c.run('findBestWordWithSwap(game.tiles)'));
 });
 
+// A Wiktionary /page/definition reply, trimmed to the fields the client reads.
+const WIKT_ZZ = { en: [
+  { partOfSpeech: 'Symbol', language: 'Translingual', definitions: [{ definition: 'ISO 639-3 code' }] },
+  { partOfSpeech: 'Noun', language: 'English', definitions: [{ definition: '<span>A <a href="/wiki/test">test</a> word &amp; more.</span>' }] }] };
+const wiktReply = (body = WIKT_ZZ, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
 function cloudClient(fetcher) {
   const c = client(fetcher), st = state(); st.tiles[0].char = 'Z'; st.tiles[1].char = 'Z';
   c.load(st, 'buildTrie(["CAT"]);document.getElementById("cfg-cloud-assist").checked=true');
@@ -160,7 +165,7 @@ test('a successful cloud lookup submits exactly once and clears pending UI', asy
   const c = cloudClient(() => { calls++; return new Promise(r => { resolve = r; }); });
   c.run('game.submitWord();game.submitWord()');
   assert.equal(calls, 1); assert.equal(c.els.get('btn-submit').disabled, true);
-  resolve({ ok: true }); await flush();
+  resolve(wiktReply()); await flush();
   assert.equal(c.run('game.players[0].wordsPlayed.length'), 1);
   assert.equal(c.run('game.players[0].wordsPlayed[0].word'), 'ZZ');
   assert.equal(c.run('game.turnIndex'), 1);
@@ -175,7 +180,7 @@ for (const [name, change] of [
   let resolve;
   const c = cloudClient(() => new Promise(r => { resolve = r; }));
   c.run('game.submitWord();' + change);
-  resolve({ ok: true }); await flush();
+  resolve(wiktReply()); await flush();
   assert.equal(c.run('game.players.reduce((n,p)=>n+p.wordsPlayed.length,0)'), 0);
   assert.equal(c.run('isValidWord("ZZ")'), false);
 });
@@ -185,6 +190,55 @@ test('cloud lookup errors release the pending Submit button', async () => {
   c.run('game.submitWord()'); await flush();
   assert.equal(c.run('game.cloudPending'), false);
   assert.equal(c.els.get('btn-submit').disabled, false);
+});
+
+test('cloud assist asks Wiktionary first and a Wiktionary 404 is "not a word", not an outage', async () => {
+  const urls = [];
+  const c = cloudClient(url => { urls.push(url); return Promise.resolve(wiktReply(null, 404)); });
+  c.run('game.submitWord()'); await flush();
+  assert.deepEqual(urls, ['https://en.wiktionary.org/api/rest_v1/page/definition/zz']);
+  assert.equal(c.run('isValidWord("ZZ")'), false);
+  assert.equal(c.run('game.players[0].wordsPlayed.length'), 0);
+  assert.equal(c.run('game.cloudPending'), false);
+});
+
+test('cloud assist rejects words Wiktionary only knows as proper nouns or non-English entries', async () => {
+  const body = { en: [{ partOfSpeech: 'Proper noun', language: 'English', definitions: [{ definition: 'A surname.' }] },
+    { partOfSpeech: 'Noun', language: 'Translingual', definitions: [{ definition: 'A symbol.' }] }] };
+  const c = cloudClient(() => Promise.resolve(wiktReply(body)));
+  c.run('game.submitWord()'); await flush();
+  assert.equal(c.run('isValidWord("ZZ")'), false);
+  assert.equal(c.run('game.players[0].wordsPlayed.length'), 0);
+});
+
+test('an unreachable Wiktionary falls back to dictionaryapi.dev', async () => {
+  const urls = [];
+  const c = cloudClient(url => { urls.push(url);
+    return Promise.resolve(url.includes('wiktionary') ? wiktReply(null, 429) : { ok: true, status: 200, json: async () => [{ meanings: [] }] }); });
+  c.run('game.submitWord()'); await flush();
+  assert.equal(urls.length, 2); assert.match(urls[1], /^https:\/\/api\.dictionaryapi\.dev\/api\/v2\/entries\/en\/zz$/);
+  assert.equal(c.run('game.players[0].wordsPlayed[0].word'), 'ZZ');
+});
+
+test('defineWord shows the English sense as escaped text, skipping topical headings', async () => {
+  const body = { en: [{ partOfSpeech: 'Noun', language: 'English', definitions: [{ definition:
+    '<span class="use-with-mention">Terms relating to <a>animals</a>.</span>\n<ol><li class="mw-empty-elt"></li><li> A <a>mammal</a> &lt;Felidae&gt;.<ol><li>A sub-sense.</li></ol></li></ol>' }] }] };
+  const c = client(() => Promise.resolve(wiktReply(body)));
+  c.run('defineWord("cat")'); await flush();
+  const html = c.els.get('define-body').innerHTML;
+  assert.match(html, /<em[^>]*>noun<\/em> — A mammal &lt;Felidae&gt;\./);
+  assert.doesNotMatch(html, /Terms relating|sub-sense/);
+  assert.match(html, /en\.wiktionary\.org\/wiki\/cat#English/);
+  assert.equal(c.els.get('define-word').innerText, '📖 CAT');
+});
+
+test('defineWord reports an outage without caching it, and "no definition" for unknown words', async () => {
+  let fail = true;
+  const c = client(() => fail ? Promise.reject(new Error('offline')) : Promise.resolve(wiktReply(null, 404)));
+  c.run('defineWord("zz")'); await flush();
+  assert.match(c.els.get('define-body').innerHTML, /Couldn’t reach the dictionary/);
+  fail = false; c.run('defineWord("zz")'); await flush();
+  assert.match(c.els.get('define-body').innerHTML, /No definition found/);
 });
 
 test('keyboard selection, navigation, deletion and clear retain a single focused board button', () => {

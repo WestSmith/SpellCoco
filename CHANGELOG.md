@@ -4,6 +4,29 @@ Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
 ```
 ================================================================
+SPELLCOCO v72 — DICTIONARY LOOKUPS (2026-09-26)
+- FIX (definitions): tapping a word always said "Couldn't reach the
+  dictionary". api.dictionaryapi.dev now takes ~20s to answer and returns
+  Cloudflare 522 for most words, so every lookup hit the 8s abort. Lookups
+  now go to Wiktionary first (sub-second, CORS-open, and it knows NWL words
+  like QI and ZAX that dictionaryapi.dev never had); dictionaryapi.dev is
+  kept only as a fallback when Wiktionary can't be reached. English senses
+  only (no Translingual ISO codes), topical headings like "Terms relating
+  to animals." skipped, a "from Wiktionary" credit link.
+- FIX (cloud assist): the same outage made every unknown word fail with
+  "Couldn't reach the cloud dictionary". It now uses the same lookup; a word
+  counts as real only with an English noun/verb/adjective/etc. entry
+  (proper nouns, affixes, abbreviations and symbols don't).
+- CSP: connect-src allows https://en.wiktionary.org.
+- Dictionary Check: a "not found" while the full word list is still
+  loading now says so (only the ~700 built-in words are known until then).
+- The local word list itself (NWL2023, 196,601 words) was verified to load
+  and index correctly; it was not affected.
+- Tests: 5 new regression tests for the lookup paths (66 total).
+================================================================
+
+```
+================================================================
 SPELLCOCO v71 — AUDIT ROUND (2026-09-13)
 An external audit of v70 (docs/audit/2026-09-12-v70.md) found 13 issues.
 All 13 are addressed here; 61 regression tests run in CI.

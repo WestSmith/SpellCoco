@@ -8,7 +8,7 @@
          Cloudflare relays, the PeerJS cloud broker, and the dictionary API.
          'unsafe-inline' is required (the whole app is one inline script with
          inline handlers) — the CSP's job here is blocking everything OFF-list. -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://api.dictionaryapi.dev wss://spellcoco-async.spellcoco.workers.dev https://spellcoco-async.spellcoco.workers.dev wss://0.peerjs.com https://0.peerjs.com; manifest-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'none'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://en.wiktionary.org https://api.dictionaryapi.dev wss://spellcoco-async.spellcoco.workers.dev https://spellcoco-async.spellcoco.workers.dev wss://0.peerjs.com https://0.peerjs.com; manifest-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'none'">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
     <meta name="color-scheme" content="dark">
     <title>SpellCoco</title>
@@ -4729,7 +4729,8 @@ function checkDictWord(){
         r.innerHTML=`<span class="dict-result-yes">✓ "${w}" is valid — ~${pts} pts (base)${bonus}</span> <span class="definable" style="color:var(--blue-hi);font-size:0.85rem;" onclick="defineWord('${w}')">define</span>`;
     } else {
         const pts=calcBasePoints(w);
-        r.innerHTML=`<span class="dict-result-no">✗ "${w}" not found — would be ~${pts} pts (base)</span>`;
+        const wait=dictFileLoaded?'':' <span style="color:var(--ink-dim);font-size:0.85rem;">(full word list still loading — try again in a moment)</span>';   // v72: the ~700-word built-in list is all we know until then
+        r.innerHTML=`<span class="dict-result-no">✗ "${w}" not found — would be ~${pts} pts (base)</span>${wait}`;
     }
 }
 function clearDictChecker(){document.getElementById('dict-check-input').value='';document.getElementById('dict-check-result').innerText=''}
@@ -5124,8 +5125,8 @@ class Game{
         this.endTurn();
     }
 
-    // v45: word isn't in the local list — check dictionaryapi.dev (the same
-    // service the define feature uses). Real word → added to custom words
+    // v45: word isn't in the local list — check it online (v72: lookupWord,
+    // the same Wiktionary-first lookup the define feature uses). Real word → added to custom words
     // (addCustomWord also broadcasts to the opponent in online games, so the
     // host will accept the guest's resubmit) and the submit retries itself.
     cloudCheckWord(w){
@@ -5136,13 +5137,10 @@ class Game{
             &&this.round===request.round&&this.turnIndex===request.turn
             &&this.selection.join(',')===request.selection&&this.calculateCurrentScore().word===w;
         quietUI();this.note('📡 Checking '+w+'…');
-        // v70: an 8s abort — a hung request used to leave cloudPending stuck, blocking every later submit
-        const ac=new AbortController(),tmo=setTimeout(()=>ac.abort(),8000);
-        fetch('https://api.dictionaryapi.dev/api/v2/entries/en/'+w.toLowerCase(),{signal:ac.signal})
-            .then(res=>{
+        lookupWord(w)
+            .then(({found})=>{
                 if(!current())return;
-                if(!res.ok&&res.status!==404){this.showToast('Couldn’t reach the cloud dictionary — add it as a custom word if it’s real');SFX.invalid();return}   // v68: 429/5xx ≠ "not a word"
-                if(res.ok){
+                if(found){
                     addCustomWord(w);
                     this.showToast('📖 '+w+' is real — added to custom words!');
                     if(this.calculateCurrentScore().word===w)this.submitWord();
@@ -5151,10 +5149,10 @@ class Game{
                 }
             })
             .catch(()=>{
-                if(!current())return;
+                if(!current())return;   // v68: an unreachable dictionary ≠ "not a word"
                 this.showToast('Couldn’t reach the cloud dictionary — add it as a custom word if it’s real');SFX.invalid();
             })
-            .finally(()=>{clearTimeout(tmo);if(this.cloudRequest===request){this.cloudRequest=null;this.cloudPending=false;if(game===this&&!this._dead&&!this.over)quietUI()}});
+            .finally(()=>{if(this.cloudRequest===request){this.cloudRequest=null;this.cloudPending=false;if(game===this&&!this._dead&&!this.over)quietUI()}});
     }
 
     endTurn(){
@@ -5743,21 +5741,62 @@ let DEF_PENDING=null;
 let _srAt=0;
 function srSay(t){const el=document.getElementById('sr-status');if(!el)return;const d=Math.max(30,_srAt-Date.now());_srAt=Date.now()+d+1200;setTimeout(()=>{el.textContent='';setTimeout(()=>{el.textContent=t},30)},d)}
 function srAnnounceTurn(g){if(!g||g.over)return;const k=g.round+':'+g.turnIndex;if(g._srTurn===k)return;g._srTurn=k;const p=g.currentPlayer;if(!p)return;srSay((g.myTurn&&NET.mode!=='local'?'Your turn':p.name+"'s turn")+', round '+g.round)}
+// v72: word lookups (definitions + cloud assist). api.dictionaryapi.dev, used
+// since v45, now takes ~20s to answer and returns Cloudflare 522 for most words,
+// so every lookup hit the 8s abort ("Couldn't reach the dictionary"). It also never
+// knew many NWL words (QI, ZAX). Wiktionary is now primary — fast, CORS-open, and
+// broad; dictionaryapi.dev is only a fallback when Wiktionary can't be reached.
+// Resolves {found,defs:[{pos,text}],src}: found = a playable English word.
+// Rejects only when neither service answered — a blip is not "no such word".
+const WORD_POS=new Set(['noun','verb','adjective','adverb','pronoun','preposition','conjunction','interjection','determiner','article','numeral','participle','particle']);
+function fetchJson(url,ms){
+    const ac=new AbortController(),t=setTimeout(()=>ac.abort(),ms);   // never spin forever
+    return fetch(url,{signal:ac.signal}).then(r=>{if(r.status===404)return null;if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}).finally(()=>clearTimeout(t));
+}
+const HTML_ENT={amp:'&',lt:'<',gt:'>',quot:'"',apos:"'",nbsp:' '};
+function htmlToText(h){
+    return String(h||'').replace(/<[^>]*>/g,'')
+        .replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi,(m,e)=>e[0]==='#'?String.fromCodePoint(parseInt(e[1]==='x'||e[1]==='X'?e.slice(2):e.slice(1),e[1]==='x'||e[1]==='X'?16:10)||32):(HTML_ENT[e.toLowerCase()]||m))
+        .replace(/\s+/g,' ').trim();
+}
+// A Wiktionary sense's text without its nested sub-sense list — except when that
+// text is only a topical heading ("Terms relating to animals."), then the first sub-sense.
+function wiktSense(h){
+    h=String(h||'');
+    const i=h.search(/<ol\b/i),head=htmlToText(i<0?h:h.slice(0,i));
+    if(i<0||(head&&!/^terms relating to\b/i.test(head)))return head;
+    return h.slice(i).split(/<li\b[^>]*>/i).slice(1).map(x=>htmlToText(x.split(/<ol\b/i)[0])).find(Boolean)||head;
+}
+function lookupWord(w){
+    const lw=encodeURIComponent(String(w).toLowerCase());
+    return fetchJson('https://en.wiktionary.org/api/rest_v1/page/definition/'+lw,8000)
+        .then(j=>{
+            const defs=[];let found=false;
+            ((j&&j.en)||[]).forEach(e=>{
+                if(e.language!=='English')return;   // "en" also carries Translingual symbols (ISO codes etc.)
+                const pos=String(e.partOfSpeech||'');
+                if(WORD_POS.has(pos.toLowerCase()))found=true;
+                const text=(e.definitions||[]).map(d=>wiktSense(d&&d.definition)).find(Boolean);
+                if(text)defs.push({pos,text});
+            });
+            return {found,defs,src:'wiktionary'};
+        })
+        .catch(()=>fetchJson('https://api.dictionaryapi.dev/api/v2/entries/en/'+lw,8000).then(j=>{
+            const defs=[];
+            ((Array.isArray(j)&&j[0]&&j[0].meanings)||[]).forEach(m=>{const d=m.definitions&&m.definitions[0];if(d&&d.definition)defs.push({pos:String(m.partOfSpeech||''),text:String(d.definition)})});
+            return {found:Array.isArray(j)&&j.length>0,defs,src:'dictionaryapi'};
+        }));
+}
 function defineWord(w){
     w=String(w||'').toUpperCase();
     if(!/^[A-Z]{2,15}$/.test(w))return;
     DEF_PENDING=w;   // v69.1: set before the cache check so a slower earlier lookup can't overwrite a cached hit
     if(DEF_CACHE[w]){showDefineModal(w,DEF_CACHE[w]);return}
     showDefineModal(w,'<span style="color:var(--ink-dim)">Looking it up…</span>');
-    const ac=new AbortController();setTimeout(()=>ac.abort(),8000);   // v70: never spin forever
-    fetch('https://api.dictionaryapi.dev/api/v2/entries/en/'+w.toLowerCase(),{signal:ac.signal})
-        .then(r=>{if(r.status===404)return [];if(!r.ok)throw 0;return r.json()})
-        .then(j=>{
-            const out=[];
-            ((j[0]&&j[0].meanings)||[]).slice(0,3).forEach(m=>{
-                const d=m.definitions&&m.definitions[0];
-                if(d)out.push(`<div style="margin-bottom:9px"><em style="color:var(--purple-hi)">${escHtml(m.partOfSpeech)}</em> — ${escHtml(d.definition)}</div>`);
-            });
+    lookupWord(w)
+        .then(({defs,src})=>{
+            const out=defs.slice(0,3).map(d=>`<div style="margin-bottom:9px"><em style="color:var(--purple-hi)">${escHtml(d.pos.toLowerCase())}</em> — ${escHtml(d.text)}</div>`);
+            if(out.length&&src==='wiktionary')out.push(`<div style="font-size:0.78rem;color:var(--ink-dim)">from <a href="https://en.wiktionary.org/wiki/${encodeURIComponent(w.toLowerCase())}#English" target="_blank" rel="noopener" style="color:var(--blue-hi)">Wiktionary</a></div>`);
             const html=out.length?out.join(''):'No definition found — might be one of yours! 🐾';
             DEF_CACHE[w]=html;if(DEF_PENDING===w)showDefineModal(w,html);   // v68: a slower earlier lookup must not overwrite the word tapped last
         })
@@ -5805,7 +5844,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v71';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v72';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){
