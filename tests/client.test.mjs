@@ -126,7 +126,8 @@ test('dictionary imports filter contractions and invalid entries before indexing
   c.run('processDictionaryText(words)');
   assert.equal(c.run('dictFileLoaded'), false);
   c.fireDelay(50);
-  assert.deepEqual(plain(c.run('[...DICTIONARY].filter(w=>w!=="CAT")')), []);
+  assert.equal(c.run('trie.words'), 1);
+  assert.equal(c.run('isValidWord("CAN\'T")||isValidWord("ICECREAM")||isValidWord("A")'), false);
   assert.equal(c.run('dictFileLoaded&&isValidWord("CAT")'), true);
   c.run('game.tiles[0].char="C";game.tiles[1].char="A";game.tiles[2].char="N"');
   assert.doesNotThrow(() => c.run('findBestWordWithSwap(game.tiles)'));

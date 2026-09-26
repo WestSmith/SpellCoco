@@ -122,8 +122,13 @@ storage and multiple reconnects do not inflate server-backed totals.
 
 ## Follow-on maintainability work
 
+v73 decoupled selection repaints from full-state network writes (`livesel`,
+advertised by the relay in `welcome.caps`) and extracted the first module:
+`engine.js` holds the dictionary index and board solvers. Still open:
+
 Extract rules, transport, persistence and rendering into modules after the
 protocol change has tests. Replace per-game retained DOM listeners with a
-single binding or explicit teardown. Decouple `updateUI()` from full-state
-network writes. Add two-browser integration tests and mobile suspension/push
+single binding or explicit teardown. Decouple the remaining `updateUI()`
+callers (abilities, timer ticks) from full-state writes where a narrower
+message would do. Add two-browser integration tests and mobile suspension/push
 checks against a dedicated SpellCoco test environment.

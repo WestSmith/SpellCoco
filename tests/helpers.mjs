@@ -7,6 +7,9 @@ import { fileURLToPath } from 'node:url';
 // are deterministic doubles; these tests never contact rooms or external APIs.
 const root = process.env.SPELLCOCO_TEST_ROOT || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+// v73: local <script src> files (engine.js) run first, as they do on the page.
+const local = [...html.matchAll(/<script[^>]*\bsrc="([^":]+?)(?:\?[^"]*)?"[^>]*><\/script>/g)].map(m => m[1]);
+const scripts = local.map(f => fs.readFileSync(path.join(root, f), 'utf8'));
 const app = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1]).join('\n');
 const worker = fs.readFileSync(path.join(root, 'worker/src/index.js'), 'utf8');
 globalThis.WebSocketRequestResponsePair = class {};
@@ -43,6 +46,7 @@ function element(tag, doc) {
       contains(x) { return classes.has(x); }, toggle(x, on) { const add = on ?? !classes.has(x); add ? classes.add(x) : classes.delete(x); return add; } },
     appendChild(x) { if (typeof x === 'object') x.parentElement = this; this.children.push(x); return x; },
     append(...xs) { xs.forEach(x => this.appendChild(x)); }, remove() {},
+    replaceChild(x, old) { const i = this.children.indexOf(old); if (i < 0) throw new Error('not a child'); if (typeof x === 'object') x.parentElement = this; this.children[i] = x; return old; },
     setAttribute(k, v) { attrs.set(k, String(v)); }, getAttribute(k) { return attrs.get(k) ?? null; }, removeAttribute(k) { attrs.delete(k); },
     addEventListener(k, f) { (this.listeners[k] ||= []).push(f); },
     contains(x) { return x === this || this.children.some(c => typeof c === 'object' && c.contains(x)); },
@@ -80,7 +84,7 @@ export function client(fetchImpl) {
     setInterval: (f, ms) => timer(f, ms, true), clearInterval: id => timers.delete(id), requestAnimationFrame: () => {},
     fetch: fetchImpl || (() => Promise.reject(new Error('Network disabled in tests'))), inputState: state() });
   const run = code => vm.runInContext(code, ctx);
-  run(app); ctx.sent = sent;
+  scripts.forEach(run); run(app); ctx.sent = sent;
   run('NET.send = m => sent.push(JSON.parse(JSON.stringify(m))); soundEnabled=false;');
   const fire = id => { const t = timers.get(id); if (!t) throw new Error('No timer ' + id); if (!t.repeat) timers.delete(id); t.f(); };
   const fireDelay = ms => { for (const [id, t] of [...timers]) if (t.ms === ms) fire(id); };

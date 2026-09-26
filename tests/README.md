@@ -7,12 +7,14 @@ node --test tests/*.test.mjs
 ```
 
 No package installation or network access is needed. `helpers.mjs` loads the
-actual inline JavaScript and Worker module into deterministic DOM, timer,
+page's local scripts (`engine.js`), its actual inline JavaScript and the Worker module into deterministic DOM, timer,
 storage and socket doubles. Tests cover all thirteen findings from the
 [v70 audit](../docs/audit/2026-09-12-v70.md) — `sync.test.mjs` holds the
 revision / durable-pending-move / statistics / per-match recap cases — plus
-related compatibility and failure paths. The GitHub checks workflow runs this
-command.
+related compatibility and failure paths. `v73.test.mjs` covers the compact word
+engine, memoized solvers, selection-only sync (`livesel`), incremental board
+rendering and the service worker's caching rules. The GitHub checks workflow
+runs this command.
 
 The doubles do not implement browser layout, native event synthesis, real
 WebSockets, Durable Object transactions, push delivery or iOS suspension.

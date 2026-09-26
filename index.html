@@ -2435,6 +2435,7 @@
     </div>
 </div>
 
+<script src="engine.js?v=v73"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js" integrity="sha512-XEKeWX+mI3Ov+tg2evDlVQFzVOIp4T8J3cNcCEPaEUGpxJV3eZaN8rHuvnFPvQpGJBHPmrozJDMpm2xcDvtmyQ==" crossorigin="anonymous"></script>
 <script>
 /*
@@ -2569,98 +2570,56 @@ function restoreSettings(){
 }
 
 // ===================== v33: best-word solver =====================
-const NEIGHBORS=(()=>{const n=[];for(let r=0;r<5;r++)for(let c=0;c<5;c++){const a=[];for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){if(!dr&&!dc)continue;const rr=r+dr,cc=c+dc;if(rr>=0&&rr<5&&cc>=0&&cc<5)a.push(rr*5+cc)}n.push(a)}return n})();
-function scoreTilePath(path){
-    let base=0,wm=1;
-    path.forEach(t=>{let v=t.baseValue;if(t.multiplier==='DL')v*=2;else if(t.multiplier==='TL')v*=3;base+=v;if(t.multiplier==='2W')wm*=2;else if(t.multiplier==='3W')wm*=3});
-    return base*wm+calcLongWordBonus(path.length);
+// v73: the search itself lives in engine.js (one shared walk over the compact
+// trie). Results are memoized per board + dictionary version + scoring rules,
+// so submit, hint and Coco reuse what the idle-time prewarm already computed.
+const NEIGHBORS=WordEngine.NEIGHBORS;
+const _solve={key:null,plain:null,swap:null};
+function solverContext(tiles){
+    const values=[],bonus=[];
+    for(let c=0;c<26;c++){const L=LETTERS[String.fromCharCode(65+c)];values.push(L?L.val:null)}
+    for(let n=0;n<=25;n++)bonus.push(n<2?0:calcLongWordBonus(n));
+    let k=trie.uid+':'+trie.version+':'+bonus.join(',')+':';
+    for(let i=0;i<25;i++){const t=tiles[i];k+=t.char+(t.multiplier||'-')+t.baseValue+'.'}
+    return{values,bonus,key:k};
 }
+function boardSolve(tiles,withSwap){
+    if(!tiles||tiles.length!==25)return null;
+    const cx=solverContext(tiles);
+    if(_solve.key!==cx.key){_solve.key=cx.key;_solve.plain=null;_solve.swap=null}
+    if(!_solve.plain)_solve.plain=WordEngine.search(trie,tiles,cx.values,cx.bonus,false,true);
+    if(withSwap&&!_solve.swap)_solve.swap=WordEngine.search(trie,tiles,cx.values,cx.bonus,true,false);
+    return _solve;
+}
+const _copyHit=h=>h&&{word:h.word,score:h.score,ids:h.ids.slice(),swap:h.swap?{...h.swap}:null};
 function findBestWord(tiles){
     if(!trieBuilt)return null;
-    let best=null;
-    const visited=new Array(25).fill(false),path=[];
-    function dfs(id,node){
-        const nx=node.children[tiles[id].char];if(!nx)return;
-        visited[id]=true;path.push(tiles[id]);
-        if(nx.isEnd&&path.length>=2){
-            const sc=scoreTilePath(path);
-            if(!best||sc>best.score)best={word:path.map(t=>t.char).join(''),score:sc};
-        }
-        const nbs=NEIGHBORS[id];
-        for(let i=0;i<nbs.length;i++)if(!visited[nbs[i]])dfs(nbs[i],nx);
-        visited[id]=false;path.pop();
-    }
-    for(let i=0;i<25;i++)dfs(i,trie.root);
-    return best;
+    const s=boardSolve(tiles,false);return s?_copyHit(s.plain.best):null;
 }
-
-// v48: swap-aware solver — same trie DFS, plus a 1-substitution budget.
-// At any tile the walk may follow ANY trie child instead of the tile's
-// real letter, spending the budget and recording {id,from,to}. The
-// substituted tile scores at the NEW letter's value; the tile's
+// v48: swap-aware solver — the walk may replace ONE tile with any letter.
+// The substituted tile scores at the NEW letter's value; the tile's
 // DL/TL/2W/3W multiplier still applies (a swap changes the letter,
 // not the tile). Ties prefer no-swap, so .swap is only non-null when
 // a swap is STRICTLY better than anything reachable for free.
 function findBestWordWithSwap(tiles){
     if(!trieBuilt)return null;
-    let best=null;
-    const visited=new Array(25).fill(false),path=[],chars=[],vals=[];
-    function take(id,nx,ch,val,swap){
-        visited[id]=true;path.push(tiles[id]);chars.push(ch);vals.push(val);
-        if(nx.isEnd&&path.length>=2){
-            let bse=0,wm=1;
-            for(let k=0;k<path.length;k++){
-                const t=path[k];let v=vals[k];
-                if(t.multiplier==='DL')v*=2;else if(t.multiplier==='TL')v*=3;
-                bse+=v;
-                if(t.multiplier==='2W')wm*=2;else if(t.multiplier==='3W')wm*=3;
-            }
-            const sc=bse*wm+calcLongWordBonus(path.length);
-            if(!best||sc>best.score||(sc===best.score&&best.swap&&!swap))
-                best={word:chars.join(''),score:sc,ids:path.map(t=>t.id),swap:swap?{id:swap.id,from:swap.from,to:swap.to}:null};
-        }
-        const nbs=NEIGHBORS[id];
-        for(let i=0;i<nbs.length;i++)if(!visited[nbs[i]])dfs(nbs[i],nx,swap);
-        visited[id]=false;path.pop();chars.pop();vals.pop();
-    }
-    function dfs(id,node,swap){
-        const t=tiles[id];
-        const nx=node.children[t.char];
-        if(nx)take(id,nx,t.char,t.baseValue,swap);
-        if(!swap){
-            for(const ch in node.children){
-                if(ch===t.char||!Object.prototype.hasOwnProperty.call(LETTERS,ch))continue;
-                take(id,node.children[ch],ch,LETTERS[ch].val,{id:id,from:t.char,to:ch});
-            }
-        }
-    }
-    for(let i=0;i<25;i++)dfs(i,trie.root,null);
-    return best;
+    const s=boardSolve(tiles,true);return s?_copyHit(s.swap.best):null;
 }
-
-// ===================== v41: Coco the player (solo mode) =====================
-// Same trie DFS as findBestWord, but collects EVERY unique word (best-scoring
-// path per word) so Coco's moods can pick from the whole menu.
+// v41: every unique word on the board (best-scoring path per word), ascending
+// by score, so Coco's moods can pick from the whole menu.
 function findWordCandidates(tiles){
     if(!trieBuilt)return[];
-    const found=new Map();
-    const visited=new Array(25).fill(false),path=[];
-    function dfs(id,node){
-        const t=tiles[id],nx=node.children[t.char];if(!nx)return;
-        visited[id]=true;path.push(t);
-        if(nx.isEnd&&path.length>=2){
-            const w=path.map(x=>x.char).join('');
-            const sc=scoreTilePath(path);
-            const prev=found.get(w);
-            if(!prev||sc>prev.score)found.set(w,{word:w,score:sc,ids:path.map(x=>x.id)});
-        }
-        const nbs=NEIGHBORS[id];
-        for(let i=0;i<nbs.length;i++)if(!visited[nbs[i]])dfs(nbs[i],nx);
-        visited[id]=false;path.pop();
-    }
-    for(let i=0;i<25;i++)dfs(i,trie.root);
-    return [...found.values()].sort((a,b)=>a.score-b.score);
+    const s=boardSolve(tiles,false);return s?s.plain.all.map(_copyHit):[];
 }
+// v73: solve the board in idle time after it changes, so the submit that
+// follows doesn't pay for the swap search (tens of ms on a phone).
+let _prewarmT=null;
+function prewarmSolver(){
+    if(_prewarmT||!trieBuilt||!dictFileLoaded)return;
+    const run=()=>{_prewarmT=null;if(game&&!game.over&&!game._dead)try{boardSolve(game.tiles,true)}catch(e){}};
+    _prewarmT=typeof requestIdleCallback==='function'?requestIdleCallback(run,{timeout:1500}):setTimeout(run,400);
+}
+
 const COCO_MOODS={
     sleepy:{label:'Sleepy',emoji:'😴',lo:0.18,hi:0.42,maxLen:5},
     cozy:{label:'Cozy',emoji:'😺',lo:0.50,hi:0.78,maxLen:0},
@@ -2754,7 +2713,7 @@ function cocoTakeTurn(){
                 setTimeout(()=>{ // …Coco squints at the word. That's not right.
                     if(!alive())return;
                     const id=game.selection.pop();
-                    if(id!==undefined){game.tiles[id].isSelected=false;SFX.tileDeselect();game.updateUI()}
+                    if(id!==undefined){game.tiles[id].isSelected=false;SFX.tileDeselect();game.selUI()}
                     setTimeout(step,cocoMs(pace.tile)); // resume with the right tile
                 },cocoMs([800,1400]));
                 return;
@@ -2828,6 +2787,8 @@ const NET={
         if(this.async&&(state.over||state.turnIndex!==this.myIndex)){this.pendingMove={m:m,q:m.q,at:Date.now()};this.savePending();}
         this.send(m);
     },
+    // v73: display-only selection preview for the opponent's screen; never stored
+    sendSel(g){this.send({type:'livesel',ids:[...g.selection],r:g.round,t:g.turnIndex})},
     resendPending(){
         if(!this.async||!this.pendingMove)return;
         if(game&&this.pendingMove.m.state&&!this.pendingMove.m.state.over&&game.over){this.clearPending();return} // game ended meanwhile
@@ -2848,7 +2809,7 @@ const NET={
     // v69.1: drop the socket but keep the room identity, so a later netNudge can
     // knock again (used on the busy/full welcome paths, which can happen mid-game).
     disconnect(){if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.connected=false;this.__busyTries=0;this.__rehello=false;this.__reseat=false;/*v70: the next knock gets the full recovery ladder again*/hbStop();updateNetDots();},
-    cleanup(){this.pendingMove=null;this.pendingStart=null;/*v64: never re-push into a different room*/if(this.peer){try{this.peer.destroy()}catch(e){}}this.peer=null;this.conn=null;if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.reconnectTries=0;this.transport=this.useRelay?'relay':'p2p';this.everConnected=false;this.connected=false;/*v68: leave the async room for real — a stale async flag/code hijacked later local games (netNudge reconnect, sendMove, saveGameState skip, cocoAttack, stats key)*/this.async=false;this.code='';this.gameCode='';this.seat=null;this.myIndex=-1;this.rev=null;/*v71: revisions are per room*/hbStop();}
+    cleanup(){this.pendingMove=null;this.pendingStart=null;/*v64: never re-push into a different room*/if(this.peer){try{this.peer.destroy()}catch(e){}}this.peer=null;this.conn=null;if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.reconnectTries=0;this.transport=this.useRelay?'relay':'p2p';this.everConnected=false;this.connected=false;/*v68: leave the async room for real — a stale async flag/code hijacked later local games (netNudge reconnect, sendMove, saveGameState skip, cocoAttack, stats key)*/this.async=false;this.code='';this.gameCode='';this.seat=null;this.myIndex=-1;this.rev=null;/*v71: revisions are per room*/this.caps=null;hbStop();}
 };
 function genCode(){const a='ABCDEFGHJKMNPQRSTUVWXYZ23456789';let c='';for(let i=0;i<4;i++)c+=a[Math.floor(Math.random()*a.length)];return c}
 
@@ -3205,6 +3166,9 @@ function asyncOnData(m){
         case 'undoreq':showUndoRequest({from:cleanChar(m.from),to:cleanChar(m.to)},false);break;   // v67.1: from/to reach undoreq-text innerHTML
         case 'undook':if(game&&!game.applyUndoSwap())game.showToast('↩ Too late to undo — the board moved on');break;
         case 'undono':if(game)game.showToast(`🙀 ${oppName()} says the swap stands`);break;
+        // v73: the opponent's in-progress word. Display only, and only for the
+        // exact turn it was made on (a late one after their move is dropped).
+        case 'livesel':if(game&&!game.over&&game.turnIndex!==NET.myIndex&&m.r===game.round&&m.t===game.turnIndex){NET.quiet=true;try{game.applySelection(m.ids)}finally{NET.quiet=false}}break;
     }
 }
 // v58: repaint WITHOUT pushing a state to the server. Dictionary updates don't
@@ -3213,6 +3177,8 @@ function asyncOnData(m){
 function quietUI(){if(!game)return;NET.quiet=true;try{game.updateUI()}finally{NET.quiet=false}}
 function asyncSyncWords(){if(localCustomWords&&localCustomWords.length)NET.send({type:'customs',words:localCustomWords});}
 function asyncWelcome(m){
+    // v73: what this relay deployment supports (older relays send no caps)
+    if(!m.busy)NET.caps=Array.isArray(m.caps)?{livesel:m.caps.includes('livesel')}:null;
     // v67: seat names come from the other device's hello — strip anything
     // that isn't name-shaped before they reach pills, cards, or toasts.
     if(m&&Array.isArray(m.names))m.names=m.names.map(n=>n?cleanNameStr(n):n);
@@ -3896,7 +3862,7 @@ function renderSeatPickers(){
 }
 function seatName(n){return SEATS[n].type==='Guest'?SEATS[n].guest:SEATS[n].type}
 
-function mergeRemoteWords(ws){(ws||[]).forEach(w=>{if(typeof w==='string'&&/^[A-Z]{2,15}$/.test(w)){DICTIONARY.add(w);if(trieBuilt)trie.insert(w)}})}
+function mergeRemoteWords(ws){(Array.isArray(ws)?ws:[]).forEach(w=>{if(typeof w==='string'&&/^[A-Z]{2,15}$/.test(w)){remoteWords.add(w);trie.insert(w,WordEngine.EXTRA)}})}
 function mergeStats(r){
     if(!r||typeof r!=='object')return;
     let ch=false;
@@ -4521,18 +4487,20 @@ function playPurr(){
 function toggleMute(){soundEnabled=!soundEnabled;initAudio();document.getElementById('btn-mute').innerText=soundEnabled?'🔊':'🔇';document.getElementById('btn-mute').classList.toggle('active',soundEnabled)}
 function setVolume(v){soundVolume=v/100}
 
-// Trie
-class TrieNode{constructor(){this.children=Object.create(null);this.isEnd=false}}
-class Trie{constructor(){this.root=new TrieNode}insert(w){let n=this.root;for(const c of w){if(!n.children[c])n.children[c]=new TrieNode;n=n.children[c]}n.isEnd=true}hasWord(w){let n=this.root;for(const c of w){if(!n.children[c])return false;n=n.children[c]}return n.isEnd}}
-let trie=new Trie,trieBuilt=false;
-function buildTrie(ws){trie=new Trie;for(const w of ws)if(w.length>=2)trie.insert(w);trieBuilt=true}
-
 // Dictionary
 const BUILT_IN_WORDS=["THE","AND","FOR","ARE","BUT","NOT","YOU","ALL","ANY","CAN","HAD","HAS","HIM","HER","ITS","ONE","TWO","SIX","TEN","NEW","WHO","MAY","NOW","OUT","SEE","USE","WAY","GET","OUR","MAN","MEN","SAY","SHE","TOO","WON","DID","EYE","EAR","LET","RUN","SET","PUT","RED","OLD","BIG","EAT","BOY","CAT","DOG","BED","CAR","BUS","KEY","SKY","TOP","JOY","FUN","ACE","ADD","AID","AIM","APE","ARC","ARK","AWE","ATE","OAT","OWL","OWN","ORE","ODD","GAME","PLAY","TIME","WORD","LIST","GRID","TILE","HELP","CODE","FILE","SAVE","OPEN","EXIT","QUIT","WIN","MAP","TEST","DATA","USER","PATH","LINK","TEXT","FONT","SIZE","TYPE","MODE","VIEW","EDIT","COPY","CUT","PASTE","ZIP","ZOO","FIND","TOOL","MENU","ICON","ITEM","NAME","DATE","RANK","RATE","ROLE","TEAM","SIDE","TURN","MOVE","STEP","RAW","ROW","STOP","WAIT","LOAD","READ","SENT","MAIL","POST","BLOG","CHAT","TALK","CALL","CARD","DEAL","HAND","FACE","AGE","AGO","HEAD","FOOT","BODY","ARM","LEG","NOSE","MOUTH","LIP","NAIL","HAIR","SKIN","BONE","RIB","HIP","MIND","SOUL","LOVE","HATE","FEAR","HOPE","WISH","NEED","WANT","LIKE","LIVE","LIFE","DEAD","DIE","WAR","BORN","GROW","YEAR","HOUR","DAY","WEEK","PAST","PLAN","GOAL","IDEA","WORK","JOB","PAY","REST","STAY","HOME","LAND","SEA","AIR","FIRE","WIND","RAIN","SNOW","COLD","HEAT","WARM","COOL","DARK","ICE","SUN","BLUE","PINK","GRAY","GOLD","WOOD","IRON","ROCK","SAND","DUST","DIRT","MUD","GRASS","TREE","LEAF","ROSE","TAN","LILY","BIRD","FISH","LION","BEAR","WOLF","FOX","DEER","COW","PIG","DUCK","HEN","ANT","BEE","SPELL","CAST","MAGIC","WITCH","WIZARD","POWER","LEVEL","SKILL","QUEST","LOOT","ORC","ELF","BOSS","RAID","GUILD","PARTY","SOLO","TANK","HEAL","MANA","ITEM","BAG","POT","PAN","GEAR","DROP","ROLL","LOSE","DRAW","SCORE","HIGH","LOW","BEST","GOOD","BAD","SAD","EVIL","HERO","KING","QUEEN","PRINCE","LORD","LADY","KNIGHT","SWORD","SHIELD","BOW","ARROW","AXE","PEN","INK","ART","CLUB","SPEAR","KNIFE","BLADE","EDGE","POINT","HIT","MISS","BLOCK","DODGE","STUN","SLOW","ROOT","CHARM","HEX","CURSE","POISON","BURN","SHOCK","FREEZE","BLAST","ICY","HOT","BOLT","WAVE","BEAM","RAY","AURA","BUFF","SONG","DANCE","BARD","MONK","DRUID","MAGE","ROGUE","GOD","WARRIOR","HUNTER","DEMON","ANGEL","GHOST","SPIRIT","DRAGON","GIANT","DWARF","GNOME","TROLL","GOBLIN","CHEST","DOOR","TRAP","LOCK","ROOM","FLOOR","WALL","ROOF","ROPE","TIE","KNOT","BRIDGE","GATE","FENCE","YARD","GARDEN","PARK","CITY","TOWN","VILLAGE","FARM","FIELD","FOREST","ZOO","PET","DESERT","SWAMP","CAVE","MINE","RUIN","TOMB","GRAVE","TEMPLE","CHURCH","SHRINE","KINGDOM","EMPIRE","NATION","STATE","LAW","TAX","AREA","ZONE","WORLD","PLANET","STAR","MOON","SPACE","GALAXY","COMET","ORBIT","MATH","LOGIC","FACT","TRUTH","LIE","MYTH","LEGEND","TALE","STORY","BOOK","PAGE","LETTER","NOTE","PAPER","SCROLL","TOME","MEMO","DIARY","LOG","RECORD","NEWS","WEB","VIDEO","IMAGE","PHOTO","AUDIO","SOUND","MUSIC","TUNE","TONE","PITCH","BEAT","SPEED","RATE","PACE","FAST","QUICK","SWIFT","RUSH","DASH","WALK","JOG","SPRINT","JUMP","LEAP","HOP","SKIP","CLIMB","SWIM","FLOAT","SINK","DIVE","FALL","SIT","DROP","SLIP","SLIDE","GLIDE","DRIFT","SPIN","TWIST","BEND","FLEX","BREAK","SNAP","CRACK","CRUSH","SMASH","BASH","STRIKE","PUNCH","KICK","BITE","CLAW","SLICE","CHOP","APPLE","ORANGE","BANANA","GRAPE","MELON","BERRY","LEMON","LIME","PEAR","PEACH","PLUM","KIWI","FIG","NUT","PIE","CAKE","BREAD","MEAT","BEEF","PORK","EGG","MILK","CHEESE","WATER","WINE","BEER","TEA","OIL","GAS","ATOM","CELL","VIRUS","GENE","ACID","BASE","SALT","SUGAR","FAT","LEAD","ZINC","TIN","RUBY","OPAL","JADE","ONYX","PEARL","LAVA","ASH","CLAY","SILK","WOOL","FUR","ROBE","CAPE","COAT","SHIRT","PANTS","SHOE","BOOT","HAT","HELM","VEST","BELT","RING","GEM","JEWEL","CROWN","ORB","WAND","STAFF","POTION","RUNE","SIGIL","WARD","GOLEM","WISP","SHADE","FROG","FERN","VINE","SHORE","BEACH","COVE","REEF","CREEK","RIVER","LAKE","POND","POOL","WELL","SPRING","STONE","CLIFF","HILL","EAGLE","HAWK","CROW","DOVE","SWAN","CRANE","ROBIN","STORK","HARE","MOUSE","SNAKE","TOAD","ACORN","EMBER","FLAME","FROST","STORM","CLOUD","MIST","HAZE","DAWN","DUSK","NIGHT","NOON","GLOW","GLEAM","COCO"];
-let BASE_WORDS=BUILT_IN_WORDS.slice();
-let DICTIONARY=new Set(BUILT_IN_WORDS);
+// v73: the compact trie from engine.js IS the dictionary — no word Set or
+// 196k-string array is kept beside it. Base-list words carry bit 1
+// (WordEngine.BASE); added words (custom list, local custom words, words the
+// opponent added) carry bit 2 (WordEngine.EXTRA), so they can be dropped or
+// re-added without rebuilding the index.
+let trie=WordEngine.Trie.fromWords(BUILT_IN_WORDS),trieBuilt=false;
+let baseWordCount=trie.words;
 let dictFileLoaded=false;
 let customWords=[];
+const remoteWords=new Set();   // added by the opponent this session (not saved locally)
+function buildTrie(ws){trie=WordEngine.Trie.fromWords(ws);trieBuilt=true}
+function addExtraWords(t){for(const list of [customWords,localCustomWords,remoteWords])for(const w of list)t.insert(w,WordEngine.EXTRA)}
 let localCustomWords=(lsGet('spellcoco.customWords',[])||[]).filter(w=>typeof w==='string'&&/^[A-Z]{2,15}$/.test(w));
 
 function renderCustomWordList(){
@@ -4550,10 +4518,10 @@ function addCustomWord(w,fromNet){
     w=(w||'').trim().toUpperCase();
     const msg=t=>{if(game)game.showToast(t);else{const st=document.getElementById('custom-status');st.innerText=t;st.style.color='var(--ink-dim)'}};
     if(!/^[A-Z]{2,15}$/.test(w)){if(!fromNet)msg('Letters only, 2–15 long');return false}
-    if(DICTIONARY.has(w)){if(!fromNet)msg(`${w} is already a valid word!`);return false}
+    if(isValidWord(w)){if(!fromNet)msg(`${w} is already a valid word!`);return false}
     if(!localCustomWords.includes(w))localCustomWords.push(w);
     lsSet('spellcoco.customWords',localCustomWords);
-    DICTIONARY.add(w);if(trieBuilt)trie.insert(w);
+    trie.insert(w,WordEngine.EXTRA);
     renderCustomWordList();
     if(!fromNet&&NET.mode!=='local'&&NET.open())NET.send({type:'addword',w:w});
     return true;
@@ -4561,8 +4529,9 @@ function addCustomWord(w,fromNet){
 function removeCustomWord(w){
     localCustomWords=localCustomWords.filter(x=>x!==w);
     lsSet('spellcoco.customWords',localCustomWords);
+    remoteWords.delete(w);
+    if(!customWords.includes(w))trie.remove(w,WordEngine.EXTRA);   // v73: no full rebuild for one word
     renderCustomWordList();
-    rebuildWithCustom();
 }
 function addCustomWordFromInput(){
     const i=document.getElementById('new-custom-word');
@@ -4588,7 +4557,7 @@ function oppName(){
 function proposeWord(w){
     w=String(w||'').trim().toUpperCase();
     if(!/^[A-Z]{2,15}$/.test(w))return;
-    if(DICTIONARY.has(w)){if(game)game.showToast(`${w} is already a valid word!`);return}
+    if(isValidWord(w)){if(game)game.showToast(`${w} is already a valid word!`);return}
     NET.send({type:'wordreq',w:w});
     const msg=`📨 Asked ${oppName()} to allow "${w}"…`;
     if(game)game.showToast(msg);
@@ -4646,30 +4615,63 @@ function exportCustomWords(){
 }
 
 // A word list must be representable by the board's A–Z tiles.
-function parseWordList(text,max=25){return [...new Set(String(text).split(/\r?\n/).map(w=>w.trim().toUpperCase()).filter(w=>/^[A-Z]+$/.test(w)&&w.length>=2&&w.length<=max))]}
+function parseWordList(text,max=25){return WordEngine.parseWordList(text,max)}
+function hasUsableWords(text){return /^[ \t]*[A-Za-z]{2,25}[ \t]*\r?$/m.test(String(text))}
 function fetchWordList(url){
     const ac=new AbortController();let timer;
     const timeout=new Promise((_,reject)=>{timer=setTimeout(()=>{ac.abort();reject(new Error('Word list timed out'))},20000)});
     return Promise.race([fetch(url,{signal:ac.signal}).then(r=>{if(!r.ok)throw new Error('Word list unavailable');return r.text()}),timeout]).finally(()=>clearTimeout(timer));
 }
 window.addEventListener('DOMContentLoaded',()=>{
-    buildTrie(BUILT_IN_WORDS);
+    buildTrie(BUILT_IN_WORDS);addExtraWords(trie);
     // Healthy downloads still share one rebuild; either request may time out.
-    const dictP=fetchWordList('dictionary.txt').then(t=>{const ws=parseWordList(t);if(!ws.length)return false;BASE_WORDS=ws;return true}).catch(()=>false);
+    const dictP=fetchWordList('dictionary.txt').catch(()=>null);
     const custP=fetchWordList('custom_words.txt').then(t=>{customWords=parseWordList(t,15);const st=document.getElementById('custom-status');st.innerText='✓ '+customWords.length+' custom words (auto)';return true}).catch(()=>false);
-    Promise.all([dictP,custP]).then(([loaded])=>rebuildWithCustom(()=>{
-        dictFileLoaded=loaded;
-        const ds=document.getElementById('dict-status');
-        ds.innerText=loaded?`✓ ${BASE_WORDS.length.toLocaleString()} words!`:'Using the small built-in dictionary';
-        ds.style.color=loaded?'var(--pink-hi)':'var(--ink-dim)';
-    }));
+    Promise.all([dictP,custP]).then(([text])=>{
+        const done=loaded=>{
+            dictFileLoaded=loaded;
+            const ds=document.getElementById('dict-status');
+            ds.innerText=loaded?`✓ ${baseWordCount.toLocaleString()} words!`:'Using the small built-in dictionary';
+            ds.style.color=loaded?'var(--pink-hi)':'var(--ink-dim)';
+        };
+        if(text&&hasUsableWords(text))buildBaseIndex(text,done);else rebuildWithCustom(()=>done(false));
+    });
 });
+// v73: index a full word list — in a Web Worker when the browser has one (the
+// page never freezes; the finished arrays are transferred, not copied), else
+// on the main thread after a short yield. A newer list supersedes an older
+// job still in flight. onReady(true) once the new index is live.
+let _indexJob=0;
+function buildBaseIndex(text,onReady){
+    const job=++_indexJob;
+    const st=document.getElementById('trie-status');st.classList.remove('hidden');
+    let settled=false,w=null,watchdog=null;
+    const install=t=>{
+        if(job!==_indexJob)return;
+        if(!t||!t.words){onReady(false);return}
+        baseWordCount=t.words;addExtraWords(t);trie=t;trieBuilt=true;
+        onReady(true);
+        st.innerHTML='✓ Index ready';st.style.color='var(--pink-hi)';
+        if(game){game.showToast(`📖 ${t.words.toLocaleString()} words`);prewarmSolver()}
+    };
+    const local=()=>{if(settled)return;settled=true;clearTimeout(watchdog);if(w)try{w.terminate()}catch(e){}
+        setTimeout(()=>{if(job===_indexJob)install(WordEngine.Trie.fromText(text,25))},50)};
+    try{if(typeof Worker==='function')w=new Worker('engine.js?v='+APP_VERSION)}catch(e){w=null}
+    if(!w){local();return}
+    w.onmessage=e=>{if(settled)return;const d=e.data;if(!d||d.error){local();return}
+        settled=true;clearTimeout(watchdog);try{w.terminate()}catch(err){}
+        try{install(WordEngine.Trie.fromData(d))}catch(err){settled=false;local()}};
+    w.onerror=e=>{if(e&&e.preventDefault)e.preventDefault();local()};
+    watchdog=setTimeout(local,15000);   // a worker that never answers mustn't strand the full list
+    try{w.postMessage({text:text,max:25})}catch(e){local()}
+}
 function loadDictionary(input){const f=input.files[0];if(!f)return;const r=new FileReader;r.onload=e=>processDictionaryText(e.target.result);r.readAsText(f)}
 function processDictionaryText(text){
-    const ws=parseWordList(text);const ds=document.getElementById('dict-status');
-    if(!ws.length){ds.innerText='No usable words — use 2–25 letters, A–Z only';return false}
-    dictFileLoaded=false;BASE_WORDS=ws;ds.innerText='Building dictionary…';
-    rebuildWithCustom(()=>{dictFileLoaded=true;ds.innerText=`✓ ${ws.length.toLocaleString()} words (A–Z only)`;ds.style.color='var(--pink-hi)'});
+    const ds=document.getElementById('dict-status');
+    if(!hasUsableWords(text)){ds.innerText='No usable words — use 2–25 letters, A–Z only';return false}
+    dictFileLoaded=false;ds.innerText='Building dictionary…';
+    buildBaseIndex(text,ok=>{if(!ok){ds.innerText='No usable words — use 2–25 letters, A–Z only';return}
+        dictFileLoaded=true;ds.innerText=`✓ ${baseWordCount.toLocaleString()} words (A–Z only)`;ds.style.color='var(--pink-hi)'});
     return true;
 }
 
@@ -4686,20 +4688,17 @@ function loadCustomWords(input){
     r.readAsText(f);
 }
 
+// Re-derive the added-word bit from the current lists (the base index stays).
 function rebuildWithCustom(onReady){
-    DICTIONARY=new Set(BASE_WORDS);
-    customWords.forEach(w=>DICTIONARY.add(w));
-    localCustomWords.forEach(w=>DICTIONARY.add(w));
     const st=document.getElementById('trie-status');st.classList.remove('hidden');
     setTimeout(()=>{
-        buildTrie([...DICTIONARY]);
+        trie.clearBit(WordEngine.EXTRA);addExtraWords(trie);trieBuilt=true;
         if(onReady)onReady();
-        const total=DICTIONARY.size;
         st.innerHTML='✓ Index ready';st.style.color='var(--pink-hi)';
-        if(game)game.showToast(`📖 ${total.toLocaleString()} words`);
+        if(game)game.showToast(`📖 ${trie.words.toLocaleString()} words`);
     },50);
 }
-function isValidWord(w){if(w.length<2)return false;return trieBuilt?trie.hasWord(w.toUpperCase()):DICTIONARY.has(w.toUpperCase())}
+function isValidWord(w){if(typeof w!=='string'||w.length<2)return false;return trie.hasWord(w.toUpperCase())}
 // v45: cloud word check — is the toggle on and do we (probably) have internet?
 function cloudAssistOn(){const t=document.getElementById('cfg-cloud-assist');return !!(t&&t.checked)&&navigator.onLine!==false}
 
@@ -4739,6 +4738,8 @@ function clearDictChecker(){document.getElementById('dict-check-input').value=''
 class Tile{
     constructor(id,r,c,char){this.id=id;this.r=r;this.c=c;this.char=char;this.baseValue=LETTERS[char].val;this.multiplier=null;this.hasGem=false;this.isSelected=false;this.isNew=false}
     static ML={'DL':'×2L','TL':'×3L','2W':'×2W','3W':'×3W'};
+    // v73: everything render() draws — an unchanged key means the button on screen can stay
+    renderKey(isLast){return this.char+'|'+this.baseValue+'|'+(this.multiplier||'')+'|'+(this.hasGem?1:0)+'|'+(this.isSelected?(isLast?'L':'P'):'')}
     render(isLast){const el=document.createElement('button');el.type='button';el.setAttribute('aria-pressed',String(this.isSelected));el.setAttribute('aria-label',`${this.char}, ${this.baseValue} points${this.multiplier?", "+Tile.ML[this.multiplier]:""}${this.hasGem?", treat":""}`);let cls='tile';if(this.isSelected)cls+=isLast?' selected':' path-tile';if(this.isNew)cls+=' new-tile';el.className=cls;el.dataset.id=this.id;let h=`<span>${this.char}</span><span class="tile-value">${this.baseValue}</span>`;if(this.multiplier)h+=`<span class="tile-multiplier mod-${this.multiplier}">${Tile.ML[this.multiplier]}</span>`;if(this.hasGem)h+=`<span class="tile-gem"></span>`;el.innerHTML=h;if(this.isNew)this.isNew=false;return el}
 }
 
@@ -4827,11 +4828,15 @@ class Game{
         if(st.over)this.over=true;   // v58: an ending can arrive by state push too
         this.lastSwap=null;   // v62: an incoming board replaces ours — undo window closes
         if(cleanGameId(st.id))this.id=st.id;   // v71
+        // v73: selections no longer ride full states, so a same-turn push (a Coco
+        // Attack landing mid-word) must not wipe the word being spelled here.
+        const board=ts=>ts.map(t=>t.char+(t.multiplier||t.mult||'')+((t.hasGem||t.gem)?'*':'')).join(),
+            sameTurn=NET.async&&!st.over&&this.turnIndex===NET.myIndex&&st.turnIndex===NET.myIndex&&st.round===this.round&&board(this.tiles)===board(st.tiles);
         this.round=st.round;this.turnIndex=st.turnIndex;if(typeof st.startIndex==='number')this.startIndex=st.startIndex;
         this.players=st.players;
         this.cocoTimerActive=st.cocoTimerActive;this.timeLeft=st.timeLeft;this.cocoPendingFor=(st.cocoPendingFor==null?null:st.cocoPendingFor);
         this.tiles=st.tiles.map((td,i)=>{const t=new Tile(i,Math.floor(i/5),i%5,td.char);t.multiplier=td.mult;t.hasGem=td.gem;return t});
-        const keep=NET.mode==='join'&&this.myTurn;
+        const keep=(NET.mode==='join'&&this.myTurn)||sameTurn;
         const sel=keep?this.selection:(st.sel||[]);
         this.selection=[];
         sel.forEach(id=>{if(this.tiles[id]){this.tiles[id].isSelected=true;this.selection.push(id)}});
@@ -4848,7 +4853,7 @@ class Game{
         this.selection.forEach(id=>{if(this.tiles[id])this.tiles[id].isSelected=false});
         this.selection=[];
         ids.forEach(id=>{if(this.tiles[id]){this.tiles[id].isSelected=true;this.selection.push(id)}});
-        this.updateUI();
+        this.selUI();
     }
     handleRemoteAction(m){
         if(this.over&&m.kind!=='rematchplz')return;
@@ -5018,7 +5023,7 @@ class Game{
             const i=this.selection.indexOf(id);
             if(i===this.selection.length-1){this.selection.pop();tile.isSelected=false}
             else{this.selection.splice(i+1).forEach(r=>this.tiles[r].isSelected=false)}
-            SFX.tileDeselect();this.updateUI();return;
+            SFX.tileDeselect();this.selUI();return;
         }
         const last=this.selection.length>0?this.selection[this.selection.length-1]:null;
         if(last===null)this.selectTile(tile);
@@ -5026,8 +5031,10 @@ class Game{
         else{const el=document.querySelector(`.tile[data-id="${id}"]`);if(el){el.classList.add('error-shake');setTimeout(()=>el.classList.remove('error-shake'),400)}SFX.invalid()}
     }
     isAdjacent(a,b){return Math.abs(a.r-b.r)<=1&&Math.abs(a.c-b.c)<=1&&(a.r!==b.r||a.c!==b.c)}
-    selectTile(t){t.isSelected=true;this.selection.push(t.id);SFX.tileSelect();this.updateUI()}
-    clearSelection(){this.selection.forEach(id=>this.tiles[id].isSelected=false);this.selection=[];this.updateUI()}
+    selectTile(t){t.isSelected=true;this.selection.push(t.id);SFX.tileSelect();this.selUI()}
+    clearSelection(){this.selection.forEach(id=>this.tiles[id].isSelected=false);this.selection=[];this.selUI()}
+    // v73: repaint after a change to the selection ONLY (see updateUI's sync block)
+    selUI(){this._selOnly=true;try{this.updateUI()}finally{this._selOnly=false}}
 
     calculateCurrentScore(){
         if(!this.selection.length)return{word:'',score:0,gemCount:0,isValid:false,longBonus:0,wordMult:1,tileData:[]};
@@ -5576,9 +5583,17 @@ class Game{
         const active=document.activeElement;
         const focused=active&&grid.contains(active)?Number(active.dataset.id):null;
         if(Number.isInteger(focused))this._gridFocus=focused;
-        grid.innerHTML='';
+        // v73: only tiles whose look changed are rebuilt (dragging a word used to
+        // recreate all 25 buttons per letter). A kept button keeps its focus.
         const ls=this.selection.length>0?this.selection[this.selection.length-1]:-1;
-        this.tiles.forEach(tile=>{const el=tile.render(tile.id===ls);el.tabIndex=tile.id===(this._gridFocus||0)?0:-1;grid.appendChild(el)});
+        const kids=grid.children,reuse=!!kids&&kids.length===this.tiles.length;
+        if(!reuse)grid.innerHTML='';
+        this.tiles.forEach((tile,i)=>{
+            const last=tile.id===ls,k=tile.renderKey(last),old=reuse?kids[i]:null;
+            let el=old;
+            if(!old||tile.isNew||old._rk!==k){el=tile.render(last);el._rk=k;if(old)grid.replaceChild(el,old);else grid.appendChild(el)}
+            el.tabIndex=tile.id===(this._gridFocus||0)?0:-1;
+        });
         if(Number.isInteger(focused))this.focusTile(focused);
         const calc=this.calculateCurrentScore();
         const wd=document.getElementById('word-display'),sp=document.getElementById('score-preview');
@@ -5653,10 +5668,16 @@ class Game{
         document.getElementById('coco-hairline').classList.toggle('hidden',zoomHidden&&attackHidden);
         this.updateTimerDisplay();
         if(!NET.quiet){
-            if(NET.async)NET.sendMove(this.serialize());else if(NET.mode==='host')NET.send({type:'state',state:this.serialize()});
+            // v73: a selection change is not a move. Online it goes out as a tiny
+            // display-only 'livesel' (when the relay supports it) instead of a full
+            // state the room stores; locally it isn't worth a save.
+            if(this._selOnly&&NET.async&&NET.caps&&NET.caps.livesel){if(myTurn)NET.sendSel(this)}
+            else if(this._selOnly&&!NET.async&&NET.mode==='local'){}
+            else if(NET.async)NET.sendMove(this.serialize());else if(NET.mode==='host')NET.send({type:'state',state:this.serialize()});
             else if(NET.mode==='join'&&myTurn)NET.send({type:'sel',ids:[...this.selection]});
             else if(NET.mode==='local')saveGameState();
         }
+        if(!this._selOnly)prewarmSolver();
         regTurnSync();   // v59: keep the My Games whose-turn flag fresh (memoized)
     }
 
@@ -5844,7 +5865,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v72';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v73';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){
