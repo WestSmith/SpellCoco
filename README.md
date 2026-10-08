@@ -38,6 +38,7 @@ Three ways to play:
 
 - 196k-word dictionary (NWL2023) with a custom word list you can grow in-game
 - Best-word reveal after every turn, plus an efficiency score in the recap
+- ▶ Replay the last turn: watch your opponent's swaps, shuffles and word path play back on the board
 - Tap any played word for its definition
 - All-time Keith vs. Shawn win tracker, synced between devices (each counter merges by taking the higher value)
 - Resume unfinished games — local or online; online games are held server-side, so close the tab and come back tomorrow

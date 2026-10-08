@@ -4,6 +4,38 @@ Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
 ```
 ================================================================
+SPELLCOCO v74 — TURN REPLAY (2026-10-08)
+- NEW: ▶ Replay. Looked away while your opponent played? Tap "▶ Replay
+  Keith's turn" (above the word area) to watch the last turn back on a
+  copy of the board: the board it started on, every swap (the tile gets a
+  gold ring and the caption says which letter became which), shuffles,
+  Zoomies, hints, +15s, an undone swap, the word traced letter by letter
+  along its path, the score, and the new tiles dropping in. ◀ / ▶ step
+  through it (skipping the spelled-out letters), Play/Pause, Esc closes.
+  Online and against Coco the button glows until you've watched it. The
+  game-over screen can replay the final turn too.
+- How it works: each turn keeps a small log (75-char board codes, at most
+  40 steps). When the turn ends it is sealed as `lastTurn` and rides the
+  normal state push, so it needs no relay change and is saved with local
+  games. The turn in progress (`tl`) rides along too, so a reload mid-turn
+  keeps it. Both are rebuilt from validated pieces on arrival, like every
+  other remote field.
+- Older clients ignore the new fields; a state pushed by an older client
+  simply has no replay.
+- Replay is off while your own Coco Attack clock runs (the viewer covers
+  the board), and an attack landing mid-replay closes it.
+- Legacy host/guest games: the game-over message carries the final turn,
+  so the guest's "Replay the final turn" isn't the turn before it.
+- An attack closing the replay puts keyboard focus back on the board; a
+  rematch (or any new game) closes a replay of the old one; an ending
+  learned from a relay reject replays that ending's final turn; a full log
+  (40 steps) keeps the latest board so the word is traced on the right one.
+- Tests: 15 new (99 total).
+================================================================
+```
+
+```
+================================================================
 SPELLCOCO v73 — EFFICIENCY ROUND (2026-09-26)
 - Online: spelling a word no longer pushes the whole game after every
   letter. The relay stored each push (several Durable Object writes and a
