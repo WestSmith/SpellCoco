@@ -4,6 +4,33 @@ Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
 ```
 ================================================================
+SPELLCOCO v75 — REPLAY EVERY ROUND (2026-10-08)
+- NEW: ▶ Replay in the play history. Tap a player's card: every round
+  they played now has a ▶ Replay button beside the round header (rounds
+  where time ran out with no word included). The game-over recap has one
+  on each round too. The quick "▶ Replay Keith's turn" button above the
+  word area still replays the latest turn and still glows for a new move.
+- How it works: every finished turn is kept (`turns`) instead of just the
+  last one. It rides the normal state push and local saves, rebuilt from
+  validated pieces on arrival, at most 100 turns, and past ~150 KB the
+  oldest drop out so a state never nears the relay's 512 KB limit.
+  `lastTurn` is still sent, so v74 devices keep their replay button; a
+  state from a v74 device adds its turn to the list instead of wiping it.
+- Endings (legacy game-over message, relay rejects) carry the whole list.
+- A Coco Attack interrupting a replay opened from the play history closes
+  the history too, so the board is reachable while the clock runs.
+- During your own Coco Attack the history's ▶ Replay buttons are disabled
+  (like the quick button, which hides); one drawn before the attack says
+  why instead of silently doing nothing. Buttons already on screen follow
+  the attack starting or ending live (no reopening the history needed).
+- A new game (rematch, new room state) closes the old game's play history;
+  replay buttons find their turn by player + round, never by list position.
+- Tests: 11 new (110 total).
+================================================================
+```
+
+```
+================================================================
 SPELLCOCO v74 — TURN REPLAY (2026-10-08)
 - NEW: ▶ Replay. Looked away while your opponent played? Tap "▶ Replay
   Keith's turn" (above the word area) to watch the last turn back on a
