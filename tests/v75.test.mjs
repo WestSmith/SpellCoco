@@ -61,14 +61,14 @@ test('the play history has a ▶ Replay for each round that player played, timeo
   playTimeouts(c, 2);                                                         // R1 Shawn, R2 Keith (timeout, no word)
   c.run('game.showPlayerHistory(0)');
   const html = c.els.get('history-body').innerHTML;
-  assert.match(html, /Round 1 — .*openReplayTurn\(0\)/s);
-  assert.match(html, /Round 2 — 0 pts.*openReplayTurn\(2\)/s);                // a round with no word still gets its replay
-  assert.equal((html.match(/openReplayTurn/g) || []).length, 2);
-  c.run('openReplayTurn(2)');
+  assert.match(html, /Round 1 — .*openReplayFor\(0,1\)/s);
+  assert.match(html, /Round 2 — 0 pts.*openReplayFor\(0,2\)/s);                // a round with no word still gets its replay
+  assert.equal((html.match(/openReplayFor/g) || []).length, 2);
+  c.run('openReplayFor(0,2)');
   assert.equal(c.els.get('replay-sub').textContent, 'Round 2');
   assert.equal(c.els.get('replay-heading').textContent, "Replay — Keith's turn");
   c.run('game.showPlayerHistory(1)');
-  assert.match(c.els.get('history-body').innerHTML, /openReplayTurn\(1\)/);   // Shawn's timeout round
+  assert.match(c.els.get('history-body').innerHTML, /openReplayFor\(1,1\)/);   // Shawn's timeout round
 });
 
 test('the game-over recap has a ▶ Replay per round, found by seat even in ranked order', () => {
@@ -78,8 +78,8 @@ test('the game-over recap has a ▶ Replay per round, found by seat even in rank
   const html = c.els.get('recap-section').innerHTML;
   const shawn = html.indexOf('recap-name">Shawn'), keith = html.indexOf('recap-name">Keith');
   assert.ok(shawn >= 0 && shawn < keith);
-  assert.match(html.slice(shawn, keith), /openReplayTurn\(1\)/);             // Shawn's round 1 is turns[1]
-  assert.match(html.slice(keith), /openReplayTurn\(0\)/);
+  assert.match(html.slice(shawn, keith), /openReplayFor\(1,1\)/);             // Shawn's round 1
+  assert.match(html.slice(keith), /openReplayFor\(0,1\)/);
   assert.match(html, /event\.preventDefault\(\);event\.stopPropagation\(\)/); // doesn't fold the round
 });
 
@@ -109,7 +109,7 @@ test('an attack interrupting a replay opened from the play history closes the hi
   c.load(st, 'NET.mode="local"');
   c.run('game.showPlayerHistory(1)');
   assert.equal(c.els.get('modal-history').classList.contains('hidden'), false);
-  c.run('openReplayTurn(0)'); c.els.get('modal-replay').classList.remove('hidden');
+  c.run('openReplayFor(1,1)'); c.els.get('modal-replay').classList.remove('hidden');
   c.run('game.timeLeft=35;game.startCocoTimer()');
   assert.equal(c.els.get('modal-replay').classList.contains('hidden'), true);
   assert.equal(c.els.get('modal-history').classList.contains('hidden'), true);
@@ -122,7 +122,7 @@ test('history replay buttons are disabled during your own Coco Attack, and a sta
   c.load(st, 'NET.mode="local"');
   c.run('game.showPlayerHistory(1)');
   assert.match(c.els.get('history-body').innerHTML, /class="history-replay" disabled/);
-  c.run('openReplayTurn(0)');
+  c.run('openReplayFor(1,1)');
   assert.equal(c.run('REPLAY.timer'), null);
   assert.match(c.els.get('word-area').children.at(-1).innerHTML, /Replays wait/);
   const ok = client(); ok.load({ ...st, cocoTimerActive: false, timeLeft: 0 }, 'NET.mode="local"');
@@ -139,4 +139,19 @@ test('per-round buttons already on screen follow an attack starting and ending',
   assert.equal(b.disabled, true);
   c.run('game.logStep({k:"timeout"});game.endTurn()');                       // the clock ran out: the turn ends
   assert.equal(b.disabled, false);
+});
+
+test('replacing the game closes the old play history, and buttons find turns by seat + round', () => {
+  const c = client(), st = state(); st.turns = [turn(0, 1), turn(1, 1, [{ k: 'timeout' }])]; st.lastTurn = st.turns[1];
+  c.load(st, 'NET.mode="local"');
+  c.run('game.showPlayerHistory(1)');
+  assert.equal(c.els.get('modal-history').classList.contains('hidden'), false);
+  c.run('game.turns.shift()');                                                // positions shift (byte budget)
+  c.run('openReplayFor(1,1)');
+  assert.equal(c.els.get('replay-heading').textContent, "Replay — Shawn's turn");   // still Shawn's round 1
+  c.run('closeReplay()');
+  c.load(state());                                                            // a rematch / new room state replaces the game
+  assert.equal(c.els.get('modal-history').classList.contains('hidden'), true);
+  c.run('openReplayFor(1,1)');                                                // a stale button finds nothing in the new match
+  assert.equal(c.run('REPLAY.timer'), null);
 });

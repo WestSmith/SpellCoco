@@ -5410,7 +5410,7 @@ class Game{
                 const roundPts=words.reduce((s,w)=>s+w.score,0);
                 const roundGems=words.reduce((s,w)=>s+w.gemCount,0);
                 html+=`<details class="recap-round"${rn===1?' open':''}>
-                    <summary>Round ${rn} — ${roundPts} pts · ${words.length} word${words.length===1?'':'s'} · ${roundGems}${TICON}${replayTurnButton(ti,p.name,rn)}</summary>`;
+                    <summary>Round ${rn} — ${roundPts} pts · ${words.length} word${words.length===1?'':'s'} · ${roundGems}${TICON}${replayTurnButton(p.id,rn,p.name)}</summary>`;
                 words.forEach(w=>{
                     const isBest=best&&w===best;
                     const multLabel=w.wordMult>1?` ×${w.wordMult}W`:'';
@@ -5665,7 +5665,7 @@ class Game{
                 const roundPts=words.reduce((s,w)=>s+w.score,0);
                 const roundGems=words.reduce((s,w)=>s+w.gemCount,0);
                 html+=`<div class="history-round">
-                    <div class="history-round-header"><span>Round ${r} — ${roundPts} pts · ${roundGems}${TICON} earned</span>${replayTurnButton(ti,p.name,r)}</div>`;
+                    <div class="history-round-header"><span>Round ${r} — ${roundPts} pts · ${roundGems}${TICON} earned</span>${replayTurnButton(playerIndex,r,p.name)}</div>`;
                 words.forEach(w=>{
                     const extras=[];
                     const multLabel={'DL':'×2L','TL':'×3L','2W':'×2W','3W':'×3W'};
@@ -5918,6 +5918,7 @@ function retireGame(){
     FX.overlayUntil=0;FX.loungeUntil=0;FX.queue.length=0;
     cocoSayReset();   // the old game's queued bubble lines die with it
     if(!document.getElementById('modal-replay').classList.contains('hidden'))closeReplay('none');   // v74: a replay of the old game must not cover the new one
+    closeHistoryModal();   // v75: nor may the old game's play history (its ▶ Replay buttons belong to that match)
 }
 function fxToast(build){FX.queue.push(build);if(!FX.pump)FX.pump=setTimeout(fxPump,0)}
 function fxPump(){
@@ -6382,12 +6383,14 @@ function replaySchedule(){
 }
 // v75: ▶ Replay buttons in the play history and recap (one per round played).
 // Inside a <summary> the click must not also fold the round open/closed.
-function replayTurnButton(ti,name,round){
-    if(ti<0)return '';
+// Buttons name the turn by seat + round (looked up on click), never by array
+// position: the byte budget can shift positions, and a rematch replaces the list.
+function replayTurnButton(by,round,name){
+    if(!game||game.turnIndexFor(by,round)<0)return '';
     const off=!!(game&&game.replayBlocked())?' disabled title="Replays wait until your Coco Attack clock stops"':'';   // same rule as the quick Replay button
-    return ` <button type="button" class="history-replay"${off} onclick="event.preventDefault();event.stopPropagation();openReplayTurn(${ti})" aria-label="Replay ${escHtml(name)}'s round ${round} turn">▶ Replay</button>`;
+    return ` <button type="button" class="history-replay"${off} onclick="event.preventDefault();event.stopPropagation();openReplayFor(${by},${round})" aria-label="Replay ${escHtml(name)}'s round ${round} turn">▶ Replay</button>`;
 }
-function openReplayTurn(i){const t=game&&game.turns&&game.turns[i];if(t)openReplay(t)}
+function openReplayFor(by,round){const i=game?game.turnIndexFor(by,round):-1;if(i>=0)openReplay(game.turns[i])}
 function openReplay(turn){
     const lt=turn||(game&&game.lastTurn);if(!lt||!game)return;
     if(game.replayBlocked()){game.note('⏱ Replays wait until your Coco Attack clock stops');return}   // a button drawn before the attack landed

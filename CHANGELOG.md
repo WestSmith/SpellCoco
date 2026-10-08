@@ -23,7 +23,9 @@ SPELLCOCO v75 — REPLAY EVERY ROUND (2026-10-08)
   (like the quick button, which hides); one drawn before the attack says
   why instead of silently doing nothing. Buttons already on screen follow
   the attack starting or ending live (no reopening the history needed).
-- Tests: 10 new (109 total).
+- A new game (rematch, new room state) closes the old game's play history;
+  replay buttons find their turn by player + round, never by list position.
+- Tests: 11 new (110 total).
 ================================================================
 ```
 
