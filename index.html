@@ -5218,10 +5218,14 @@ class Game{
             swapBest:swapBest
         });
 
-        this.showScoreFloat(`+${r.score}`);this.showToast(`${r.word} → +${r.score} pts`);srSay(`${r.word}, plus ${r.score} points`);
         // v76: the long-word bonus rides in the same Coco bubble, right under
         // the score line (it used to be a word-area banner that got clipped).
-        if(r.longBonus>0){this.showCelebration(`Long word! +${r.longBonus} bonus included`);SFX.longWord()}else{SFX.submit()}
+        // One fx message carries both lines, so the opponent's cocoSay calls
+        // land in the same tick and merge into one bubble too.
+        const scoreMsg=`${r.word} → +${r.score} pts`,bonusMsg=r.longBonus>0?`Long word! +${r.longBonus} bonus included`:null;
+        if(NET.mode==='host')NET.send(bonusMsg?{type:'fx',toast:scoreMsg,celebrate:bonusMsg,sfx:'longWord'}:{type:'fx',toast:scoreMsg});
+        this.showScoreFloat(`+${r.score}`);this.showToast(scoreMsg,true);srSay(`${r.word}, plus ${r.score} points`);
+        if(bonusMsg){this.showCelebration(bonusMsg,true);SFX.longWord()}else{SFX.submit()}
         // v63: no more hand-tuned 2600/5300ms delays — the FX queue shows
         // these in order, one at a time, after the turn-overlay fade, and
         // drops them itself if the game ends while they wait.

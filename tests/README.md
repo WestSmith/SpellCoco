@@ -15,7 +15,8 @@ related compatibility and failure paths. `v73.test.mjs` covers the compact word
 engine, memoized solvers, selection-only sync (`livesel`), incremental board
 rendering and the service worker's caching rules. `v74.test.mjs` covers the turn replay log,
 its sanitizer and sync, and the replay viewer. `v75.test.mjs` covers keeping every
-turn and the per-round replays in the play history and recap. The GitHub checks workflow
+turn and the per-round replays in the play history and recap. `v76.test.mjs` covers the long-word bonus
+riding in the same online fx message as the score line. The GitHub checks workflow
 runs this command.
 
 The doubles do not implement browser layout, native event synthesis, real

@@ -13,9 +13,14 @@ SPELLCOCO v76 — LONG-WORD BONUS MOVES INTO COCO'S BUBBLE (2026-10-08)
   "KEISTERS → +38 pts / ✨ Long word! +20 bonus included". The bubble
   waits for the turn fade to finish, so nothing covers it. The long-word
   sound still plays.
-- Online: the host still relays it as `celebrate`, so a v75 device
-  still gets it (in its old banner); v76 shows a v75 host's bonus in
-  Coco's bubble.
+- Online: the score line and the bonus go to the opponent in ONE fx
+  message, so their Coco shows both in the same bubble too (two messages
+  could arrive a tick apart and split into two bubbles). The bonus is
+  still sent as `celebrate`, so a v75 device still gets it (in its old
+  banner); v76 shows a v75 host's bonus in Coco's bubble.
+- Last turn of the game: the game-over recap opens at once, so (like the
+  score line) the bonus isn't spoken; the recap lists it as "+N long".
+- Tests: 2 new (112 total).
 - Removed the unused .celebration-banner styles.
 ================================================================
 ```
