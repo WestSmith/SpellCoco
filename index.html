@@ -4077,7 +4077,7 @@ function guestOnData(m){
         case 'state':if(game)game.applyState(m.state);break;
         case 'timer':if(game){game.cocoTimerActive=m.on;game.timeLeft=m.t;game.updateTimerDisplay()}break;
         case 'fx':if(game){if(m.toast)game.showToast(netSafeHtml(m.toast),true);if(m.overlay)game.showRoundOverlay(netSafeHtml(m.overlay.t),netSafeHtml(m.overlay.s),true);if(m.celebrate)game.showCelebration(netSafeHtml(m.celebrate),true);if(m.coco)game.showCocoOverlay(true);if(m.bubble)setTimeout(()=>{if(game&&!game.over)cocoSpeak(m.bubble)},cleanInt(m.bubbleDelay,20000)||3400);if(m.sfx&&Object.prototype.hasOwnProperty.call(SFX,m.sfx)&&typeof SFX[m.sfx]==='function')SFX[m.sfx]()}break;
-        case 'gameover':{if(game)game.over=true;const gp=cleanPlayers(m.players);recordGameStats(gp);renderGameOver(gp);break}   // v67.1: scrub before the recap innerHTML
+        case 'gameover':{if(game){game.over=true;game.lastTurn=cleanTurnLog(m.lastTurn,true)}const gp=cleanPlayers(m.players);recordGameStats(gp);renderGameOver(gp);break}   // v67.1: scrub before the recap innerHTML; v74: the sealed final turn
     }
 }
 function guestStart(m){
@@ -5336,7 +5336,7 @@ class Game{
         if(NET.async){
             NET.sendMove(this.serialize());   // closing push (over:true) — v64: tracked until acked
             NET.send({type:'__a',op:'gameover',players:JSON.parse(JSON.stringify(ranked)),gid:this.id});   // v71: which match this recap belongs to
-        }else if(NET.mode==='host')NET.send({type:'gameover',players:JSON.parse(JSON.stringify(ranked))});
+        }else if(NET.mode==='host')NET.send({type:'gameover',players:JSON.parse(JSON.stringify(ranked)),lastTurn:this.lastTurn});   // v74: no state push follows, so the final turn rides here
         regTurnSync();   // v59: flip this game to "finished" in My Games (endGame skips updateUI)
         renderGameOver(ranked);
     }
@@ -5596,12 +5596,14 @@ class Game{
         setTimeout(wait,300);
     }
 
+    // v74: the replay covers the board, so it's off while YOUR Coco Attack clock runs
+    replayBlocked(){return this.cocoTimerActive&&this.myTurn&&!this.over}
     // v74: "▶ Replay Keith's turn". It glows until watched when the turn was
     // made by someone else's hands (online opponent, or Coco in solo).
     updateReplayButton(){
         const btn=document.getElementById('btn-replay');if(!btn)return;
         const lt=this.lastTurn,who=lt&&this.players[lt.by];
-        btn.classList.toggle('hidden',!who);
+        btn.classList.toggle('hidden',!who||this.replayBlocked());
         if(!who)return;
         const online=NET.mode!=='local',mine=online&&lt.by===NET.myIndex;
         const label=mine?'▶ Replay your turn':`▶ Replay ${who.name}'s turn`;
@@ -5676,7 +5678,8 @@ class Game{
         document.body.appendChild(o);setTimeout(()=>o.remove(),1800);
     }
 
-    updateTimerDisplay(){const el=document.getElementById('timer-display');el.classList.toggle('hidden',!this.cocoTimerActive);if(this.cocoTimerActive){el.innerText=this.timeLeft;el.style.color=this.timeLeft<=5?'var(--red)':'var(--coco)'}else{el.innerText='--';el.style.color='var(--ink)'}}
+    updateTimerDisplay(){if(this.replayBlocked()&&!document.getElementById('modal-replay').classList.contains('hidden'))closeReplay();   // v74: an attack mid-replay sends you back to the board
+        const el=document.getElementById('timer-display');el.classList.toggle('hidden',!this.cocoTimerActive);if(this.cocoTimerActive){el.innerText=this.timeLeft;el.style.color=this.timeLeft<=5?'var(--red)':'var(--coco)'}else{el.innerText='--';el.style.color='var(--ink)'}}
 
     updateUI(){
         if(this._dead)return;   // v66: a retired game must never repaint the live board
@@ -6339,7 +6342,7 @@ function replaySchedule(){
     },REPLAY.frames[REPLAY.i].ms);
 }
 function openReplay(){
-    const lt=game&&game.lastTurn;if(!lt)return;
+    const lt=game&&game.lastTurn;if(!lt||game.replayBlocked())return;
     const who=game.players[lt.by];
     REPLAY.frames=replayFrames(lt,game.players);REPLAY.i=0;REPLAY.playing=REPLAY.frames.length>1;
     REPLAY.from=document.activeElement;

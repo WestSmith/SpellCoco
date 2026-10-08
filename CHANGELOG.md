@@ -22,7 +22,11 @@ SPELLCOCO v74 — TURN REPLAY (2026-10-08)
   other remote field.
 - Older clients ignore the new fields; a state pushed by an older client
   simply has no replay.
-- Tests: 9 new (93 total).
+- Replay is off while your own Coco Attack clock runs (the viewer covers
+  the board), and an attack landing mid-replay closes it.
+- Legacy host/guest games: the game-over message carries the final turn,
+  so the guest's "Replay the final turn" isn't the turn before it.
+- Tests: 11 new (95 total).
 ================================================================
 ```
 

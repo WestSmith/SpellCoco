@@ -157,3 +157,31 @@ test('the relay stores and forwards a state carrying a full replay log', async (
   assert.deepEqual(db.get('game').lastTurn, st.lastTurn);
   assert.deepEqual(b.messages.at(-1).state.lastTurn, st.lastTurn);
 });
+
+test("the replay is off while the viewer's own Coco Attack clock runs, and an attack closes it", () => {
+  const c = client(), st = state(); st.cocoTimerActive = true; st.timeLeft = 20;
+  st.lastTurn = { by: 1, round: 1, start: E25, end: E25, steps: [{ k: 'hint' }] };
+  c.load(st, 'NET.mode="local"');
+  assert.equal(c.els.get('btn-replay').classList.contains('hidden'), true);
+  c.run('openReplay()');
+  assert.equal(c.run('REPLAY.timer'), null);                                  // refused: nothing started
+  // no clock: the replay opens; an attack landing mid-replay sends the player back to the board
+  const c2 = client(); c2.load({ ...st, cocoTimerActive: false, timeLeft: 0 }, 'NET.mode="local"');
+  assert.equal(c2.els.get('btn-replay').classList.contains('hidden'), false);
+  c2.run('openReplay()'); c2.els.get('modal-replay').classList.remove('hidden');
+  c2.run('game.timeLeft=35;game.startCocoTimer()');
+  assert.equal(c2.els.get('modal-replay').classList.contains('hidden'), true);
+  assert.equal(c2.run('REPLAY.timer'), null);
+});
+
+test('legacy host games send the sealed final turn with the game-over message', () => {
+  const host = client(), st = state(1); st.startIndex = 0;
+  host.load(st, 'NET.mode="host";NET.myIndex=1;CONFIG.rounds=1;');
+  host.run('game.logStep({k:"timeout"});game.endTurn()');
+  const over = host.sent.find(m => m.type === 'gameover');
+  assert.equal(over.lastTurn.by, 1); assert.deepEqual(plain(over.lastTurn.steps), [{ k: 'timeout' }]);
+  const guest = client(); guest.load(state(1), 'NET.mode="join";NET.myIndex=0;');
+  guest.ctx.over = over; guest.run('guestOnData(over)');
+  assert.deepEqual(plain(guest.run('game.lastTurn')), plain(over.lastTurn));
+  assert.equal(guest.els.get('btn-replay-final').classList.contains('hidden'), false);
+});
