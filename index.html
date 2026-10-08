@@ -5634,6 +5634,10 @@ class Game{
     // v74: "▶ Replay Keith's turn". It glows until watched when the turn was
     // made by someone else's hands (online opponent, or Coco in solo).
     updateReplayButton(){
+        // v75: per-round buttons already on screen (history / recap) follow the same rule live —
+        // an attack that starts or ends with the history open must not leave them stale
+        const blocked=this.replayBlocked();
+        ['history-body','recap-section'].forEach(id=>{const box=document.getElementById(id);if(box)box.querySelectorAll('button').forEach(b=>{if(b.classList.contains('history-replay'))b.disabled=blocked})});
         const btn=document.getElementById('btn-replay');if(!btn)return;
         const lt=this.lastTurn,who=lt&&this.players[lt.by];
         btn.classList.toggle('hidden',!who||this.replayBlocked());

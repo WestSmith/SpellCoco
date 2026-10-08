@@ -129,3 +129,14 @@ test('history replay buttons are disabled during your own Coco Attack, and a sta
   ok.run('game.showPlayerHistory(1)');
   assert.doesNotMatch(ok.els.get('history-body').innerHTML, /disabled/);
 });
+
+test('per-round buttons already on screen follow an attack starting and ending', () => {
+  const c = client(), st = state(); st.turns = [turn(1, 1)]; st.lastTurn = turn(1, 1);
+  c.load(st, 'NET.mode="local"');
+  const b = c.doc.createElement('button'); b.className = 'history-replay';
+  c.els.get('history-body').children.push(b);                                // a button rendered while the history is open
+  c.run('game.timeLeft=35;game.startCocoTimer();game.updateUI()');
+  assert.equal(b.disabled, true);
+  c.run('game.logStep({k:"timeout"});game.endTurn()');                       // the clock ran out: the turn ends
+  assert.equal(b.disabled, false);
+});

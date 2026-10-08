@@ -21,8 +21,9 @@ SPELLCOCO v75 — REPLAY EVERY ROUND (2026-10-08)
   the history too, so the board is reachable while the clock runs.
 - During your own Coco Attack the history's ▶ Replay buttons are disabled
   (like the quick button, which hides); one drawn before the attack says
-  why instead of silently doing nothing.
-- Tests: 9 new (108 total).
+  why instead of silently doing nothing. Buttons already on screen follow
+  the attack starting or ending live (no reopening the history needed).
+- Tests: 10 new (109 total).
 ================================================================
 ```
 
