@@ -734,6 +734,13 @@
         .btn-replay.fresh{animation:replayGlow 1.6s ease-in-out infinite alternate}
         @keyframes replayGlow{from{box-shadow:0 3px 0 var(--bg-void)}to{box-shadow:0 3px 0 var(--bg-void),0 0 18px rgba(255,195,125,0.65)}}
         #modal-gameover .btn-replay{display:block;margin:0 auto 12px}
+        /* v75: per-round ▶ Replay in the play history and recap */
+        .history-replay{
+            flex-shrink:0;padding:3px 10px;font-size:0.8rem;letter-spacing:0.02em;text-transform:none;
+            background:var(--bg-panel);color:var(--gold-hi);border:1.5px solid var(--gold-hi);border-radius:999px;
+        }
+        .history-replay:hover{background:var(--bg-elevated)}
+        .recap-round>summary .history-replay{margin-left:8px;vertical-align:middle}
         #modal-replay{z-index:150}
         .replay-content{width:420px}
         .replay-heading{margin:0}
@@ -1698,7 +1705,7 @@
            meta text bumped up + brightened for Keith (AAA, no italics). */
         #modal-history .modal-content{text-align:left}
         .history-round{margin-bottom:14px}
-        .history-round-header{
+        .history-round-header{display:flex;justify-content:space-between;align-items:center;gap:8px;
             font-size:0.82rem;
             font-weight:700;
             letter-spacing:0.14em;
@@ -2487,7 +2494,7 @@
     </div>
 </div>
 
-<script src="engine.js?v=v74"></script>
+<script src="engine.js?v=v75"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js" integrity="sha512-XEKeWX+mI3Ov+tg2evDlVQFzVOIp4T8J3cNcCEPaEUGpxJV3eZaN8rHuvnFPvQpGJBHPmrozJDMpm2xcDvtmyQ==" crossorigin="anonymous"></script>
 <script>
 /*
@@ -3189,7 +3196,7 @@ function asyncShowEnding(state){
         :(state&&state.players?[...state.players].sort((a,b)=>b.score-a.score):null);
     const ranked=cleanPlayers(raw);
     if(!ranked.length)return;   // empty after cleaning ⇒ malformed/hostile — ignore
-    if(game&&state&&typeof state==='object')game.lastTurn=cleanTurnLog(state.lastTurn,true);   // v74: reject paths end the game without applyState — the final replay comes from THIS state
+    if(game&&state&&typeof state==='object'){game.lastTurn=cleanTurnLog(state.lastTurn,true);game.turns=mergeTurns(game.turns,cleanTurns(state.turns),game.lastTurn)}   // v74: reject paths end the game without applyState — the final replay comes from THIS state
     recordStatsOnce(ranked,state&&state.id);
     regTurnSync();   // v59: mark finished in My Games on every ending path
     renderGameOver(ranked);
@@ -3814,6 +3821,7 @@ function sanitizeNetState(st){
     st.sel=Array.isArray(st.sel)?st.sel.map(v=>cleanInt(v,24)).filter((v,ix,a)=>a.indexOf(v)===ix):[];
     if(st.finalPlayers!=null)st.finalPlayers=Array.isArray(st.finalPlayers)?st.finalPlayers.map(cleanPlayer).filter(Boolean):null;
     st.tl=cleanTurnLog(st.tl,false);st.lastTurn=cleanTurnLog(st.lastTurn,true);   // v74: turn replay logs
+    st.turns=cleanTurns(st.turns);   // v75: every finished turn, for the history replays
     return st;
 }
 // v74: TURN REPLAY. Each turn keeps a small log of what happened on the board
@@ -3825,6 +3833,10 @@ function sanitizeNetState(st){
 const MULT_CODE={DL:'l',TL:'L','2W':'w','3W':'W'},CODE_MULT={l:'DL',L:'TL',w:'2W',W:'3W'};
 const BOARD_CODE_RE=/^(?:[A-Z][.lLwW][.*]){25}$/;
 const REPLAY_MAX_STEPS=40;   // swap/undo/swap… can't grow a state without bound
+// v75: every finished turn is kept (play history → ▶ Replay per round). 50 rounds
+// × 2 players at most; past ~150 KB the oldest drop out so a state can never
+// approach the relay's 512 KB limit.
+const REPLAY_MAX_TURNS=100,REPLAY_MAX_BYTES=150000;
 function boardCode(tiles){return tiles.map(t=>t.char+(MULT_CODE[t.multiplier]||'.')+(t.hasGem?'*':'.')).join('')}
 function cleanBoardCode(v){return (typeof v==='string'&&BOARD_CODE_RE.test(v))?v:null}
 function cleanTileId(v){return (Number.isInteger(v)&&v>=0&&v<25)?v:null}
@@ -3842,6 +3854,14 @@ function cleanReplayStep(s){
         }
     }
     return null;
+}
+function cleanTurns(v){return Array.isArray(v)?v.slice(-REPLAY_MAX_TURNS).map(t=>cleanTurnLog(t,true)).filter(Boolean):null}
+// v75: a state's turn list, falling back to a v74 state (lastTurn only): keep
+// what we have and add its last turn if it's new.
+function mergeTurns(base,turns,last){
+    const out=Array.isArray(turns)?turns.slice():(base||[]).slice();
+    if(last&&!out.some(t=>replayKey(t)===replayKey(last)))out.push(last);
+    return out;
 }
 function cleanTurnLog(t,ended){
     if(!t||typeof t!=='object')return null;
@@ -4078,7 +4098,7 @@ function guestOnData(m){
         case 'state':if(game)game.applyState(m.state);break;
         case 'timer':if(game){game.cocoTimerActive=m.on;game.timeLeft=m.t;game.updateTimerDisplay()}break;
         case 'fx':if(game){if(m.toast)game.showToast(netSafeHtml(m.toast),true);if(m.overlay)game.showRoundOverlay(netSafeHtml(m.overlay.t),netSafeHtml(m.overlay.s),true);if(m.celebrate)game.showCelebration(netSafeHtml(m.celebrate),true);if(m.coco)game.showCocoOverlay(true);if(m.bubble)setTimeout(()=>{if(game&&!game.over)cocoSpeak(m.bubble)},cleanInt(m.bubbleDelay,20000)||3400);if(m.sfx&&Object.prototype.hasOwnProperty.call(SFX,m.sfx)&&typeof SFX[m.sfx]==='function')SFX[m.sfx]()}break;
-        case 'gameover':{if(game){game.over=true;game.lastTurn=cleanTurnLog(m.lastTurn,true)}const gp=cleanPlayers(m.players);recordGameStats(gp);renderGameOver(gp);break}   // v67.1: scrub before the recap innerHTML; v74: the sealed final turn
+        case 'gameover':{if(game){game.over=true;game.lastTurn=cleanTurnLog(m.lastTurn,true);game.turns=mergeTurns(game.turns,cleanTurns(m.turns),game.lastTurn)}const gp=cleanPlayers(m.players);recordGameStats(gp);renderGameOver(gp);break}   // v67.1: scrub before the recap innerHTML; v74: the sealed final turn
     }
 }
 function guestStart(m){
@@ -4856,7 +4876,7 @@ class Game{
         this.round=1;this.startIndex=(opts&&typeof opts.startIndex==='number'&&opts.startIndex>=0&&opts.startIndex<this.players.length)?opts.startIndex:0;this.turnIndex=this.startIndex;this.tiles=[];this.selection=[];
         this.pendingSwap=false;this.isDragging=false;this.cocoPending=false;this.lastSwap=null;
         this.generateBoard();this.selection=[];
-        this.lastTurn=null;this.newTurnLog();   // v74: turn replay
+        this.lastTurn=null;this.turns=[];this.newTurnLog();   // v74/v75: turn replay
         this.updateUI();this.setupTouchDrag();
         this.showRoundOverlay('Round 1',`${this.players[this.startIndex].name} goes first!`);
         this.maybeCoco();
@@ -4881,7 +4901,8 @@ class Game{
             over:this.over,   // v58: a finished game stays finished across rejoins
             sel:[...this.selection],
             tl:this.turnLog?JSON.parse(JSON.stringify(this.turnLog)):null,   // v74: this turn so far (survives a reload mid-turn)
-            lastTurn:this.lastTurn?JSON.parse(JSON.stringify(this.lastTurn)):null};   // v74: the last finished turn, for Replay
+            lastTurn:this.lastTurn?JSON.parse(JSON.stringify(this.lastTurn)):null,   // v74: the last finished turn, for Replay
+            turns:JSON.parse(JSON.stringify(this.turns||[]))};   // v75: every finished turn (history replays)
     }
     static fromState(st){
         st=sanitizeNetState(st);   // v67: relay/P2P states are opponent-controlled — clean before use
@@ -4895,7 +4916,7 @@ class Game{
         g.players=st.players;
         g.tiles=st.tiles.map((td,i)=>{const t=new Tile(i,Math.floor(i/5),i%5,td.char);t.multiplier=td.mult;t.hasGem=td.gem;return t});
         (st.sel||[]).forEach(id=>{if(g.tiles[id]){g.tiles[id].isSelected=true;g.selection.push(id)}});
-        g.lastTurn=st.lastTurn||null;g.adoptTurnLog(st,false);   // v74
+        g.lastTurn=st.lastTurn||null;g.turns=mergeTurns([],st.turns,g.lastTurn);g.adoptTurnLog(st,false);   // v74/v75
         NET.quiet=true;g.updateUI();NET.quiet=false;
         g.setupTouchDrag();
         g.cocoPending=false;g.cocoPendingFor=(st.cocoPendingFor==null?null:st.cocoPendingFor);
@@ -4936,7 +4957,7 @@ class Game{
         const sel=keep?this.selection:(st.sel||[]);
         this.selection=[];
         sel.forEach(id=>{if(this.tiles[id]){this.tiles[id].isSelected=true;this.selection.push(id)}});
-        this.lastTurn=st.lastTurn||null;this.adoptTurnLog(st,sameTurn);   // v74
+        this.lastTurn=st.lastTurn||null;this.turns=mergeTurns(this.turns,st.turns,this.lastTurn);this.adoptTurnLog(st,sameTurn);   // v74/v75
         NET.quiet=true;this.updateUI();NET.quiet=false;
         this.activate();
     }
@@ -4965,8 +4986,16 @@ class Game{
     }
     sealTurn(done){
         this.lastTurn=done?{by:done.by,round:done.round,start:done.start,steps:done.steps,end:boardCode(this.tiles)}:null;
+        if(this.lastTurn){
+            const k=replayKey(this.lastTurn);
+            this.turns=(this.turns||[]).filter(t=>replayKey(t)!==k);this.turns.push(this.lastTurn);
+            let size=JSON.stringify(this.turns).length;   // v75: oldest turns go first past the byte budget
+            while(this.turns.length>REPLAY_MAX_TURNS||(size>REPLAY_MAX_BYTES&&this.turns.length>1))size-=JSON.stringify(this.turns.shift()).length;
+        }
         this.newTurnLog();
     }
+    // v75: the index (into turns) of a player's turn in a round, or -1
+    turnIndexFor(by,round){return (this.turns||[]).findIndex(t=>t.by===by&&t.round===round)}
     // A state from the room/save carries the turn-in-progress log. Keep our own
     // when it's the same turn on this device (a Coco Attack landing mid-turn).
     adoptTurnLog(st,keepOwn){
@@ -5338,7 +5367,7 @@ class Game{
         if(NET.async){
             NET.sendMove(this.serialize());   // closing push (over:true) — v64: tracked until acked
             NET.send({type:'__a',op:'gameover',players:JSON.parse(JSON.stringify(ranked)),gid:this.id});   // v71: which match this recap belongs to
-        }else if(NET.mode==='host')NET.send({type:'gameover',players:JSON.parse(JSON.stringify(ranked)),lastTurn:this.lastTurn});   // v74: no state push follows, so the final turn rides here
+        }else if(NET.mode==='host')NET.send({type:'gameover',players:JSON.parse(JSON.stringify(ranked)),lastTurn:this.lastTurn,turns:this.turns});   // v74: no state push follows, so the final turn rides here
         regTurnSync();   // v59: flip this game to "finished" in My Games (endGame skips updateUI)
         renderGameOver(ranked);
     }
@@ -5374,12 +5403,13 @@ class Game{
                 </div>`;
 
             for(let rn=1;rn<=CONFIG.rounds;rn++){
-                const words=rounds[rn];
-                if(!words||!words.length)continue;
+                const words=rounds[rn]||[];
+                const ti=this.turnIndexFor(p.id,rn);   // v75: ranked copies keep their seat as id
+                if(!words.length&&ti<0)continue;
                 const roundPts=words.reduce((s,w)=>s+w.score,0);
                 const roundGems=words.reduce((s,w)=>s+w.gemCount,0);
                 html+=`<details class="recap-round"${rn===1?' open':''}>
-                    <summary>Round ${rn} — ${roundPts} pts · ${words.length} word${words.length>1?'s':''} · ${roundGems}${TICON}</summary>`;
+                    <summary>Round ${rn} — ${roundPts} pts · ${words.length} word${words.length===1?'':'s'} · ${roundGems}${TICON}${replayTurnButton(ti,p.name,rn)}</summary>`;
                 words.forEach(w=>{
                     const isBest=best&&w===best;
                     const multLabel=w.wordMult>1?` ×${w.wordMult}W`:'';
@@ -5618,18 +5648,19 @@ class Game{
         const p=this.players[playerIndex];
         document.getElementById('history-player-name').innerText=`${p.name} · ${p.score} pts`;
         const body=document.getElementById('history-body');
-        if(p.wordsPlayed.length===0){
+        if(p.wordsPlayed.length===0&&!(this.turns||[]).some(t=>t.by===playerIndex)){
             body.innerHTML='<p class="history-empty">No words played yet.</p>';
         } else {
             let html='';
             for(let r=1;r<=this.round;r++){
                 const words=p.wordsPlayed.filter(w=>w.round===r);
                 const log=p.abilityLog[r]||{};
-                if(!words.length&&!log.gemsSpent)continue;
+                const ti=this.turnIndexFor(playerIndex,r);   // v75: this round's turn, for ▶ Replay
+                if(!words.length&&!log.gemsSpent&&ti<0)continue;
                 const roundPts=words.reduce((s,w)=>s+w.score,0);
                 const roundGems=words.reduce((s,w)=>s+w.gemCount,0);
                 html+=`<div class="history-round">
-                    <div class="history-round-header">Round ${r} — ${roundPts} pts · ${roundGems}${TICON} earned</div>`;
+                    <div class="history-round-header"><span>Round ${r} — ${roundPts} pts · ${roundGems}${TICON} earned</span>${replayTurnButton(ti,p.name,r)}</div>`;
                 words.forEach(w=>{
                     const extras=[];
                     const multLabel={'DL':'×2L','TL':'×3L','2W':'×2W','3W':'×3W'};
@@ -6012,7 +6043,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v74';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v75';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){
@@ -6344,12 +6375,19 @@ function replaySchedule(){
         replayRender();replaySchedule();
     },REPLAY.frames[REPLAY.i].ms);
 }
-function openReplay(){
-    const lt=game&&game.lastTurn;if(!lt||game.replayBlocked())return;
+// v75: ▶ Replay buttons in the play history and recap (one per round played).
+// Inside a <summary> the click must not also fold the round open/closed.
+function replayTurnButton(ti,name,round){
+    if(ti<0)return '';
+    return ` <button type="button" class="history-replay" onclick="event.preventDefault();event.stopPropagation();openReplayTurn(${ti})" aria-label="Replay ${escHtml(name)}'s round ${round} turn">▶ Replay</button>`;
+}
+function openReplayTurn(i){const t=game&&game.turns&&game.turns[i];if(t)openReplay(t)}
+function openReplay(turn){
+    const lt=turn||(game&&game.lastTurn);if(!lt||!game||game.replayBlocked())return;
     const who=game.players[lt.by];
     REPLAY.frames=replayFrames(lt,game.players);REPLAY.i=0;REPLAY.playing=REPLAY.frames.length>1;
     REPLAY.from=document.activeElement;
-    game._replaySeen=replayKey(lt);game.updateReplayButton();
+    if(replayKey(lt)===replayKey(game.lastTurn)){game._replaySeen=replayKey(lt);game.updateReplayButton()}
     document.getElementById('replay-heading').textContent=`Replay — ${who?who.name:'Player'}'s turn`;
     document.getElementById('replay-sub').textContent=`Round ${lt.round}`;
     document.getElementById('modal-replay').classList.remove('hidden');
