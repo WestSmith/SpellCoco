@@ -185,3 +185,51 @@ test('legacy host games send the sealed final turn with the game-over message', 
   assert.deepEqual(plain(guest.run('game.lastTurn')), plain(over.lastTurn));
   assert.equal(guest.els.get('btn-replay-final').classList.contains('hidden'), false);
 });
+
+test('a full log keeps the latest board, so the word is traced on the board it was played on', () => {
+  const c = client(), st = catBoard(); st.players[0].gems = 20;
+  c.load(st, 'NET.mode="local";buildTrie(["CAT","BAT"]);');
+  c.run('for(let i=0;i<39;i++)game.logStep({k:"hint"})');
+  c.run('game.pendingSwap=true;game.openSwapModal(0);game._swapModalAt=0;game.performSwap("B")');
+  c.run('game.handleTileClick(0);game.handleTileClick(1);game.handleTileClick(2);game.submitWord()');
+  const steps = plain(c.run('game.lastTurn.steps'));
+  assert.equal(steps.length, 40);
+  assert.equal(steps[38].k, 'swap'); assert.equal(steps[39].word, 'BAT');
+  c.run('openReplay()');
+  const word = plain(c.run('REPLAY.frames.find(f=>f.cap.startsWith("✨"))'));
+  assert.equal(word.b.slice(0, 9), 'B..A..T..');                             // not the pre-swap C board
+});
+
+test('an attack closing the replay puts focus on the board, not the hidden button', () => {
+  const c = client(), st = state();
+  st.lastTurn = { by: 1, round: 1, start: E25, end: E25, steps: [{ k: 'hint' }] };
+  c.load(st, 'NET.mode="local"');
+  c.doc.activeElement = c.els.get('btn-replay');
+  c.run('openReplay()'); c.els.get('modal-replay').classList.remove('hidden');
+  c.run('game.timeLeft=35;game.startCocoTimer()');
+  assert.equal(c.doc.activeElement.classList.contains('tile'), true);
+});
+
+test('a game replaced mid-replay (rematch) closes the old replay', () => {
+  const c = client(), st = state();
+  st.lastTurn = { by: 1, round: 1, start: E25, end: E25, steps: [{ k: 'hint' }] };
+  c.load({ ...st, over: true });
+  c.run('openReplay()'); c.els.get('modal-replay').classList.remove('hidden');
+  assert.notEqual(c.run('REPLAY.timer'), null);
+  c.load(state());
+  assert.equal(c.els.get('modal-replay').classList.contains('hidden'), true);
+  assert.equal(c.run('REPLAY.timer'), null);
+});
+
+test("an ending learned from a reject replays that state's final turn, not the cached one", () => {
+  const c = client(), st = state(0);
+  st.lastTurn = { by: 1, round: 4, start: E25, end: E25, steps: [{ k: 'hint' }] };
+  c.load(st, online + 'NET.myName="Keith";NET.seat=0;NET.myIndex=0;');
+  const final = { by: 1, round: 5, start: E25, end: E25, steps: [{ k: 'timeout' }] };
+  c.ctx.m = { op: 'reject', reason: 'game-over', state: { ...state(0, 5), over: true, lastTurn: final } };
+  c.run('asyncOnMessage(m)');
+  assert.deepEqual(plain(c.run('game.lastTurn')), final);
+  c.ctx.m = { op: 'reject', reason: 'game-over', state: { ...state(0, 5), over: true } };    // an older client's ending: no replay, not a wrong one
+  c.run('asyncOnMessage(m)');
+  assert.equal(c.run('game.lastTurn'), null);
+});

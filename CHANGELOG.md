@@ -26,7 +26,11 @@ SPELLCOCO v74 — TURN REPLAY (2026-10-08)
   the board), and an attack landing mid-replay closes it.
 - Legacy host/guest games: the game-over message carries the final turn,
   so the guest's "Replay the final turn" isn't the turn before it.
-- Tests: 11 new (95 total).
+- An attack closing the replay puts keyboard focus back on the board; a
+  rematch (or any new game) closes a replay of the old one; an ending
+  learned from a relay reject replays that ending's final turn; a full log
+  (40 steps) keeps the latest board so the word is traced on the right one.
+- Tests: 15 new (99 total).
 ================================================================
 ```
 

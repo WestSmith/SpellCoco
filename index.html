@@ -3189,6 +3189,7 @@ function asyncShowEnding(state){
         :(state&&state.players?[...state.players].sort((a,b)=>b.score-a.score):null);
     const ranked=cleanPlayers(raw);
     if(!ranked.length)return;   // empty after cleaning ⇒ malformed/hostile — ignore
+    if(game&&state&&typeof state==='object')game.lastTurn=cleanTurnLog(state.lastTurn,true);   // v74: reject paths end the game without applyState — the final replay comes from THIS state
     recordStatsOnce(ranked,state&&state.id);
     regTurnSync();   // v59: mark finished in My Games on every ending path
     renderGameOver(ranked);
@@ -4960,6 +4961,7 @@ class Game{
         if(!this.turnLog||this.turnLog.by!==this.turnIndex||this.turnLog.round!==this.round)this.newTurnLog();
         const steps=this.turnLog.steps;
         if(step.k==='word'||steps.length<REPLAY_MAX_STEPS-1)steps.push(step);   // one slot always left for the word
+        else if(step.b)steps[steps.length-1]=step;   // full: keep the LATEST board, so the word is traced on the board it was played on
     }
     sealTurn(done){
         this.lastTurn=done?{by:done.by,round:done.round,start:done.start,steps:done.steps,end:boardCode(this.tiles)}:null;
@@ -5678,7 +5680,7 @@ class Game{
         document.body.appendChild(o);setTimeout(()=>o.remove(),1800);
     }
 
-    updateTimerDisplay(){if(this.replayBlocked()&&!document.getElementById('modal-replay').classList.contains('hidden'))closeReplay();   // v74: an attack mid-replay sends you back to the board
+    updateTimerDisplay(){if(this.replayBlocked()&&!document.getElementById('modal-replay').classList.contains('hidden'))closeReplay('board');   // v74: an attack mid-replay sends you back to the board
         const el=document.getElementById('timer-display');el.classList.toggle('hidden',!this.cocoTimerActive);if(this.cocoTimerActive){el.innerText=this.timeLeft;el.style.color=this.timeLeft<=5?'var(--red)':'var(--coco)'}else{el.innerText='--';el.style.color='var(--ink)'}}
 
     updateUI(){
@@ -5879,6 +5881,7 @@ function retireGame(){
     clearTimeout(game._loungeTimer);
     FX.overlayUntil=0;FX.loungeUntil=0;FX.queue.length=0;
     cocoSayReset();   // the old game's queued bubble lines die with it
+    if(!document.getElementById('modal-replay').classList.contains('hidden'))closeReplay('none');   // v74: a replay of the old game must not cover the new one
 }
 function fxToast(build){FX.queue.push(build);if(!FX.pump)FX.pump=setTimeout(fxPump,0)}
 function fxPump(){
@@ -6366,11 +6369,14 @@ function replayStep(d){
     replayRender();replaySchedule();
     const a=document.activeElement;if(a&&a.disabled)document.getElementById('replay-play').focus();   // ◀/▶ just disabled itself
 }
-function closeReplay(){
+// focus: undefined → back to what opened it; 'board' → the live board (a Coco
+// Attack just started, and the Replay button is about to hide); 'none' → leave it.
+function closeReplay(focus){
     clearTimeout(REPLAY.timer);REPLAY.timer=null;REPLAY.playing=false;
     document.getElementById('modal-replay').classList.add('hidden');
     const back=REPLAY.from;REPLAY.from=null;
-    if(back&&typeof back.focus==='function')back.focus();
+    if(focus==='board'){if(game&&!game._dead)game.focusTile(game._gridFocus||0)}
+    else if(focus!=='none'&&back&&typeof back.focus==='function')back.focus();
 }
 function handleReplayKey(e){
     if(e.key==='Escape'){e.preventDefault();closeReplay();return}
