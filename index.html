@@ -740,6 +740,7 @@
             background:var(--bg-panel);color:var(--gold-hi);border:1.5px solid var(--gold-hi);border-radius:999px;
         }
         .history-replay:hover{background:var(--bg-elevated)}
+        .history-replay:disabled{opacity:0.4;cursor:not-allowed}
         .recap-round>summary .history-replay{margin-left:8px;vertical-align:middle}
         #modal-replay{z-index:150}
         .replay-content{width:420px}
@@ -6379,11 +6380,13 @@ function replaySchedule(){
 // Inside a <summary> the click must not also fold the round open/closed.
 function replayTurnButton(ti,name,round){
     if(ti<0)return '';
-    return ` <button type="button" class="history-replay" onclick="event.preventDefault();event.stopPropagation();openReplayTurn(${ti})" aria-label="Replay ${escHtml(name)}'s round ${round} turn">▶ Replay</button>`;
+    const off=!!(game&&game.replayBlocked())?' disabled title="Replays wait until your Coco Attack clock stops"':'';   // same rule as the quick Replay button
+    return ` <button type="button" class="history-replay"${off} onclick="event.preventDefault();event.stopPropagation();openReplayTurn(${ti})" aria-label="Replay ${escHtml(name)}'s round ${round} turn">▶ Replay</button>`;
 }
 function openReplayTurn(i){const t=game&&game.turns&&game.turns[i];if(t)openReplay(t)}
 function openReplay(turn){
-    const lt=turn||(game&&game.lastTurn);if(!lt||!game||game.replayBlocked())return;
+    const lt=turn||(game&&game.lastTurn);if(!lt||!game)return;
+    if(game.replayBlocked()){game.note('⏱ Replays wait until your Coco Attack clock stops');return}   // a button drawn before the attack landed
     const who=game.players[lt.by];
     REPLAY.frames=replayFrames(lt,game.players);REPLAY.i=0;REPLAY.playing=REPLAY.frames.length>1;
     REPLAY.from=document.activeElement;

@@ -115,3 +115,17 @@ test('an attack interrupting a replay opened from the play history closes the hi
   assert.equal(c.els.get('modal-history').classList.contains('hidden'), true);
   assert.equal(c.doc.activeElement.classList.contains('tile'), true);
 });
+
+test('history replay buttons are disabled during your own Coco Attack, and a stale one explains itself', () => {
+  const c = client(), st = state(); st.turns = [turn(1, 1)]; st.lastTurn = turn(1, 1);
+  st.cocoTimerActive = true; st.timeLeft = 20;
+  c.load(st, 'NET.mode="local"');
+  c.run('game.showPlayerHistory(1)');
+  assert.match(c.els.get('history-body').innerHTML, /class="history-replay" disabled/);
+  c.run('openReplayTurn(0)');
+  assert.equal(c.run('REPLAY.timer'), null);
+  assert.match(c.els.get('word-area').children.at(-1).innerHTML, /Replays wait/);
+  const ok = client(); ok.load({ ...st, cocoTimerActive: false, timeLeft: 0 }, 'NET.mode="local"');
+  ok.run('game.showPlayerHistory(1)');
+  assert.doesNotMatch(ok.els.get('history-body').innerHTML, /disabled/);
+});

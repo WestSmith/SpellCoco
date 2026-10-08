@@ -19,7 +19,10 @@ SPELLCOCO v75 — REPLAY EVERY ROUND (2026-10-08)
 - Endings (legacy game-over message, relay rejects) carry the whole list.
 - A Coco Attack interrupting a replay opened from the play history closes
   the history too, so the board is reachable while the clock runs.
-- Tests: 8 new (107 total).
+- During your own Coco Attack the history's ▶ Replay buttons are disabled
+  (like the quick button, which hides); one drawn before the attack says
+  why instead of silently doing nothing.
+- Tests: 9 new (108 total).
 ================================================================
 ```
 
