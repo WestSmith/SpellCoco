@@ -4,6 +4,24 @@ Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
 ```
 ================================================================
+SPELLCOCO v76 — LONG-WORD BONUS MOVES INTO COCO'S BUBBLE (2026-10-08)
+- FIX: the "✨ LONG WORD! +N ✨" banner was a holdover from before v65
+  (when every game message moved into Coco's speech bubble). It was
+  squeezed into the word area, which clips anything that overflows, and
+  the next turn's fade covered it, so it showed up cut off and hidden.
+  The bonus is now a line in Coco's bubble, right under the score:
+  "KEISTERS → +38 pts / ✨ Long word! +20 bonus included". The bubble
+  waits for the turn fade to finish, so nothing covers it. The long-word
+  sound still plays.
+- Online: the host still relays it as `celebrate`, so a v75 device
+  still gets it (in its old banner); v76 shows a v75 host's bonus in
+  Coco's bubble.
+- Removed the unused .celebration-banner styles.
+================================================================
+```
+
+```
+================================================================
 SPELLCOCO v75 — REPLAY EVERY ROUND (2026-10-08)
 - NEW: ▶ Replay in the play history. Tap a player's card: every round
   they played now has a ▶ Replay button beside the round header (rounds

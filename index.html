@@ -532,23 +532,6 @@
             font-weight:700;
             min-height:1em;margin-top:3px;
         }
-        .celebration-banner{
-            position:absolute;inset:0;
-            display:flex;justify-content:center;align-items:center;
-            background:var(--flag-gradient);
-            z-index:5;pointer-events:none;
-            animation:bannerSlam 0.35s cubic-bezier(0.175,0.885,0.32,1.275),bannerFade 0.35s ease 1.4s forwards;
-        }
-        .celebration-banner span{
-            font-family:'Atkinson Hyperlegible',sans-serif;
-            font-size:clamp(1.5rem,4.2vw,2.1rem);
-            font-weight:700;
-            color:var(--ink);
-            letter-spacing:0.04em;
-            text-shadow:0 2px 0 rgba(0,0,0,0.3), 0 0 20px rgba(255,255,255,0.4);
-        }
-        @keyframes bannerSlam{0%{transform:scaleY(0);opacity:0}100%{transform:scaleY(1);opacity:1}}
-        @keyframes bannerFade{to{opacity:0}}
 
         /* Grid & Tiles */
         .grid-frame{
@@ -2495,7 +2478,7 @@
     </div>
 </div>
 
-<script src="engine.js?v=v75"></script>
+<script src="engine.js?v=v76"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js" integrity="sha512-XEKeWX+mI3Ov+tg2evDlVQFzVOIp4T8J3cNcCEPaEUGpxJV3eZaN8rHuvnFPvQpGJBHPmrozJDMpm2xcDvtmyQ==" crossorigin="anonymous"></script>
 <script>
 /*
@@ -5235,8 +5218,10 @@ class Game{
             swapBest:swapBest
         });
 
-        if(r.longBonus>0){this.showCelebration(`LONG WORD! +${r.longBonus}`);SFX.longWord()}else{SFX.submit()}
         this.showScoreFloat(`+${r.score}`);this.showToast(`${r.word} → +${r.score} pts`);srSay(`${r.word}, plus ${r.score} points`);
+        // v76: the long-word bonus rides in the same Coco bubble, right under
+        // the score line (it used to be a word-area banner that got clipped).
+        if(r.longBonus>0){this.showCelebration(`Long word! +${r.longBonus} bonus included`);SFX.longWord()}else{SFX.submit()}
         // v63: no more hand-tuned 2600/5300ms delays — the FX queue shows
         // these in order, one at a time, after the turn-overlay fade, and
         // drops them itself if the game ends while they wait.
@@ -5890,7 +5875,11 @@ class Game{
     // submitWord queues this BEFORE endTurn starts the overlay in the same tick.
     showScoreFloat(t){const go=()=>{const w=FX.overlayUntil-Date.now();if(w>0){setTimeout(go,w+120);return}
         const d=document.createElement('div');d.className='score-float';d.innerText=t;d.style.left='50%';d.style.top='38%';document.body.appendChild(d);setTimeout(()=>d.remove(),1400)};setTimeout(go,0)}
-    showCelebration(t,fromNet){if(NET.mode==='host'&&!fromNet)NET.send({type:'fx',celebrate:t,sfx:'longWord'});const a=document.getElementById('word-area');const b=document.createElement('div');b.className='celebration-banner';b.innerHTML=`<span>✨ ${t} ✨</span>`;a.appendChild(b);setTimeout(()=>b.remove(),2000)}
+    // v76: the old .celebration-banner was a holdover from the pre-v65 design —
+    // stuffed into the 56px overflow:hidden word area it was cut off, and the
+    // turn overlay buried it. Now it's one more line in Coco's bubble (which
+    // waits out overlays). Still relays as `celebrate` so older peers get it.
+    showCelebration(t,fromNet){if(NET.mode==='host'&&!fromNet)NET.send({type:'fx',celebrate:t,sfx:'longWord'});this.showToast(`✨ ${t}`,true)}
     // v63: ✦&nbsp;title&nbsp;✦ — the sparkles can't wrap onto their own line
     // on narrow phones ("✦ Coco's Guest's Turn ✦" used to break badly).
     // Also stamps FX.overlayUntil so queued popups wait out the fade.
@@ -6049,7 +6038,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v75';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v76';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){
