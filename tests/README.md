@@ -13,7 +13,8 @@ storage and socket doubles. Tests cover all thirteen findings from the
 revision / durable-pending-move / statistics / per-match recap cases — plus
 related compatibility and failure paths. `v73.test.mjs` covers the compact word
 engine, memoized solvers, selection-only sync (`livesel`), incremental board
-rendering and the service worker's caching rules. The GitHub checks workflow
+rendering and the service worker's caching rules. `v74.test.mjs` covers the turn replay log,
+its sanitizer and sync, and the replay viewer. The GitHub checks workflow
 runs this command.
 
 The doubles do not implement browser layout, native event synthesis, real

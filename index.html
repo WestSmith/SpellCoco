@@ -718,6 +718,38 @@
         }
         .tile.new-tile{animation:pop 0.35s cubic-bezier(0.175,0.885,0.32,1.275)}
 
+        /* v74: turn replay — button + viewer */
+        .btn-replay{
+            align-self:center;
+            background:var(--bg-panel);
+            color:var(--gold-hi);
+            border:2px solid var(--gold-hi);
+            padding:7px 16px;
+            font-size:clamp(0.9rem,1.85vw,0.98rem);
+            border-radius:999px;
+            box-shadow:0 3px 0 var(--bg-void);
+        }
+        .btn-replay:hover{background:var(--bg-elevated)}
+        .btn-replay:active{transform:translateY(3px);box-shadow:none}
+        .btn-replay.fresh{animation:replayGlow 1.6s ease-in-out infinite alternate}
+        @keyframes replayGlow{from{box-shadow:0 3px 0 var(--bg-void)}to{box-shadow:0 3px 0 var(--bg-void),0 0 18px rgba(255,195,125,0.65)}}
+        #modal-gameover .btn-replay{display:block;margin:0 auto 12px}
+        #modal-replay{z-index:150}
+        .replay-content{width:420px}
+        .replay-heading{margin:0}
+        .replay-sub{font-size:0.92rem;color:var(--ink-soft);margin:2px 0 12px}
+        .replay-grid{width:min(100%,330px);margin:0 auto;gap:clamp(4px,1.2vw,7px)}
+        .replay-grid .tile{font-size:clamp(1.25rem,6vw,2rem);cursor:default;pointer-events:none}
+        .replay-grid .tile-multiplier{font-size:clamp(0.62rem,2.2vw,0.8rem);padding:2px 6px}
+        .replay-grid .tile-gem{width:clamp(12px,3.2vw,18px);height:clamp(11px,3vw,17px)}
+        .replay-grid .tile.replay-mark{outline:3px solid var(--gold-hi);outline-offset:2px;animation:pop 0.35s cubic-bezier(0.175,0.885,0.32,1.275)}
+        .replay-caption{min-height:2.8em;margin-top:14px;font-size:1.05rem;font-weight:700;color:var(--ink);line-height:1.4}
+        .replay-progress{font-size:0.85rem;color:var(--ink-soft);margin:2px 0 10px}
+        .replay-controls{display:flex;gap:10px;justify-content:center}
+        .replay-controls .btn-clear{max-width:70px}
+        .replay-close{max-width:none;width:100%;margin-top:12px}
+        @media (prefers-reduced-motion: reduce){.btn-replay.fresh{animation:none}}
+
         /* v40: ONE action zone — word + Submit/Clear + abilities + Coco's section.
            Keith still gets a single hard >=3:1 boundary around everything pressable. */
         .action-zone{
@@ -2013,6 +2045,8 @@
             <div id="sr-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
         </div>
         <div class="action-zone">
+            <!-- v74: watch the last turn back — swaps, shuffles and the word's path -->
+            <button type="button" class="btn-replay hidden" id="btn-replay" onclick="openReplay()">▶ Replay last turn</button>
             <div class="word-area" id="word-area">
                 <div id="word-display" class="empty" aria-hidden="true">Tap letters to spell</div>
                 <div id="score-preview"></div>
@@ -2367,6 +2401,7 @@
         <h1>🏆 Game Over!</h1>
         <div class="winner-banner" id="winner-banner"></div>
         <div class="recap-section" id="recap-section"></div>
+        <button type="button" class="btn-replay hidden" id="btn-replay-final" onclick="openReplay()">▶ Replay the final turn</button>
         <button class="btn-start" id="btn-rematch" onclick="startRematch()">🔄 Rematch</button>
         <button class="btn-clear" style="max-width:none;width:100%;margin-top:10px;" onclick="location.reload()">⚙ Back to Setup</button>
     </div>
@@ -2435,7 +2470,24 @@
     </div>
 </div>
 
-<script src="engine.js?v=v73"></script>
+<!-- v74: turn replay — a read-only copy of the board, stepped through the last turn -->
+<div id="modal-replay" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="replay-heading" onkeydown="handleReplayKey(event)">
+    <div class="modal-content replay-content">
+        <h3 id="replay-heading" class="replay-heading">Replay</h3>
+        <div class="replay-sub" id="replay-sub"></div>
+        <div class="grid replay-grid" id="replay-grid" aria-hidden="true"></div>
+        <div class="replay-caption" id="replay-caption" role="status" aria-live="polite" aria-atomic="true"></div>
+        <div class="replay-progress" id="replay-progress" aria-hidden="true"></div>
+        <div class="replay-controls">
+            <button type="button" class="btn-clear" id="replay-prev" onclick="replayStep(-1)" aria-label="Previous step">◀</button>
+            <button type="button" class="btn-submit" id="replay-play" onclick="replayToggle()">❚❚ Pause</button>
+            <button type="button" class="btn-clear" id="replay-next" onclick="replayStep(1)" aria-label="Next step">▶</button>
+        </div>
+        <button type="button" class="btn-clear replay-close" onclick="closeReplay()">✕ Close</button>
+    </div>
+</div>
+
+<script src="engine.js?v=v74"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js" integrity="sha512-XEKeWX+mI3Ov+tg2evDlVQFzVOIp4T8J3cNcCEPaEUGpxJV3eZaN8rHuvnFPvQpGJBHPmrozJDMpm2xcDvtmyQ==" crossorigin="anonymous"></script>
 <script>
 /*
@@ -2684,7 +2736,7 @@ function cocoTakeTurn(){
     }
     if(!choice){
         game.showToast('😿 Coco found no word — he curls up and passes');
-        setTimeout(()=>{if(game&&!game.over)game.endTurn()},1400);
+        setTimeout(()=>{if(game&&!game.over){game.logStep({k:'pass'});game.endTurn()}},1400);
         return;
     }
     const pace=COCO_PACE[moodKey]||COCO_PACE.cozy;
@@ -2731,6 +2783,7 @@ function cocoTakeTurn(){
             cocoP.gems-=CONFIG.costs.swap;game.logAbility(cocoP,'swap',CONFIG.costs.swap);
             const t=game.tiles[swapPlan.swap.id];
             t.char=swapPlan.swap.to;t.baseValue=LETTERS[swapPlan.swap.to].val;
+            game.logStep({k:'swap',id:swapPlan.swap.id,from:swapPlan.swap.from,to:swapPlan.swap.to,b:boardCode(game.tiles)});   // v74
             game.showToast(`🐾 Coco swaps ${swapPlan.swap.from}→${swapPlan.swap.to}!`);
             SFX.swap();game.updateUI();
             setTimeout(step,cocoMs([1100,1700]));
@@ -3759,7 +3812,44 @@ function sanitizeNetState(st){
     st.tiles=Array.isArray(st.tiles)?st.tiles.slice(0,25).map(td=>({char:cleanChar(td&&td.char),mult:cleanMult(td&&td.mult),gem:!!(td&&td.gem)})):[];
     st.sel=Array.isArray(st.sel)?st.sel.map(v=>cleanInt(v,24)).filter((v,ix,a)=>a.indexOf(v)===ix):[];
     if(st.finalPlayers!=null)st.finalPlayers=Array.isArray(st.finalPlayers)?st.finalPlayers.map(cleanPlayer).filter(Boolean):null;
+    st.tl=cleanTurnLog(st.tl,false);st.lastTurn=cleanTurnLog(st.lastTurn,true);   // v74: turn replay logs
     return st;
+}
+// v74: TURN REPLAY. Each turn keeps a small log of what happened on the board
+// (the board it started on, every swap / shuffle / zoomies / word, and the
+// board each one left), and the last finished turn rides serialize() as
+// `lastTurn` — so a player who looked away can watch the move back instead of
+// only reading the score history. Boards travel as 75-char codes: per tile a
+// letter, a bonus code and a treat flag ("Q.*" = Q, no bonus, treat).
+const MULT_CODE={DL:'l',TL:'L','2W':'w','3W':'W'},CODE_MULT={l:'DL',L:'TL',w:'2W',W:'3W'};
+const BOARD_CODE_RE=/^(?:[A-Z][.lLwW][.*]){25}$/;
+const REPLAY_MAX_STEPS=40;   // swap/undo/swap… can't grow a state without bound
+function boardCode(tiles){return tiles.map(t=>t.char+(MULT_CODE[t.multiplier]||'.')+(t.hasGem?'*':'.')).join('')}
+function cleanBoardCode(v){return (typeof v==='string'&&BOARD_CODE_RE.test(v))?v:null}
+function cleanTileId(v){return (Number.isInteger(v)&&v>=0&&v<25)?v:null}
+function cleanReplayStep(s){
+    if(!s||typeof s!=='object')return null;
+    switch(s.k){
+        case 'hint':case 'time':case 'timeout':case 'pass':return{k:s.k};
+        case 'shuffle':case 'zoomies':{const b=cleanBoardCode(s.b);return b?{k:s.k,b:b}:null}
+        case 'swap':case 'undo':{const b=cleanBoardCode(s.b),id=cleanTileId(s.id);return (b&&id!=null)?{k:s.k,id:id,from:cleanChar(s.from),to:cleanChar(s.to),b:b}:null}
+        case 'word':{
+            const b=cleanBoardCode(s.b),word=cleanWordStr(s.word);
+            const ids=Array.isArray(s.ids)?s.ids.map(cleanTileId).filter((v,i,a)=>v!=null&&a.indexOf(v)===i):[];
+            if(!b||!word||ids.length!==word.length)return null;
+            return{k:'word',ids:ids,word:word,score:cleanInt(s.score,99999),gems:cleanInt(s.gems,99),b:b};
+        }
+    }
+    return null;
+}
+function cleanTurnLog(t,ended){
+    if(!t||typeof t!=='object')return null;
+    const start=cleanBoardCode(t.start),end=ended?cleanBoardCode(t.end):null;
+    if(!start||(ended&&!end)||(t.by!==0&&t.by!==1))return null;
+    const out={by:t.by,round:cleanInt(t.round,99)||1,start:start,
+        steps:Array.isArray(t.steps)?t.steps.slice(0,REPLAY_MAX_STEPS).map(cleanReplayStep).filter(Boolean):[]};
+    if(ended)out.end=end;
+    return out;
 }
 // v67.2: a live board a guest will PLAY on needs exactly 2 valid players and a
 // full 25-tile grid — cleanPlayer/tiles drop malformed entries, so a hostile or
@@ -4764,7 +4854,9 @@ class Game{
         this.timerInterval=null;this.timeLeft=0;this.cocoTimerActive=false;this.over=false;
         this.round=1;this.startIndex=(opts&&typeof opts.startIndex==='number'&&opts.startIndex>=0&&opts.startIndex<this.players.length)?opts.startIndex:0;this.turnIndex=this.startIndex;this.tiles=[];this.selection=[];
         this.pendingSwap=false;this.isDragging=false;this.cocoPending=false;this.lastSwap=null;
-        this.generateBoard();this.selection=[];this.updateUI();this.setupTouchDrag();
+        this.generateBoard();this.selection=[];
+        this.lastTurn=null;this.newTurnLog();   // v74: turn replay
+        this.updateUI();this.setupTouchDrag();
         this.showRoundOverlay('Round 1',`${this.players[this.startIndex].name} goes first!`);
         this.maybeCoco();
     }
@@ -4786,7 +4878,9 @@ class Game{
             tiles:this.tiles.map(t=>({char:t.char,mult:t.multiplier,gem:t.hasGem})),
             cocoTimerActive:this.cocoTimerActive,timeLeft:this.timeLeft,cocoPendingFor:(this.cocoPendingFor==null?null:this.cocoPendingFor),
             over:this.over,   // v58: a finished game stays finished across rejoins
-            sel:[...this.selection]};
+            sel:[...this.selection],
+            tl:this.turnLog?JSON.parse(JSON.stringify(this.turnLog)):null,   // v74: this turn so far (survives a reload mid-turn)
+            lastTurn:this.lastTurn?JSON.parse(JSON.stringify(this.lastTurn)):null};   // v74: the last finished turn, for Replay
     }
     static fromState(st){
         st=sanitizeNetState(st);   // v67: relay/P2P states are opponent-controlled — clean before use
@@ -4800,6 +4894,7 @@ class Game{
         g.players=st.players;
         g.tiles=st.tiles.map((td,i)=>{const t=new Tile(i,Math.floor(i/5),i%5,td.char);t.multiplier=td.mult;t.hasGem=td.gem;return t});
         (st.sel||[]).forEach(id=>{if(g.tiles[id]){g.tiles[id].isSelected=true;g.selection.push(id)}});
+        g.lastTurn=st.lastTurn||null;g.adoptTurnLog(st,false);   // v74
         NET.quiet=true;g.updateUI();NET.quiet=false;
         g.setupTouchDrag();
         g.cocoPending=false;g.cocoPendingFor=(st.cocoPendingFor==null?null:st.cocoPendingFor);
@@ -4840,6 +4935,7 @@ class Game{
         const sel=keep?this.selection:(st.sel||[]);
         this.selection=[];
         sel.forEach(id=>{if(this.tiles[id]){this.tiles[id].isSelected=true;this.selection.push(id)}});
+        this.lastTurn=st.lastTurn||null;this.adoptTurnLog(st,sameTurn);   // v74
         NET.quiet=true;this.updateUI();NET.quiet=false;
         this.activate();
     }
@@ -4854,6 +4950,27 @@ class Game{
         this.selection=[];
         ids.forEach(id=>{if(this.tiles[id]){this.tiles[id].isSelected=true;this.selection.push(id)}});
         this.selUI();
+    }
+    // v74: TURN REPLAY bookkeeping (see boardCode). The log for the turn in
+    // progress starts on the board that turn was dealt; sealTurn() closes it
+    // into lastTurn once the next turn's board (round bonuses, treat shuffle)
+    // is in place.
+    newTurnLog(){this.turnLog={by:this.turnIndex,round:this.round,start:boardCode(this.tiles),steps:[]}}
+    logStep(step){
+        if(!this.turnLog||this.turnLog.by!==this.turnIndex||this.turnLog.round!==this.round)this.newTurnLog();
+        const steps=this.turnLog.steps;
+        if(step.k==='word'||steps.length<REPLAY_MAX_STEPS-1)steps.push(step);   // one slot always left for the word
+    }
+    sealTurn(done){
+        this.lastTurn=done?{by:done.by,round:done.round,start:done.start,steps:done.steps,end:boardCode(this.tiles)}:null;
+        this.newTurnLog();
+    }
+    // A state from the room/save carries the turn-in-progress log. Keep our own
+    // when it's the same turn on this device (a Coco Attack landing mid-turn).
+    adoptTurnLog(st,keepOwn){
+        const mine=this.turnLog,matches=t=>t&&t.by===this.turnIndex&&t.round===this.round;
+        if(!(keepOwn&&matches(mine)))this.turnLog=matches(st.tl)?st.tl:null;
+        if(!this.turnLog)this.newTurnLog();
     }
     handleRemoteAction(m){
         if(this.over&&m.kind!=='rematchplz')return;
@@ -4887,14 +5004,15 @@ class Game{
                 const p=this.currentPlayer;
                 if(p.gems<CONFIG.costs.swap||!this.tiles[m.tileId]||!Object.prototype.hasOwnProperty.call(LETTERS,m.ch))return;
                 p.gems-=CONFIG.costs.swap;this.logAbility(p,'swap',CONFIG.costs.swap);
-                const t=this.tiles[m.tileId];t.char=m.ch;t.baseValue=LETTERS[m.ch].val;
+                const t=this.tiles[m.tileId],was=t.char;t.char=m.ch;t.baseValue=LETTERS[m.ch].val;
+                this.logStep({k:'swap',id:m.tileId,from:was,to:m.ch,b:boardCode(this.tiles)});
                 this.showToast(`Swapped to ${m.ch}!`);SFX.swap();this.updateUI();
                 break;}
             case 'time':{
                 if(!guestTurn)return;
                 const p=this.currentPlayer;
                 if(p.gems<CONFIG.costs.time||!this.cocoTimerActive)return;
-                p.gems-=CONFIG.costs.time;this.logAbility(p,'time',CONFIG.costs.time);
+                p.gems-=CONFIG.costs.time;this.logAbility(p,'time',CONFIG.costs.time);this.logStep({k:'time'});
                 this.timeLeft+=CONFIG.bonusTime;this.updateTimerDisplay();
                 this.showToast('+15 seconds!');this.updateUI();
                 break;}
@@ -4904,7 +5022,7 @@ class Game{
                 if(p.gems<cost)return;
                 const best=findBestWord(this.tiles);
                 if(!best)return;
-                p.gems-=cost;this.logAbility(p,'hint',cost);
+                p.gems-=cost;this.logAbility(p,'hint',cost);this.logStep({k:'hint'});
                 this.updateUI();
                 NET.send({type:'fx',toast:`💡 Try "${best.word.slice(0,2)}…" — ${best.word.length} letters`});
                 break;}
@@ -5129,6 +5247,7 @@ class Game{
             mults.forEach((m,i)=>{if(av[i])av[i].multiplier=m});
         }
         this.replenishGems();
+        this.logStep({k:'word',ids:used,word:r.word,score:r.score,gems:r.gemCount,b:boardCode(this.tiles)});   // v74
         this.endTurn();
     }
 
@@ -5174,6 +5293,7 @@ class Game{
         // Round 1 only: shuffle gem positions after each turn — but NOT on the
         // last turn of the round (endRound → upgradeMultipliersForNewRound →
         // replenishGems would immediately overwrite the scramble anyway).
+        const done=this.turnLog;this.turnLog=null;   // v74: sealed once the next board is dealt
         const next=(this.turnIndex+1)%this.players.length;
         const roundDone=(next===this.startIndex);   // v55: a round = one full cycle from whoever opened it
         if(this.round===1&&!roundDone){
@@ -5181,19 +5301,21 @@ class Game{
             this.showToast(TICON+' Treats shifted!');   // v63: FX queue orders it after the word toasts
         }
         this.turnIndex=next;
-        if(roundDone){this.endRound()}
+        if(roundDone){this.endRound(done)}
         else{
+            this.sealTurn(done);
             this.updateUI();
             this.showRoundOverlay(`${this.currentPlayer.name}'s Turn`,`Round ${this.round} of ${CONFIG.rounds}`);
             this.maybeCoco();
         }
     }
 
-    endRound(){
+    endRound(done){
         this.round++;
-        if(this.round>CONFIG.rounds){this.endGame();return}
+        if(this.round>CONFIG.rounds){this.sealTurn(done);this.endGame();return}
         this.turnIndex=this.startIndex;   // v55: each round restarts with the same opener
         this.upgradeMultipliersForNewRound();
+        this.sealTurn(done);
         this.updateUI();
         this.showRoundOverlay(`Round ${this.round}`,`${CONFIG.rounds-this.round+1} remaining`);
         this.maybeCoco();
@@ -5315,14 +5437,14 @@ class Game{
         if(type==='zoomies'){document.getElementById('zoomies-confirm-cost').innerText=CONFIG.costs.zoomies;document.getElementById('modal-zoomies-confirm').classList.remove('hidden');return}
         if(type==='shuffle'){document.getElementById('modal-shuffle-confirm').classList.remove('hidden');return}
         else if(type==='swap'){this.pendingSwap=true;this.note('Tap a tile to swap (or cancel)')}
-        else if(type==='time'){if(!this.cocoTimerActive)return;p.gems-=cost;this.logAbility(p,'time',cost);this.timeLeft+=CONFIG.bonusTime;this.updateTimerDisplay();this.note('+15 seconds!')}
+        else if(type==='time'){if(!this.cocoTimerActive)return;p.gems-=cost;this.logAbility(p,'time',cost);this.logStep({k:'time'});this.timeLeft+=CONFIG.bonusTime;this.updateTimerDisplay();this.note('+15 seconds!')}
         this.updateUI();
     }
     doHint(){
         const p=this.currentPlayer,cost=CONFIG.costs.hint||2;
         const best=findBestWord(this.tiles);
         if(!best){this.note('No hint available!');return}
-        p.gems-=cost;this.logAbility(p,'hint',cost);
+        p.gems-=cost;this.logAbility(p,'hint',cost);this.logStep({k:'hint'});
         this.showToast(`💡 Try "${best.word.slice(0,2)}…" — ${best.word.length} letters`,true);
         this.updateUI();
     }
@@ -5349,6 +5471,7 @@ class Game{
         if(!t||t.char!==s.to){this.lastSwap=null;return false}
         if(this.selection.length)this.clearSelection();
         t.char=s.from;t.baseValue=s.fromVal;
+        this.logStep({k:'undo',id:s.tileId,from:s.to,to:s.from,b:boardCode(this.tiles)});   // v74
         const p=this.players[s.by];
         if(p){
             p.gems=Math.min(CONFIG.maxGems,p.gems+CONFIG.costs.swap);
@@ -5374,6 +5497,7 @@ class Game{
         let si=0;
         mults.forEach(m=>{if(si<shuffled.length)this.tiles[shuffled[si++]].multiplier=m});
         this.replenishGems();
+        this.logStep({k:'shuffle',b:boardCode(this.tiles)});   // v74
     }
     // v39: Coco Zoomies — every letter rerolled; mult types kept, new spots; treats re-scattered
     zoomiesBoard(){
@@ -5387,6 +5511,7 @@ class Game{
         let si=0;
         mults.forEach(m=>{if(si<idx.length)this.tiles[idx[si++]].multiplier=m});
         this.replenishGems();
+        this.logStep({k:'zoomies',b:boardCode(this.tiles)});   // v74
     }
     openSwapModal(tileId){this.swapTargetId=tileId;this._swapModalAt=Date.now();const g=document.getElementById('swap-options');g.innerHTML='';for(let ch of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'){const d=document.createElement('button');d.type='button';d.className='swap-tile';d.innerText=ch;d.onclick=()=>this.performSwap(ch);g.appendChild(d)}document.getElementById('modal-swap').classList.remove('hidden');const first=g.querySelector('button');if(first)first.focus()}
     performSwap(ch){
@@ -5395,7 +5520,7 @@ class Game{
         const p=this.currentPlayer;if(p.gems<CONFIG.costs.swap){this.note('Not enough treats!');SFX.invalid();this.pendingSwap=false;document.getElementById('modal-swap').classList.add('hidden');this.updateUI();return}p.gems-=CONFIG.costs.swap;this.logAbility(p,'swap',CONFIG.costs.swap);const t=this.tiles[this.swapTargetId];
         // v62: remember the swap so it can be UNDONE (consent-based) this turn
         this.lastSwap={tileId:this.swapTargetId,from:t.char,fromVal:t.baseValue,to:ch,by:this.turnIndex,round:this.round};
-        t.char=ch;t.baseValue=LETTERS[ch].val;document.getElementById('modal-swap').classList.add('hidden');this.pendingSwap=false;this.showToast(`Swapped to ${ch}!`);SFX.swap();this.updateUI();this.focusTile(this.swapTargetId)}
+        t.char=ch;t.baseValue=LETTERS[ch].val;this.logStep({k:'swap',id:this.swapTargetId,from:this.lastSwap.from,to:ch,b:boardCode(this.tiles)});document.getElementById('modal-swap').classList.add('hidden');this.pendingSwap=false;this.showToast(`Swapped to ${ch}!`);SFX.swap();this.updateUI();this.focusTile(this.swapTargetId)}
 
     cocoAttack(){
         // v52: async Coco Attack — the attacker isn't the turn authority, so the
@@ -5440,7 +5565,7 @@ class Game{
             else if(NET.mode==='host')NET.send({type:'timer',on:true,t:this.timeLeft});
             if(!NET.async)saveGameState();
             if(this.timeLeft<=5&&this.timeLeft>0)SFX.timerWarn();
-            if(this.timeLeft<=0){clearInterval(this.timerInterval);this.timerInterval=null;this.cocoTimerActive=false;if(NET.mode==='host'&&!NET.async)NET.send({type:'timer',on:false,t:0});this.clearSelection();this.showToast("🐾 Coco says time's up!");clearTimeout(this._expireTimer);this._expireTimer=setTimeout(()=>{this._expireTimer=null;this.endTurn()},800)}
+            if(this.timeLeft<=0){clearInterval(this.timerInterval);this.timerInterval=null;this.cocoTimerActive=false;if(NET.mode==='host'&&!NET.async)NET.send({type:'timer',on:false,t:0});this.clearSelection();this.showToast("🐾 Coco says time's up!");clearTimeout(this._expireTimer);this._expireTimer=setTimeout(()=>{this._expireTimer=null;if(!this._dead&&!this.over)this.logStep({k:'timeout'});this.endTurn()},800)}
         };
         if(this.timeLeft<=0)tick();else this.timerInterval=setInterval(tick,1000);
     }
@@ -5469,6 +5594,20 @@ class Game{
             if(ready())arm();else setTimeout(wait,300);
         };
         setTimeout(wait,300);
+    }
+
+    // v74: "▶ Replay Keith's turn". It glows until watched when the turn was
+    // made by someone else's hands (online opponent, or Coco in solo).
+    updateReplayButton(){
+        const btn=document.getElementById('btn-replay');if(!btn)return;
+        const lt=this.lastTurn,who=lt&&this.players[lt.by];
+        btn.classList.toggle('hidden',!who);
+        if(!who)return;
+        const online=NET.mode!=='local',mine=online&&lt.by===NET.myIndex;
+        const label=mine?'▶ Replay your turn':`▶ Replay ${who.name}'s turn`;
+        if(btn.textContent!==label)btn.textContent=label;
+        const theirs=online?!mine:!!who.isCoco;
+        btn.classList.toggle('fresh',theirs&&this._replaySeen!==replayKey(lt));
     }
 
     showPlayerHistory(playerIndex){
@@ -5624,6 +5763,7 @@ class Game{
         // v62: undo-swap — swapper only, same turn, pre-word, local/solo/async only
         const undoBtn=document.getElementById('btn-undo-swap');
         if(undoBtn)undoBtn.classList.toggle('hidden',!(this.lastSwap&&myTurn&&!this.over&&!this.pendingSwap&&this.lastSwap.by===this.turnIndex&&(NET.mode==='local'||NET.async)));
+        this.updateReplayButton();   // v74
         const timeBtn=document.getElementById('btn-time');
         timeBtn.style.display=this.cocoTimerActive?'inline-flex':'none';
         timeBtn.disabled=!myTurn||this.pendingSwap||p.gems<CONFIG.costs.time;
@@ -5832,6 +5972,7 @@ function renderGameOver(players){
     if(!Array.isArray(players)||!players.length)return;   // v67.2: never render an empty/cleaned-away recap
     const rb=document.getElementById('btn-rematch');
     if(rb){rb.disabled=false;rb.innerText=NET.mode==='join'?'🔄 Ask for Rematch':'🔄 Rematch'}
+    const fb=document.getElementById('btn-replay-final');if(fb)fb.classList.toggle('hidden',!(game&&game.lastTurn));   // v74
     if(game)game.renderRecap(players);
 }
 function startRematch(){
@@ -5865,7 +6006,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v73';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v74';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){
@@ -6131,6 +6272,112 @@ function populateLwRef(){
     lwRefEl.classList.remove('hidden');
 }
 function closeHistoryModal(){document.getElementById('modal-history').classList.add('hidden')}
+
+// v74: TURN REPLAY viewer. Frames are built once from the sealed log and drawn
+// on a read-only copy of the board, so the live game (and any state push that
+// lands mid-replay) is never touched. Letter-by-letter frames of a word are
+// `sub` frames: they play, but ◀ / ▶ step over them.
+const REPLAY={frames:[],i:0,timer:null,playing:false,from:null};
+function replayKey(lt){return lt?lt.by+':'+lt.round:''}
+function replayChars(b,ids){return ids.map(id=>b[id*3]).join('')}
+function replayFrames(lt,players){
+    const who=(players[lt.by]&&players[lt.by].name)||'Player',F=[];
+    let b=lt.start;
+    F.push({b:b,cap:`${who}'s turn starts on this board`,ms:1600});
+    lt.steps.forEach(s=>{
+        switch(s.k){
+            case 'swap':F.push({b:s.b,mark:[s.id],cap:`🔄 ${who} swaps ${s.from} → ${s.to}`,ms:2000});b=s.b;break;
+            case 'undo':F.push({b:s.b,mark:[s.id],cap:`↩ Swap undone — ${s.from} goes back to ${s.to}`,ms:1800});b=s.b;break;
+            case 'shuffle':F.push({b:s.b,fresh:true,cap:`🔀 ${who} shuffles the board`,ms:1800});b=s.b;break;
+            case 'zoomies':F.push({b:s.b,fresh:true,cap:`🌪 ${who} uses Zoomies — every letter is new`,ms:1800});b=s.b;break;
+            case 'hint':F.push({b:b,cap:`💡 ${who} uses a hint`,ms:1400});break;
+            case 'time':F.push({b:b,cap:`⏱ ${who} buys 15 more seconds`,ms:1400});break;
+            case 'timeout':F.push({b:b,cap:`🐾 Time runs out on ${who}`,ms:1700});break;
+            case 'pass':F.push({b:b,cap:`😿 ${who} finds no word and passes`,ms:1700});break;
+            case 'word':
+                for(let n=1;n<s.ids.length;n++)F.push({b:b,sel:s.ids.slice(0,n),cap:replayChars(b,s.ids.slice(0,n))+'…',ms:450,sub:true});
+                F.push({b:b,sel:s.ids,cap:`✨ ${s.word} for ${s.score} point${s.score===1?'':'s'}`+(s.gems?` and ${s.gems} treat${s.gems===1?'':'s'}`:''),ms:2400});
+                F.push({b:s.b,fresh:s.ids,cap:'New letters drop into the gaps',ms:1600});b=s.b;
+                break;
+        }
+    });
+    if(lt.end!==b){
+        let bonus=false;for(let i=1;i<75;i+=3)if(b[i]!==lt.end[i])bonus=true;
+        F.push({b:lt.end,cap:bonus?'✦ New round — fresh bonus tiles':'The treats move to new tiles',ms:1700});
+    }
+    return F;
+}
+function replayRender(){
+    const f=REPLAY.frames[REPLAY.i];if(!f)return;
+    const grid=document.getElementById('replay-grid');grid.innerHTML='';
+    const sel=f.sel||[],last=sel.length?sel[sel.length-1]:-1;
+    for(let i=0;i<25;i++){
+        const t=new Tile(i,Math.floor(i/5),i%5,f.b[i*3]);
+        t.multiplier=CODE_MULT[f.b[i*3+1]]||null;t.hasGem=f.b[i*3+2]==='*';
+        t.isSelected=sel.includes(i);
+        t.isNew=f.fresh===true||(Array.isArray(f.fresh)&&f.fresh.includes(i));
+        const el=t.render(i===last);el.tabIndex=-1;
+        if(f.mark&&f.mark.includes(i))el.classList.add('replay-mark');
+        grid.appendChild(el);
+    }
+    const cap=document.getElementById('replay-caption');
+    cap.textContent=f.cap;cap.setAttribute('aria-busy',f.sub?'true':'false');   // spelled-out letters aren't announced one by one
+    const n=REPLAY.frames.length,end=REPLAY.i>=n-1;
+    const majors=REPLAY.frames.filter(x=>!x.sub).length,at=REPLAY.frames.slice(0,REPLAY.i).filter(x=>!x.sub).length+1;
+    document.getElementById('replay-progress').textContent=`Step ${at} of ${majors}`;
+    document.getElementById('replay-prev').disabled=REPLAY.i===0;
+    document.getElementById('replay-next').disabled=end;
+    document.getElementById('replay-play').textContent=REPLAY.playing?'❚❚ Pause':(end?'↻ Watch again':'▶ Play');
+}
+function replaySchedule(){
+    clearTimeout(REPLAY.timer);REPLAY.timer=null;
+    if(!REPLAY.playing||REPLAY.i>=REPLAY.frames.length-1)return;
+    REPLAY.timer=setTimeout(()=>{
+        REPLAY.timer=null;REPLAY.i++;
+        if(REPLAY.i>=REPLAY.frames.length-1)REPLAY.playing=false;
+        replayRender();replaySchedule();
+    },REPLAY.frames[REPLAY.i].ms);
+}
+function openReplay(){
+    const lt=game&&game.lastTurn;if(!lt)return;
+    const who=game.players[lt.by];
+    REPLAY.frames=replayFrames(lt,game.players);REPLAY.i=0;REPLAY.playing=REPLAY.frames.length>1;
+    REPLAY.from=document.activeElement;
+    game._replaySeen=replayKey(lt);game.updateReplayButton();
+    document.getElementById('replay-heading').textContent=`Replay — ${who?who.name:'Player'}'s turn`;
+    document.getElementById('replay-sub').textContent=`Round ${lt.round}`;
+    document.getElementById('modal-replay').classList.remove('hidden');
+    replayRender();replaySchedule();
+    document.getElementById('replay-play').focus();
+}
+function replayToggle(){
+    if(REPLAY.i>=REPLAY.frames.length-1){REPLAY.i=0;REPLAY.playing=true}
+    else REPLAY.playing=!REPLAY.playing;
+    replayRender();replaySchedule();
+}
+function replayStep(d){
+    REPLAY.playing=false;
+    let i=REPLAY.i+d;
+    while(i>0&&i<REPLAY.frames.length-1&&REPLAY.frames[i].sub)i+=d;
+    REPLAY.i=Math.max(0,Math.min(REPLAY.frames.length-1,i));
+    replayRender();replaySchedule();
+    const a=document.activeElement;if(a&&a.disabled)document.getElementById('replay-play').focus();   // ◀/▶ just disabled itself
+}
+function closeReplay(){
+    clearTimeout(REPLAY.timer);REPLAY.timer=null;REPLAY.playing=false;
+    document.getElementById('modal-replay').classList.add('hidden');
+    const back=REPLAY.from;REPLAY.from=null;
+    if(back&&typeof back.focus==='function')back.focus();
+}
+function handleReplayKey(e){
+    if(e.key==='Escape'){e.preventDefault();closeReplay();return}
+    if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();replayStep(e.key==='ArrowLeft'?-1:1);return}
+    if(e.key!=='Tab')return;
+    const buttons=[...document.getElementById('modal-replay').querySelectorAll('button')].filter(b=>!b.disabled);
+    const first=buttons[0],last=buttons[buttons.length-1];
+    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}
+    else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}
+}
 function handleSwapKey(e){
     if(e.key==='Escape'){e.preventDefault();closeSwapModal();return}
     if(e.key!=='Tab')return;
