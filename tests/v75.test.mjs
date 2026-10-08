@@ -103,3 +103,15 @@ function catBoardWords() {
   st.tiles = [...'CAT' + 'E'.repeat(22)].map(char => ({ char, mult: null, gem: false }));
   return st;
 }
+
+test('an attack interrupting a replay opened from the play history closes the history too', () => {
+  const c = client(), st = state(); st.turns = [turn(1, 1)]; st.lastTurn = turn(1, 1);
+  c.load(st, 'NET.mode="local"');
+  c.run('game.showPlayerHistory(1)');
+  assert.equal(c.els.get('modal-history').classList.contains('hidden'), false);
+  c.run('openReplayTurn(0)'); c.els.get('modal-replay').classList.remove('hidden');
+  c.run('game.timeLeft=35;game.startCocoTimer()');
+  assert.equal(c.els.get('modal-replay').classList.contains('hidden'), true);
+  assert.equal(c.els.get('modal-history').classList.contains('hidden'), true);
+  assert.equal(c.doc.activeElement.classList.contains('tile'), true);
+});

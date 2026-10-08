@@ -5711,7 +5711,7 @@ class Game{
         document.body.appendChild(o);setTimeout(()=>o.remove(),1800);
     }
 
-    updateTimerDisplay(){if(this.replayBlocked()&&!document.getElementById('modal-replay').classList.contains('hidden'))closeReplay('board');   // v74: an attack mid-replay sends you back to the board
+    updateTimerDisplay(){if(this.replayBlocked()&&!document.getElementById('modal-replay').classList.contains('hidden')){closeHistoryModal();closeReplay('board')}   // v74: an attack mid-replay sends you back to the board (v75: past the play history it may have been opened from)
         const el=document.getElementById('timer-display');el.classList.toggle('hidden',!this.cocoTimerActive);if(this.cocoTimerActive){el.innerText=this.timeLeft;el.style.color=this.timeLeft<=5?'var(--red)':'var(--coco)'}else{el.innerText='--';el.style.color='var(--ink)'}}
 
     updateUI(){

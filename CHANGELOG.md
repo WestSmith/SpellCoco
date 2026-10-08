@@ -17,7 +17,9 @@ SPELLCOCO v75 — REPLAY EVERY ROUND (2026-10-08)
   `lastTurn` is still sent, so v74 devices keep their replay button; a
   state from a v74 device adds its turn to the list instead of wiping it.
 - Endings (legacy game-over message, relay rejects) carry the whole list.
-- Tests: 7 new (106 total).
+- A Coco Attack interrupting a replay opened from the play history closes
+  the history too, so the board is reachable while the clock runs.
+- Tests: 8 new (107 total).
 ================================================================
 ```
 
