@@ -2052,7 +2052,7 @@
                 <button class="btn-ability" id="btn-hint" onclick="game.useAbility('hint')">💡 Hint <span class="cost" id="hint-cost-label">2<span class="ticon"></span></span></button>
                 <button class="btn-ability" id="btn-time" onclick="game.useAbility('time')">⏱ +15s <span class="cost">1<span class="ticon"></span></span></button>
                 <button class="btn-cancel-swap hidden" id="btn-cancel-swap" onclick="game.cancelSwap()">✕ Cancel Swap</button>
-                <!-- v62: consent-based undo — same turn, before a word is played -->
+                <!-- v62/v77: instant, free undo — same turn, before a word is played -->
                 <button class="btn-cancel-swap hidden" id="btn-undo-swap" onclick="game.requestUndoSwap()" title="Free — the letter goes back and your treats come back">↩ Undo Swap (free)</button>
             </div>
             <div class="coco-hairline" id="coco-hairline"></div>
@@ -2362,18 +2362,6 @@
             </div>
         </details>
         </div><!-- /settings-stack -->
-    </div>
-</div>
-
-<!-- v62: undo-swap consent — mirrors the custom-word Allow/Refuse flow -->
-<div id="modal-undoreq" class="modal hidden" style="z-index:200;">
-    <div class="modal-content" style="width:400px;">
-        <h3 style="margin-bottom:14px;">↩ Undo a swap?</h3>
-        <p id="undoreq-text" style="font-size:1rem;margin-bottom:18px;"></p>
-        <div style="display:flex;gap:10px;justify-content:center;">
-            <button class="btn-clear" style="max-width:none;flex:1;" onclick="answerUndoRequest(false)">🙀 Refuse</button>
-            <button class="btn-submit" style="max-width:none;flex:1;" onclick="answerUndoRequest(true)">✓ Allow</button>
-        </div>
     </div>
 </div>
 
@@ -3206,11 +3194,9 @@ function asyncOnData(m){
         case 'wordok':{const w=cleanNetWord(m.w);if(!w)break;addCustomWord(w,true);if(game){game.showToast(`📖 ${oppName()} approved "${w}" — play it!`);quietUI()}break}
         case 'wordno':{const w=cleanNetWord(m.w);if(w&&game)game.showToast(`🙀 ${oppName()} vetoed "${w}"`);break}
         case 'addword':{const w=cleanNetWord(m.w);if(!w)break;addCustomWord(w,true);if(game){game.showToast(`📖 ${w} added by ${oppName()}`);quietUI()}break}
-        // v62: undo-swap consent (async online). The requester holds lastSwap;
-        // approval that arrives after the window closed just no-ops with a toast.
-        case 'undoreq':showUndoRequest({from:cleanChar(m.from),to:cleanChar(m.to)},false);break;   // v67.1: from/to reach undoreq-text innerHTML
-        case 'undook':if(game&&!game.applyUndoSwap())game.showToast('↩ Too late to undo — the board moved on');break;
-        case 'undono':if(game)game.showToast(`🙀 ${oppName()} says the swap stands`);break;
+        // v77: undo needs no consent. A v76 opponent still asks first, so say
+        // yes at once; their undo then arrives with their next state push.
+        case 'undoreq':NET.send({type:'undook'});break;
         // v73: the opponent's in-progress word. Display only, and only for the
         // exact turn it was made on (a late one after their move is dropped).
         case 'livesel':if(game&&!game.over&&game.turnIndex!==NET.myIndex&&m.r===game.round&&m.t===game.turnIndex){NET.quiet=true;try{game.applySelection(m.ids)}finally{NET.quiet=false}}break;
@@ -3358,7 +3344,7 @@ function asyncTurnHint(overlay){
     if(overlay)game.showRoundOverlay(`Round ${game.round}`,mine?'Your turn':`Waiting for ${game.currentPlayer.name}…`,true);
 }
 function asyncPeer(m){
-    NET.oppPresent=!!m.present;   // v62: undo-swap needs to know if consent is reachable
+    NET.oppPresent=!!m.present;
     updateNetDots();              // v65: the dot IS the announcement — no popup
     if(!game)return;
     const opp=m.name||NET.oppName||(NET.myName==='Keith'?'Shawn':'Keith');
@@ -4676,29 +4662,6 @@ function answerWordRequest(ok){
         NET.send({type:'wordno',w:w});
     }
 }
-// v62: undo-swap consent — mirrors the word-request flow. `local` means the
-// other seat on THIS device (pass-and-play); otherwise the answer goes back
-// over the wire as undook/undono.
-function showUndoRequest(s,local){
-    NET.pendingUndo=local?'local':'net';
-    const who=local?((game&&game.players[s.by]&&game.players[s.by].name)||'Your opponent'):oppName();
-    document.getElementById('undoreq-text').innerHTML=
-        `<strong>${who}</strong> wants to undo their letter swap (<strong>${cleanChar(s.from)} → ${cleanChar(s.to)}</strong>) and get their ${CONFIG.costs.swap} treats back (undo is free).`;   // v67.1: sink-side guard (from/to are board chars)
-    document.getElementById('modal-undoreq').classList.remove('hidden');
-}
-function answerUndoRequest(ok){
-    document.getElementById('modal-undoreq').classList.add('hidden');
-    const kind=NET.pendingUndo;NET.pendingUndo=null;
-    if(!kind)return;
-    if(kind==='local'){
-        if(!game)return;
-        if(ok)game.applyUndoSwap();
-        else game.showToast('🙀 The swap stands');
-        return;
-    }
-    NET.send({type:ok?'undook':'undono'});
-    if(ok&&game)game.showToast('↩ You approved the undo');
-}
 function exportCustomWords(){
     const st=document.getElementById('custom-status');
     if(!localCustomWords.length){st.innerText='No custom words to export yet';st.style.color='var(--ink-dim)';return}
@@ -5471,21 +5434,17 @@ class Game{
         this.updateUI();
     }
     cancelSwap(){this.pendingSwap=false;this.note('Swap cancelled');this.updateUI()}
-    // v62: UNDO SWAP — consent-based, like adding a custom word. Only the
-    // swapper, only on the same turn, only BEFORE a word is submitted (endTurn
-    // and any board change close the window). On Allow the tile letter goes
-    // back and the treats it cost are refunded, so undo itself is free (v77).
-    // Local shows the modal to the other seat; solo Coco auto-forgives; online
-    // asks over the wire (async only).
+    // v62: UNDO SWAP. Only the swapper, only on the same turn, only BEFORE a
+    // word is submitted (endTurn and any board change close the window). The
+    // tile letter goes back and the treats it cost are refunded. v77: it's a
+    // misclick fix, so it's instant and free: no Allow/Refuse from the other
+    // player. Whoever holds the board (not a P2P guest) applies it, and the
+    // normal state push carries it to the opponent.
     requestUndoSwap(){
         const s=this.lastSwap;
-        if(!s||!this.myTurn||this.over||s.by!==this.turnIndex)return;
-        if(CONFIG.solo&&CONFIG.solo.active){this.applyUndoSwap('🐾 Coco allows it. He saw nothing.');return}
-        if(NET.mode==='local'){showUndoRequest(s,true);return}
-        if(!NET.async)return;   // legacy P2P never shows the button
-        if(NET.oppPresent===false){this.note('⚠ '+oppName()+' is offline — an undo needs their OK while it’s still your turn');return}
-        NET.send({type:'undoreq',from:s.from,to:s.to});
-        this.showToast(`📨 Asked ${oppName()} to undo the swap…`);
+        if(!s||!this.myTurn||this.over||s.by!==this.turnIndex||NET.mode==='join')return;
+        const name=(this.players[s.by]&&this.players[s.by].name)||'Your opponent';
+        if(this.applyUndoSwap()&&NET.mode!=='local')NET.send({type:'fx',toast:`↩ ${name} undid a letter swap`});
     }
     applyUndoSwap(msg){
         const s=this.lastSwap;
@@ -5791,9 +5750,9 @@ class Game{
         document.getElementById('btn-zoomies').disabled=!myTurn||this.pendingSwap||p.gems<(CONFIG.costs.zoomies||4);
         document.getElementById('btn-swap').classList.toggle('active-swap',this.pendingSwap);
         document.getElementById('btn-cancel-swap').classList.toggle('hidden',!this.pendingSwap);
-        // v62: undo-swap — swapper only, same turn, pre-word, local/solo/async only
+        // v62: undo-swap — swapper only, same turn, pre-word (v77: any mode that holds the board)
         const undoBtn=document.getElementById('btn-undo-swap');
-        if(undoBtn)undoBtn.classList.toggle('hidden',!(this.lastSwap&&myTurn&&!this.over&&!this.pendingSwap&&this.lastSwap.by===this.turnIndex&&(NET.mode==='local'||NET.async)));
+        if(undoBtn)undoBtn.classList.toggle('hidden',!(this.lastSwap&&myTurn&&!this.over&&!this.pendingSwap&&this.lastSwap.by===this.turnIndex&&NET.mode!=='join'));
         this.updateReplayButton();   // v74
         const timeBtn=document.getElementById('btn-time');
         timeBtn.style.display=this.cocoTimerActive?'inline-flex':'none';

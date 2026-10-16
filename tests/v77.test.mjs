@@ -69,4 +69,37 @@ test('undo swap is free: every treat the swap cost comes back', () => {
 test('the undo button reads as free, not as a price', () => {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   assert.match(html, /id="btn-undo-swap"[^>]*>↩ Undo Swap \(free\)</);
+  assert.ok(!html.includes('modal-undoreq'), 'the Allow/Refuse dialog is gone');
+});
+
+const swapC = 'game.pendingSwap=true;game.openSwapModal(0);game._swapModalAt=0;game.performSwap("B")';
+
+test('pass-and-play: undo is instant, with no Allow/Refuse step', () => {
+  const c = client(); c.load(catBoard(), 'NET.mode="local"');
+  c.run(swapC);
+  c.run('game.requestUndoSwap()');
+  assert.equal(c.run('game.tiles[0].char'), 'C');
+  assert.equal(c.run('game.players[0].gems'), 8);
+  assert.equal(c.run('game.lastSwap'), null);
+  assert.equal(c.els.get('btn-undo-swap').classList.contains('hidden'), true);
+});
+
+test('online: undo applies at once, even with the opponent away, and the push carries it', () => {
+  const c = client();
+  c.load(catBoard(), 'NET.async=true;NET.mode="host";UI_MODE="host";NET.code="ROOM1";NET.myIndex=0;NET.oppPresent=false;');
+  c.run(swapC);
+  c.sent.length = 0;
+  c.run('game.requestUndoSwap()');
+  assert.equal(c.run('game.tiles[0].char'), 'C');
+  assert.equal(c.run('game.players[0].gems'), 8);
+  assert.ok(!c.sent.some(m => m.type === 'undoreq'), 'no consent request');
+  assert.ok(c.sent.some(m => m.type === 'fx' && m.toast === '↩ Keith undid a letter swap'));
+});
+
+test('a v76 opponent asking for an undo gets an instant yes', () => {
+  const c = client();
+  c.load(catBoard(1), 'NET.async=true;NET.mode="host";UI_MODE="host";NET.code="ROOM1";NET.myIndex=0;');
+  c.sent.length = 0;
+  c.run('asyncOnData({type:"undoreq",from:"C",to:"B"})');
+  assert.deepEqual(plain(c.sent.filter(m => m.type === 'undook')), [{ type: 'undook' }]);
 });
