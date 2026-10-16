@@ -5439,12 +5439,12 @@ class Game{
     // tile letter goes back and the treats it cost are refunded. v77: it's a
     // misclick fix, so it's instant and free: no Allow/Refuse from the other
     // player. Whoever holds the board (not a P2P guest) applies it, and the
-    // normal state push carries it to the opponent.
+    // normal state push carries it to the opponent (showToast relays the
+    // "Swap undone" line to them as host, so no second message here).
     requestUndoSwap(){
         const s=this.lastSwap;
         if(!s||!this.myTurn||this.over||s.by!==this.turnIndex||NET.mode==='join')return;
-        const name=(this.players[s.by]&&this.players[s.by].name)||'Your opponent';
-        if(this.applyUndoSwap()&&NET.mode!=='local')NET.send({type:'fx',toast:`↩ ${name} undid a letter swap`});
+        this.applyUndoSwap();
     }
     applyUndoSwap(msg){
         const s=this.lastSwap;

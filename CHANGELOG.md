@@ -13,8 +13,8 @@ SPELLCOCO v77 — INSTANT, FREE UNDO SWAP; SMOOTHER REPLAY ENDING (2026-10-16)
     no cap trimming it, and the ability log forgets the swap.
   - Instant: no more Allow/Refuse dialog for the other player (removed).
     Pass-and-play, solo and online all undo at once, even when the
-    opponent is offline; online, the opponent gets a "↩ Keith undid a
-    letter swap" toast and the board arrives with the normal push. A
+    opponent is offline; online, the opponent gets one "↩ Swap undone"
+    toast and the board arrives with the normal push. A
     hosted P2P game's host can now undo too (the guest still can't: the
     host holds the board). A v76 opponent still asks first; v77 answers
     yes automatically.

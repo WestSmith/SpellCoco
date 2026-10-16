@@ -93,7 +93,9 @@ test('online: undo applies at once, even with the opponent away, and the push ca
   assert.equal(c.run('game.tiles[0].char'), 'C');
   assert.equal(c.run('game.players[0].gems'), 8);
   assert.ok(!c.sent.some(m => m.type === 'undoreq'), 'no consent request');
-  assert.ok(c.sent.some(m => m.type === 'fx' && m.toast === '↩ Keith undid a letter swap'));
+  const undoFx = c.sent.filter(m => m.type === 'fx' && /undo|undid/i.test(m.toast || ''));
+  assert.equal(undoFx.length, 1, 'the opponent hears about it once');
+  assert.match(undoFx[0].toast, /^↩ Swap undone — B back to C, 3/);
 });
 
 test('a v76 opponent asking for an undo gets an instant yes', () => {
