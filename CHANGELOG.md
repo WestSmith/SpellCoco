@@ -4,6 +4,27 @@ Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
 ```
 ================================================================
+SPELLCOCO v77 — FREE UNDO SWAP, SMOOTHER REPLAY ENDING (2026-10-16)
+- FIX: Undo Swap is free. It always handed the swap's treats back, but
+  the button read "↩ Undo Swap (+3🦴)" in the same style as the ability
+  prices, so it looked like undo cost 3 treats. It now reads
+  "↩ Undo Swap (free)". The refund is exactly what the swap cost (saved
+  with the swap), with no cap trimming it, and the ability log forgets
+  the swap. The other player's Allow/Refuse step is unchanged.
+- FIX: replay ending. When a word used a bonus tile, the game re-placed
+  that bonus and then, in the same instant, rolled the new round's
+  bonuses (round 1: shifted the treats). Players only ever saw the final
+  board, but the replay drew the in-between one for 1.6 s, so the bonus
+  tiles seemed to jump twice. The refill step now shows the board the
+  players actually saw: "New letters drop into the gaps · ✦ New round —
+  fresh bonus tiles". A turn with no word (time ran out) still shows the
+  new round as its own step.
+- Tests: 5 new (117 total).
+================================================================
+```
+
+```
+================================================================
 SPELLCOCO v76 — LONG-WORD BONUS MOVES INTO COCO'S BUBBLE (2026-10-08)
 - FIX: the "✨ LONG WORD! +N ✨" banner was a holdover from before v65
   (when every game message moved into Coco's speech bubble). It was

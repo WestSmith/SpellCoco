@@ -2053,7 +2053,7 @@
                 <button class="btn-ability" id="btn-time" onclick="game.useAbility('time')">⏱ +15s <span class="cost">1<span class="ticon"></span></span></button>
                 <button class="btn-cancel-swap hidden" id="btn-cancel-swap" onclick="game.cancelSwap()">✕ Cancel Swap</button>
                 <!-- v62: consent-based undo — same turn, before a word is played -->
-                <button class="btn-cancel-swap hidden" id="btn-undo-swap" onclick="game.requestUndoSwap()">↩ Undo Swap (+3<span class="ticon"></span>)</button>
+                <button class="btn-cancel-swap hidden" id="btn-undo-swap" onclick="game.requestUndoSwap()" title="Free — the letter goes back and your treats come back">↩ Undo Swap (free)</button>
             </div>
             <div class="coco-hairline" id="coco-hairline"></div>
             <div class="coco-row" id="zoomies-zone">
@@ -2478,7 +2478,7 @@
     </div>
 </div>
 
-<script src="engine.js?v=v76"></script>
+<script src="engine.js?v=v77"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js" integrity="sha512-XEKeWX+mI3Ov+tg2evDlVQFzVOIp4T8J3cNcCEPaEUGpxJV3eZaN8rHuvnFPvQpGJBHPmrozJDMpm2xcDvtmyQ==" crossorigin="anonymous"></script>
 <script>
 /*
@@ -4683,7 +4683,7 @@ function showUndoRequest(s,local){
     NET.pendingUndo=local?'local':'net';
     const who=local?((game&&game.players[s.by]&&game.players[s.by].name)||'Your opponent'):oppName();
     document.getElementById('undoreq-text').innerHTML=
-        `<strong>${who}</strong> wants to undo their letter swap (<strong>${cleanChar(s.from)} → ${cleanChar(s.to)}</strong>) and get their 3 treats back.`;   // v67.1: sink-side guard (from/to are board chars)
+        `<strong>${who}</strong> wants to undo their letter swap (<strong>${cleanChar(s.from)} → ${cleanChar(s.to)}</strong>) and get their ${CONFIG.costs.swap} treats back (undo is free).`;   // v67.1: sink-side guard (from/to are board chars)
     document.getElementById('modal-undoreq').classList.remove('hidden');
 }
 function answerUndoRequest(ok){
@@ -5474,8 +5474,9 @@ class Game{
     // v62: UNDO SWAP — consent-based, like adding a custom word. Only the
     // swapper, only on the same turn, only BEFORE a word is submitted (endTurn
     // and any board change close the window). On Allow the tile letter goes
-    // back and the 3 treats are refunded. Local shows the modal to the other
-    // seat; solo Coco auto-forgives; online asks over the wire (async only).
+    // back and the treats it cost are refunded, so undo itself is free (v77).
+    // Local shows the modal to the other seat; solo Coco auto-forgives; online
+    // asks over the wire (async only).
     requestUndoSwap(){
         const s=this.lastSwap;
         if(!s||!this.myTurn||this.over||s.by!==this.turnIndex)return;
@@ -5494,14 +5495,14 @@ class Game{
         if(this.selection.length)this.clearSelection();
         t.char=s.from;t.baseValue=s.fromVal;
         this.logStep({k:'undo',id:s.tileId,from:s.to,to:s.from,b:boardCode(this.tiles)});   // v74
-        const p=this.players[s.by];
+        const p=this.players[s.by],paid=Number.isInteger(s.cost)?s.cost:CONFIG.costs.swap;
         if(p){
-            p.gems=Math.min(CONFIG.maxGems,p.gems+CONFIG.costs.swap);
+            p.gems+=paid;   // v77: undo is FREE — exactly what the swap cost comes back (it never pushed past the cap)
             const log=p.abilityLog[this.round];
-            if(log){log.swaps=Math.max(0,(log.swaps||0)-1);log.gemsSpent=Math.max(0,(log.gemsSpent||0)-CONFIG.costs.swap)}
+            if(log){log.swaps=Math.max(0,(log.swaps||0)-1);log.gemsSpent=Math.max(0,(log.gemsSpent||0)-paid)}
         }
         this.lastSwap=null;
-        this.showToast(msg||`↩ Swap undone — ${s.to} back to ${s.from}, +3 ${TICON} refunded`);
+        this.showToast(msg||`↩ Swap undone — ${s.to} back to ${s.from}, ${paid}${TICON} back`);
         SFX.swap();this.updateUI();
         return true;
     }
@@ -5541,7 +5542,7 @@ class Game{
         if(NET.mode==='join'){document.getElementById('modal-swap').classList.add('hidden');this.pendingSwap=false;NET.send({type:'act',kind:'swap',tileId:this.swapTargetId,ch:ch});return}
         const p=this.currentPlayer;if(p.gems<CONFIG.costs.swap){this.note('Not enough treats!');SFX.invalid();this.pendingSwap=false;document.getElementById('modal-swap').classList.add('hidden');this.updateUI();return}p.gems-=CONFIG.costs.swap;this.logAbility(p,'swap',CONFIG.costs.swap);const t=this.tiles[this.swapTargetId];
         // v62: remember the swap so it can be UNDONE (consent-based) this turn
-        this.lastSwap={tileId:this.swapTargetId,from:t.char,fromVal:t.baseValue,to:ch,by:this.turnIndex,round:this.round};
+        this.lastSwap={tileId:this.swapTargetId,from:t.char,fromVal:t.baseValue,to:ch,by:this.turnIndex,round:this.round,cost:CONFIG.costs.swap};
         t.char=ch;t.baseValue=LETTERS[ch].val;this.logStep({k:'swap',id:this.swapTargetId,from:this.lastSwap.from,to:ch,b:boardCode(this.tiles)});document.getElementById('modal-swap').classList.add('hidden');this.pendingSwap=false;this.showToast(`Swapped to ${ch}!`);SFX.swap();this.updateUI();this.focusTile(this.swapTargetId)}
 
     cocoAttack(){
@@ -6042,7 +6043,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v76';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v77';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){
@@ -6333,13 +6334,19 @@ function replayFrames(lt,players){
             case 'word':
                 for(let n=1;n<s.ids.length;n++)F.push({b:b,sel:s.ids.slice(0,n),cap:replayChars(b,s.ids.slice(0,n))+'…',ms:450,sub:true});
                 F.push({b:b,sel:s.ids,cap:`✨ ${s.word} for ${s.score} point${s.score===1?'':'s'}`+(s.gems?` and ${s.gems} treat${s.gems===1?'':'s'}`:''),ms:2400});
-                F.push({b:s.b,fresh:s.ids,cap:'New letters drop into the gaps',ms:1600});b=s.b;
+                F.push({b:s.b,fresh:s.ids,cap:'New letters drop into the gaps',ms:1600,drop:true});b=s.b;
                 break;
         }
     });
     if(lt.end!==b){
-        let bonus=false;for(let i=1;i<75;i+=3)if(b[i]!==lt.end[i])bonus=true;
-        F.push({b:lt.end,cap:bonus?'✦ New round — fresh bonus tiles':'The treats move to new tiles',ms:1700});
+        let bonus=false,same=true;
+        for(let i=0;i<75;i+=3){if(b[i+1]!==lt.end[i+1])bonus=true;if(b[i]!==lt.end[i])same=false}
+        const last=F[F.length-1],why=bonus?'✦ New round — fresh bonus tiles':'The treats move to new tiles';
+        // v77: the word's refill and the end-of-turn re-roll happen in the same
+        // instant live, so the in-between board (a used bonus re-placed, treats
+        // before the shift) was never on screen. Show the board the players saw.
+        if(last&&last.drop&&same){last.b=lt.end;last.cap+=' · '+why;last.ms=2200}
+        else F.push({b:lt.end,cap:why,ms:1700});
     }
     return F;
 }
