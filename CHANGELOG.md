@@ -4,6 +4,27 @@ Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
 ```
 ================================================================
+SPELLCOCO v78 — NO SOUND PILE-UP AFTER A CALL; ONE PURR AT A TIME (2026-10-17)
+- FIX: on iPhone (especially during a call), sounds went quiet and then
+  all the missed ones played at once. iOS pauses web audio during a call,
+  Siri or another app's audio, and freezes its clock. Every sound asked
+  for meanwhile was scheduled at that frozen moment, so they all fired
+  together when audio came back. Now a sound plays only when audio is
+  live. If it isn't, the game asks it to wake up and plays the sound only
+  if that happens within a quarter second (the first tap that unlocks
+  audio). Anything later is skipped, never saved up.
+- FIX: sound comes back after a call on the next tap anywhere on the
+  screen (any tap or key, not only the board), and when you return to
+  the app.
+- FIX: tapping Coco quickly stacked purrs on top of each other into a
+  loud, strange buzz. Now one purr plays at a time: a tap while he is
+  purring is ignored until the purr ends.
+- Tests: 5 new (125 total).
+================================================================
+```
+
+```
+================================================================
 SPELLCOCO v77 — INSTANT, FREE UNDO SWAP; SMOOTHER REPLAY ENDING (2026-10-16)
 - CHANGE: Undo Swap is for misclicks, so it no longer penalizes them.
   - Free: it always handed the swap's treats back, but the button read

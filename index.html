@@ -2466,7 +2466,7 @@
     </div>
 </div>
 
-<script src="engine.js?v=v77"></script>
+<script src="engine.js?v=v78"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js" integrity="sha512-XEKeWX+mI3Ov+tg2evDlVQFzVOIp4T8J3cNcCEPaEUGpxJV3eZaN8rHuvnFPvQpGJBHPmrozJDMpm2xcDvtmyQ==" crossorigin="anonymous"></script>
 <script>
 /*
@@ -4331,7 +4331,8 @@ if(_loungeSlot){
     _loungeSlot.setAttribute('tabindex','0');
     _loungeSlot.setAttribute('aria-label','Pet Coco — he purrs');
     _loungeSlot.title='Pet Coco 🐾';
-    const _pet=()=>{playPurr();_loungeSlot.classList.remove('purring');void _loungeSlot.offsetWidth;_loungeSlot.classList.add('purring');setTimeout(()=>_loungeSlot.classList.remove('purring'),1500);};
+    const _pet=()=>{if(_loungeSlot.classList.contains('purring'))return;   // v78: a tap mid-purr no longer starts another
+        playPurr();_loungeSlot.classList.add('purring');setTimeout(()=>_loungeSlot.classList.remove('purring'),1500);};
     _loungeSlot.addEventListener('click',_pet);
     _loungeSlot.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();_pet();}});
 }
@@ -4535,34 +4536,55 @@ if(_zoomSlot)_zoomSlot.innerHTML=COCO_ZOOM;
 
 // Sound
 let audioCtx=null,soundEnabled=false,soundVolume=0.5;
-function audioResume(){try{const p=audioCtx&&audioCtx.resume();if(p&&p.catch)p.catch(()=>{})}catch(e){}}
-function initAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==='suspended')audioResume()}
-function playTone(f,dur,type='sine',vol=1){if(!soundEnabled||!audioCtx)return;if(audioCtx.state!=='running')audioResume();   // v68: guests/async loads create the context outside a gesture — iOS keeps it suspended until a resume() lands inside one
-const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type=type;o.frequency.setValueAtTime(f,audioCtx.currentTime);g.gain.setValueAtTime(vol*soundVolume*0.3,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+dur);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+dur)}
+// v78: iOS freezes the context's clock while it is suspended or "interrupted"
+// (a phone or FaceTime call, Siri, another app's audio). Sounds scheduled at the
+// frozen currentTime used to pile up silently, then all fire the moment it came
+// back. Now a sound plays only on a running context: if it isn't running, ask it
+// to resume and play the sound only if that lands within AUDIO_LATE_MS (the
+// first tap that unlocks audio). A late sound is dropped, never queued.
+const AUDIO_LATE_MS=250;
+function audioResume(){try{const p=audioCtx&&audioCtx.resume();if(p&&p.catch)p.catch(()=>{});return p}catch(e){}}
+function initAudio(){if(!audioCtx||audioCtx.state==='closed'){const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;audioCtx=new AC()}if(audioCtx.state!=='running')audioResume()}
+function withAudio(play){
+    const ctx=audioCtx;if(!ctx)return;
+    if(ctx.state==='running'){play(ctx);return}
+    const asked=Date.now(),p=audioResume();
+    if(p&&p.then)p.then(()=>{if(audioCtx===ctx&&ctx.state==='running'&&Date.now()-asked<=AUDIO_LATE_MS)play(ctx)},()=>{});
+}
+// Any tap or key (not just the board) re-wakes audio, so the first touch after a
+// call ends brings sound back. iOS only honours resume() inside a gesture.
+['pointerup','touchend','click','keydown'].forEach(k=>document.addEventListener(k,()=>{if(soundEnabled||audioCtx)initAudio()},{capture:true,passive:true}));
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&audioCtx&&audioCtx.state!=='running')audioResume()});
+function playTone(f,dur,type='sine',vol=1){if(!soundEnabled)return;withAudio(ctx=>{
+const o=ctx.createOscillator(),g=ctx.createGain();o.type=type;o.frequency.setValueAtTime(f,ctx.currentTime);g.gain.setValueAtTime(vol*soundVolume*0.3,ctx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+dur);o.connect(g);g.connect(ctx.destination);o.start();o.stop(ctx.currentTime+dur)})}
 const SFX={tileSelect(){playTone(880,0.08,'sine',0.6)},tileDeselect(){playTone(440,0.06,'sine',0.3)},submit(){playTone(523,0.12,'sine',0.7);setTimeout(()=>playTone(659,0.12,'sine',0.7),80);setTimeout(()=>playTone(784,0.15,'sine',0.8),160)},longWord(){playTone(523,0.1,'sine',0.8);setTimeout(()=>playTone(659,0.1,'sine',0.8),100);setTimeout(()=>playTone(784,0.1,'sine',0.8),200);setTimeout(()=>playTone(1047,0.25,'sine',1),300)},invalid(){playTone(200,0.2,'square',0.4)},shuffle(){for(let i=0;i<5;i++)setTimeout(()=>playTone(300+Math.random()*400,0.05,'sine',0.3),i*40)},swap(){playTone(600,0.15,'triangle',0.5)},timerWarn(){playTone(440,0.1,'square',0.5)},gameOver(){[523,659,784,1047].forEach((f,i)=>setTimeout(()=>playTone(f,0.3,'sine',0.6),i*200))},cocoAttack(){playTone(330,0.15,'sawtooth',0.6);setTimeout(()=>playTone(440,0.15,'sawtooth',0.7),120);setTimeout(()=>playTone(550,0.2,'sawtooth',0.8),240)}};
 // v56: a soft purr when you pet the lounging Coco. Plays on a deliberate tap even
 // if game SFX are muted (the tap is the gesture that unlocks audio); the volume
 // slider still applies. Low carriers + a ~25 Hz tremolo create the purr "roll".
+let purrCtx=null,purrEndsAt=0;   // v78: one purr at a time — rapid taps used to stack voices into a buzz
 function playPurr(){
-    initAudio(); if(!audioCtx) return;
-    const t=audioCtx.currentTime, dur=1.5, vol=Math.max(0,soundVolume);
-    if(vol<=0) return;
-    const master=audioCtx.createGain();
+    initAudio();
+    withAudio(ctx=>{
+    const t=ctx.currentTime, dur=1.5, vol=Math.max(0,soundVolume);
+    if(vol<=0||(purrCtx===ctx&&t<purrEndsAt)) return;
+    purrCtx=ctx; purrEndsAt=t+dur;
+    const master=ctx.createGain();
     master.gain.setValueAtTime(0.0001,t);
     master.gain.exponentialRampToValueAtTime(0.32*vol,t+0.3);
     master.gain.setValueAtTime(0.32*vol,t+dur-0.45);
     master.gain.exponentialRampToValueAtTime(0.0001,t+dur);
-    const lp=audioCtx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=300; lp.Q.value=0.6;
-    master.connect(lp); lp.connect(audioCtx.destination);
+    const lp=ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=300; lp.Q.value=0.6;
+    master.connect(lp); lp.connect(ctx.destination);
     [62,93].forEach((f,i)=>{
-        const o=audioCtx.createOscillator(); o.type='sawtooth'; o.frequency.setValueAtTime(f,t);
-        const cg=audioCtx.createGain(); const base=i?0.22:0.4; cg.gain.setValueAtTime(base,t);
-        const lfo=audioCtx.createOscillator(); lfo.type='sine';
+        const o=ctx.createOscillator(); o.type='sawtooth'; o.frequency.setValueAtTime(f,t);
+        const cg=ctx.createGain(); const base=i?0.22:0.4; cg.gain.setValueAtTime(base,t);
+        const lfo=ctx.createOscillator(); lfo.type='sine';
         lfo.frequency.setValueAtTime(23,t); lfo.frequency.linearRampToValueAtTime(27,t+dur);   // the roll speeds up slightly
-        const lg=audioCtx.createGain(); lg.gain.setValueAtTime(base*0.9,t);
+        const lg=ctx.createGain(); lg.gain.setValueAtTime(base*0.9,t);
         lfo.connect(lg); lg.connect(cg.gain);
         o.connect(cg); cg.connect(master);
         o.start(t); lfo.start(t); o.stop(t+dur); lfo.stop(t+dur);
+    });
     });
 }
 function toggleMute(){soundEnabled=!soundEnabled;initAudio();document.getElementById('btn-mute').innerText=soundEnabled?'🔊':'🔇';document.getElementById('btn-mute').classList.toggle('active',soundEnabled)}
@@ -6002,7 +6024,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v77';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v78';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){
