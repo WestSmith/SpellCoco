@@ -17,7 +17,8 @@ rendering and the service worker's caching rules. `v74.test.mjs` covers the turn
 its sanitizer and sync, and the replay viewer. `v75.test.mjs` covers keeping every
 turn and the per-round replays in the play history and recap. `v76.test.mjs` covers the long-word bonus
 riding in the same online fx message as the score line. `v77.test.mjs` covers the instant,
-free undo swap and the replay showing the end-of-turn board players actually saw. The GitHub checks workflow
+free undo swap and the replay showing the end-of-turn board players actually saw. `v78.test.mjs` covers
+sound after an iOS audio interruption (no backlog burst) and one purr at a time. The GitHub checks workflow
 runs this command.
 
 The doubles do not implement browser layout, native event synthesis, real
