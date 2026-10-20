@@ -215,7 +215,7 @@ test('service worker: dictionary is served from cache and refreshed behind', asy
 });
 
 test('service worker: other files are network-first with an offline fallback; foreign hosts untouched', async () => {
-  let online = true; const s = sw(async req => { if (!online) throw new Error('offline'); return { ok: true, type: 'basic', body: req.url, clone() { return this; } }; });
+  let online = true; const s = sw(async req => { if (!online) throw new Error('offline'); return { ok: true, type: 'basic', body: req.url, clone() { return this; }, async arrayBuffer() { return new TextEncoder().encode(this.body).buffer; } }; });
   assert.equal((await s.get('https://x.test/SpellCoco/?join=AB12', 'navigate')).body, 'https://x.test/SpellCoco/?join=AB12');
   await s.get('https://x.test/SpellCoco/engine.js?v=v72'); await s.get('https://x.test/SpellCoco/engine.js?v=v73');
   assert.deepEqual([...s.store.keys()].sort(), ['https://x.test/SpellCoco/', 'https://x.test/SpellCoco/engine.js?v=v72', 'https://x.test/SpellCoco/engine.js?v=v73']);

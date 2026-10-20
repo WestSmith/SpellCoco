@@ -125,7 +125,12 @@ for(const storage of ['quota','unavailable'])test(`same-page ending/rematch acce
  c.run('game.endGame();Math.random=()=>0;startRematch()');const id=c.run('game.id'),h=room(st);
  for(const m of c.sent.filter(m=>m.type==='__a'))await push(h,m);
  for(const reply of [...h.sockets[1].messages].reverse())deliver(c,reply);
- assert.equal(c.run('STATS.games'),1);assert.equal(c.run('game.id'),id);assert.equal(c.run('game.over'),false);assert.equal(c.run('NET.endingMoves.size'),0);
+ assert.equal(c.run('STATS.games'),1);assert.equal(c.run('game.id'),id);assert.equal(c.run('game.over'),false);assert.equal(c.run('NET.endingMoves.size'),1); // retain the accepted result until stats can be saved
+ for(const reply of h.sockets[1].messages)deliver(c,reply);assert.equal(c.run('STATS.games'),1);
+ c.ctx.write=(k,v)=>c.saved.set(k,v);c.run('localStorage.setItem=write');
+ for(const reply of h.sockets[1].messages)deliver(c,reply);
+ assert.equal(c.run('STATS.games'),1);assert.equal(c.run('NET.endingMoves.size'),0);
+ assert.equal(JSON.parse(c.saved.get('spellcoco.stats')).games,1);
 });
 test('failure to archive a result cannot replace the room; retry preserves paid rematch state',async()=>{
  const c=client(),st=initial();c.load(st,online);c.run('game.endGame();Math.random=()=>0.9;startRematch();game.swapTargetId=0;game.performSwap("A")');

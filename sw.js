@@ -9,7 +9,7 @@
    v84: install precaches the shell and word lists for the first offline launch.
    Cross-origin requests (the relay, PeerJS, Wiktionary) are never touched. */
 const CACHE = 'spellcoco-rt-2';
-const SHELL = ['./', 'index.html', 'engine.js?v=v91', 'manifest.json',
+const SHELL = ['./', 'index.html', 'engine.js?v=v92', 'manifest.json',
   'icon-192.png', 'icon-512.png', 'icon-512-maskable.png',
   'apple-touch-icon-180.png', 'coco-mark.svg', 'custom_words.txt', 'dictionary.txt'];
 const SHELL_TIMEOUT = 3000;
@@ -50,8 +50,16 @@ function keep(req, res) {
     .then((reqs) => Promise.all(reqs.filter((r) => { const u = new URL(r.url); return !path.endsWith('/engine.js') && u.pathname === path && r.url !== key; }).map((r) => c.delete(r)))))
     .catch(() => {});
 }
-function fromNetwork(req, e) {
-  return fetch(req).then((res) => { e.waitUntil(keep(req, res)); return res; });
+function fromNetwork(req, e, shell = false) {
+  return fetch(req).then(async (res) => {
+    if (shell) {
+      if (res.status >= 500) throw new Error('Shell unavailable');
+      // Headers alone cannot serve a usable shell. Finish a clone under the
+      // same deadline before returning or caching the original response.
+      await res.clone().arrayBuffer();
+    }
+    e.waitUntil(keep(req, res)); return res;
+  });
 }
 const cached = (req) => caches.match(cacheKey(req));
 
@@ -71,10 +79,7 @@ self.addEventListener('fetch', (e) => {
     return;
   }
   const shell = req.mode === 'navigate' || SHELL.some((p) => new URL(p, self.location.href).pathname === url.pathname);
-  const network = fromNetwork(req, e).then((res) => {
-    if (shell && res.status >= 500) throw new Error('Shell unavailable');
-    return res;
-  });
+  const network = fromNetwork(req, e, shell);
   let timer;
   const bounded = shell ? Promise.race([network, new Promise((_, reject) => {
     timer = setTimeout(() => reject(new Error('Shell timed out')), SHELL_TIMEOUT);

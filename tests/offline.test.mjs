@@ -5,7 +5,7 @@ import vm from 'node:vm';
 const source=fs.readFileSync(new URL('../sw.js',import.meta.url),'utf8');
 function worker() {
   const stores=new Map(), listeners={}, timers=new Map(); let next=0, mode='ok';
-  const response=body=>({ok:true,status:200,type:'basic',body,clone(){return this}});
+  const response=body=>({ok:true,status:200,type:'basic',body,clone(){return this},async arrayBuffer(){return new TextEncoder().encode(body).buffer}});
   const cache=name=>{
     if(!stores.has(name))stores.set(name,new Map()); const m=stores.get(name);
     const key=k=>typeof k==='string'?k:k.url;

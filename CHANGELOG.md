@@ -4,6 +4,15 @@ Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
 ```
 ================================================================
+SPELLCOCO v92 — QUOTA-SAFE STATISTICS AND COMPLETE SHELL DOWNLOADS (2026-10-20)
+- Persist accepted statistics and their match receipts together; retain ending retries until saving succeeds and preserve cached-client markers.
+- Keep the shell deadline active through body completion; fall back to cached files on stalled or broken streams without caching partial responses.
+- Tests: node --test tests/*.test.mjs passes. No gameplay, balance, AI pacing or speech changes.
+================================================================
+```
+
+```
+================================================================
 SPELLCOCO v91 — CACHED ENDINGS AND DURABLE ACCEPTANCE (2026-10-20)
 - Require closing-snapshot acceptance for known cached-client attempts, even when their recap omits ordering fields.
 - Keep a pending start's successors live when rejected against the previous finished match.
