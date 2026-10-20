@@ -4,6 +4,16 @@ Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
 ```
 ================================================================
+SPELLCOCO v89 — MATCH-BOUND ENDINGS AND DURABLE EVENT RETRIES (2026-10-20)
+- Bind ending replies to their match and operation so delayed finishes cannot close a rematch.
+- Continue restored starts in their saved stream; preserve Undo and elapsed countdowns on duplicate position replies.
+- Tag score continuations with their originating play so delayed lines stay dismissed. Cached clients retain compatibility paths.
+- Tests: node --test tests/*.test.mjs passes. No gameplay or balance changes.
+================================================================
+```
+
+```
+================================================================
 SPELLCOCO v88 — RECONCILE RETRIES WITHOUT ROLLING BACK LOCAL PLAY (2026-10-20)
 - Ignore obsolete move replies and start snapshots after newer local operations; preserve pending boards and active countdowns across reconnects.
 - Include the accepted operation head in seated welcomes so restored retries can continue safely without reviving superseded disk snapshots. Older clients and workers retain their compatibility paths.

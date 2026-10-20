@@ -2469,7 +2469,7 @@
     </div>
 </div>
 
-<script src="engine.js?v=v88"></script>
+<script src="engine.js?v=v89"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js" integrity="sha512-XEKeWX+mI3Ov+tg2evDlVQFzVOIp4T8J3cNcCEPaEUGpxJV3eZaN8rHuvnFPvQpGJBHPmrozJDMpm2xcDvtmyQ==" crossorigin="anonymous"></script>
 <script>
 /*
@@ -2798,6 +2798,11 @@ const NET={
         if(this.pendingStart||!this.code)return;
         const p=lsGet(this.startKey(),null);
         if(!p||p.code!==this.code||!p.m||p.m.op!=='newgame'||!validPlayableState(sanitizeNetState(p.m.state))||!Number.isInteger(p.q)){lsDel(this.startKey());return}
+        // Continue the restored start's stream before its ack. Legacy saved
+        // starts omit stream: false keeps successors on the socket-ordering
+        // compatibility path until a fresh start/room establishes a new stream.
+        this.moveStream=typeof p.m.stream==='string'&&/^[a-z0-9]{24}$/.test(p.m.stream)?p.m.stream:false;
+        this.rev=Number.isInteger(p.m.base)&&p.m.base>=0?p.m.base:null;
         this.pendingStart=p;this.moveSeq=Math.max(this.moveSeq,p.q);
         this.localSeq=Math.max(this.localSeq,p.q);
         asyncLoadGame(p.m.state,p.m.config);
@@ -2836,7 +2841,7 @@ const NET={
     sendMove(state,durable){
         const m={type:'__a',op:'move',state:state,q:++this.moveSeq};
         this.localSeq=m.q;
-        if(this.async)m.stream=this.streamId();   // stable across retries; a fresh page gets a fresh stream
+        if(this.async&&this.moveStream!==false)m.stream=this.streamId();   // stable across retries; a fresh page gets a fresh stream
         if(this.async&&Number.isInteger(this.rev))m.base=this.rev;   // v71: the revision this board was built on
         if(this.async&&(durable||this.pendingMove||state.over||state.turnIndex!==this.myIndex)){this.pendingMove={m:m,q:m.q,at:Date.now()};this.savePending();}
         if(this.pendingStart){this.pendingStart.m.state=state;this.saveStart()}
@@ -2866,7 +2871,7 @@ const NET={
     // v69.1: drop the socket but keep the room identity, so a later netNudge can
     // knock again (used on the busy/full welcome paths, which can happen mid-game).
     disconnect(){if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.connected=false;this.__busyTries=0;this.__rehello=false;this.__reseat=false;/*v70: the next knock gets the full recovery ladder again*/hbStop();updateNetDots();},
-    cleanup(){this.pendingMove=null;this.pendingStart=null;this.localSeq=0;/*v64: never re-push into a different room*/if(this.peer){try{this.peer.destroy()}catch(e){}}this.peer=null;this.conn=null;if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.reconnectTries=0;this.transport=this.useRelay?'relay':'p2p';this.everConnected=false;this.connected=false;/*v68: leave the async room for real — a stale async flag/code hijacked later local games (netNudge reconnect, sendMove, saveGameState skip, cocoAttack, stats key)*/this.async=false;this.code='';this.gameCode='';this.seat=null;this.myIndex=-1;this.rev=null;/*v71: revisions are per room*/this.caps=null;hbStop();}
+    cleanup(){this.pendingMove=null;this.pendingStart=null;this.localSeq=0;/*v64: never re-push into a different room*/if(this.peer){try{this.peer.destroy()}catch(e){}}this.peer=null;this.conn=null;if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.reconnectTries=0;this.transport=this.useRelay?'relay':'p2p';this.everConnected=false;this.connected=false;/*v68: leave the async room for real — a stale async flag/code hijacked later local games (netNudge reconnect, sendMove, saveGameState skip, cocoAttack, stats key)*/this.async=false;this.code='';this.gameCode='';this.seat=null;this.myIndex=-1;this.rev=null;this.moveStream=null;/*v71: revisions are per room*/this.caps=null;hbStop();}
 };
 function randomCode(n,a){const b=new Uint8Array(1);let c='';while(c.length<n){crypto.getRandomValues(b);if(b[0]<256-256%a.length)c+=a[b[0]%a.length]}return c}
 function genCode(){return randomCode(4,'ABCDEFGHJKMNPQRSTUVWXYZ23456789')}
@@ -3108,7 +3113,25 @@ function asyncFail(){
     if(el)el.innerText='⚠ Couldn’t reach the game server — check your connection';
     NET.setPill('⚠','bad','Online: offline');
 }
+// A retry of an accepted position carries no new board information. Ignore
+// selection drift and already elapsed time, but compare the playable fields before
+// preserving the local Undo window. Legacy workers may omit the match id.
+function asyncSamePosition(state){
+    if(!game||game.over)return false;
+    const st=sanitizeNetState({...state}),local=sanitizeNetState(game.serialize());
+    if(!validPlayableState(st)||st.over||(st.id&&local.id&&st.id!==local.id))return false;
+    if(st.cocoTimerActive&&st.timeLeft<local.timeLeft)return false;   // a newer authoritative countdown must still reconcile
+    return ['round','turnIndex','startIndex','players','tiles','cocoTimerActive','cocoPendingFor','tl','lastTurn','turns']
+        .every(k=>JSON.stringify(st[k])===JSON.stringify(local[k]));
+}
 function asyncOnMessage(m){
+    // Ending responses belong to the operation's match, even if a rematch is
+    // already live locally. Older workers omit gid/q: protect the pending start
+    // from their old finished snapshot, while keeping start-race reconciliation.
+    if(game&&(m.op==='gameover'||m.op==='reject')&&cleanGameId(m.gid)&&game.id&&m.gid!==game.id)return;
+    if(game&&NET.pendingStart&&m.state&&m.state.over&&game.id&&cleanGameId(m.state.id)&&m.state.id!==game.id
+        &&(m.op==='state'||(m.op==='reject'&&m.q==null)))return;
+    if((m.op==='state'||m.op==='gameover')&&Number.isInteger(m.rev)&&NET.rev!=null&&m.rev<NET.rev)return;
     switch(m.op){
         case 'welcome':asyncWelcome(m);break;
         case 'pong':NET.hbSupported=true;NET.hbWaiting=false;break;   // v58 keepalive answered
@@ -3150,6 +3173,10 @@ function asyncOnMessage(m){
                 break;
             }
             NET.noteRev(m.rev);
+            if(m.state&&asyncSamePosition(m.state)){
+                if(NET.pendingMove&&m.q===NET.pendingMove.q)NET.clearPending();
+                break;   // duplicate reply: keep Undo, the selection and elapsed timer
+            }
             // v64: a re-push of an ALREADY-accepted move bounces off turn
             // enforcement — the echoed q proves it's ours, so it's an ack,
             // not a scolding. Adopt the authoritative state quietly.
@@ -3707,7 +3734,7 @@ function copyRoomCode(){
     }else{window.prompt('Copy this room code:',code);}
 }
 // Live pop-ups (toasts, celebrations) — shown when both players are online.
-function asyncFx(m){if(!game)return;if(m.toast)game.showToast(netSafeHtml(m.toast),true);if(m.overlay)game.showRoundOverlay(netSafeHtml(m.overlay.t),netSafeHtml(m.overlay.s),true);if(m.celebrate)game.showCelebration(netSafeHtml(m.celebrate),true);
+function asyncFx(m){if(!game)return;if(m.toast)game.showToast(netSafeHtml(m.toast),true,cleanScoreEvent(m.event));if(m.overlay)game.showRoundOverlay(netSafeHtml(m.overlay.t),netSafeHtml(m.overlay.s),true);if(m.celebrate)game.showCelebration(netSafeHtml(m.celebrate),true,cleanScoreEvent(m.event));
     // v62 FIX: async games dropped the fx `bubble` field entirely, so the
     // OPPONENT never saw Coco's speech (Keith saw his own 100+ lines; Shawn
     // saw none). Delay is sender-computed so it lands after the toasts.
@@ -4118,7 +4145,7 @@ function guestOnData(m){
         case 'start':guestStart(m);break;
         case 'state':if(game)game.applyState(m.state);break;
         case 'timer':if(game){game.cocoTimerActive=m.on;game.timeLeft=m.t;game.updateTimerDisplay()}break;
-        case 'fx':if(game){if(m.toast)game.showToast(netSafeHtml(m.toast),true);if(m.overlay)game.showRoundOverlay(netSafeHtml(m.overlay.t),netSafeHtml(m.overlay.s),true);if(m.celebrate)game.showCelebration(netSafeHtml(m.celebrate),true);if(m.coco)game.showCocoOverlay(true);if(m.bubble&&game)game.aiLater(()=>cocoSpeak(m.bubble),cleanInt(m.bubbleDelay,20000)||3400,false);if(m.sfx&&Object.prototype.hasOwnProperty.call(SFX,m.sfx)&&typeof SFX[m.sfx]==='function')SFX[m.sfx]()}break;
+        case 'fx':if(game){if(m.toast)game.showToast(netSafeHtml(m.toast),true,cleanScoreEvent(m.event));if(m.overlay)game.showRoundOverlay(netSafeHtml(m.overlay.t),netSafeHtml(m.overlay.s),true);if(m.celebrate)game.showCelebration(netSafeHtml(m.celebrate),true,cleanScoreEvent(m.event));if(m.coco)game.showCocoOverlay(true);if(m.bubble&&game)game.aiLater(()=>cocoSpeak(m.bubble),cleanInt(m.bubbleDelay,20000)||3400,false);if(m.sfx&&Object.prototype.hasOwnProperty.call(SFX,m.sfx)&&typeof SFX[m.sfx]==='function')SFX[m.sfx]()}break;
         case 'gameover':{if(game){game.over=true;game.lastTurn=cleanTurnLog(m.lastTurn,true);game.turns=mergeTurns(game.turns,cleanTurns(m.turns),game.lastTurn)}const gp=cleanPlayers(m.players);recordGameStats(gp);renderGameOver(gp);break}   // v67.1: scrub before the recap innerHTML; v74: the sealed final turn
     }
 }
@@ -4496,8 +4523,8 @@ function cocoReactionFor(p,r,g){
 // after Shawn's playtest: the v65 bubble APPENDED every new line, so a swap
 // message silently grew an old bubble and quips got buried at the bottom.
 // Now messages are grouped into UTTERANCES (bubbles) shown one at a time:
-//   - lines from the SAME play (score → best-word → swap ceiling arrive in
-//     one burst, <900ms apart) still merge into one multi-line bubble;
+//   - lines from the SAME play still merge within 900ms. Score fx carry a
+//     stable event id so even delayed continuations respect dismissal;
 //   - anything later — and EVERY personality line (quips, teases, reactions,
 //     net bubbles) — is its own standalone bubble;
 //   - a new bubble never barges in: the current one gets ≥1.7s on screen,
@@ -4507,21 +4534,23 @@ function cocoReactionFor(p,r,g){
 // Coco's amble (FX.loungeUntil — Shawn: it used to pop up mid-walk, before
 // he'd settled). Eyes stay open across a blink if more bubbles are queued.
 // Bubbles pending when the game ends are dropped (the recap carries them).
-const COCO_SAY={q:[],flushTimer:null,hideTimer:null,showing:false,openAt:0,current:null,dismissed:null,event:null};
+function cleanScoreEvent(v){return typeof v==='string'&&/^[A-Za-z0-9:]{1,64}$/.test(v)?v:null}
+const COCO_SAY={dismissedEvents:new Set(),q:[],flushTimer:null,hideTimer:null,showing:false,openAt:0,current:null,dismissed:null,event:null};
 const COCO_MERGE_MS=900,COCO_MIN_SHOW=1700,COCO_BLINK=280;
-function cocoSay(html,standalone){
+function cocoSay(html,standalone,eventId){
     const b=document.getElementById('coco-bubble'),lounge=document.getElementById('coco-lounge');
     if(!b||!lounge||!html)return;
     window._lastBubbleAt=Date.now();   // v62: cooldown clock for teases/chatter
     const now=Date.now(),tail=COCO_SAY.q[COCO_SAY.q.length-1];
-    // Keep event identity even when its lines span the current bubble and queue.
-    if(standalone)COCO_SAY.event=null;
-    else if(tail&&!tail.solo&&now-tail.t<COCO_MERGE_MS&&tail.lines.length<4)COCO_SAY.event=tail.event;
+    // Keep event identity across bubbles; cached senders without ids retain
+    // the arrival-time grouping used by older clients.
+    if(standalone||eventId)COCO_SAY.event=null;
+    else if(tail&&!tail.solo&&tail.event&&typeof tail.event==='object'&&now-tail.t<COCO_MERGE_MS&&tail.lines.length<4)COCO_SAY.event=tail.event;
     else if(!COCO_SAY.event||now-COCO_SAY.event.t>=COCO_MERGE_MS)COCO_SAY.event={t:now};
-    const event=standalone?null:COCO_SAY.event;
-    if(event&&event===COCO_SAY.dismissed)return;
-    if(event)event.t=now;
-    if(!standalone&&tail&&!tail.solo&&now-tail.t<COCO_MERGE_MS&&tail.lines.length<4)tail.lines.push(html);
+    const event=standalone?null:(eventId||COCO_SAY.event);
+    if(event&&(event===COCO_SAY.dismissed||COCO_SAY.dismissedEvents.has(event)))return;
+    if(event&&typeof event==='object')event.t=now;
+    if(!standalone&&tail&&!tail.solo&&tail.event===event&&now-tail.t<COCO_MERGE_MS&&tail.lines.length<4)tail.lines.push(html);
     else{
         if(COCO_SAY.q.length>=3)COCO_SAY.q.shift();   // backlog cap — keep the freshest
         COCO_SAY.q.push({lines:[html],solo:!!standalone,t:now,event});
@@ -4570,6 +4599,7 @@ function _cocoHide(more){
 function dismissCocoBubble(){
     if(!COCO_SAY.showing)return;
     COCO_SAY.dismissed=COCO_SAY.current&&COCO_SAY.current.event;
+    if(typeof COCO_SAY.dismissed==='string')COCO_SAY.dismissedEvents.add(COCO_SAY.dismissed);
     if(COCO_SAY.dismissed)COCO_SAY.q=COCO_SAY.q.filter(b=>b.event!==COCO_SAY.dismissed);
     clearTimeout(COCO_SAY.hideTimer);clearTimeout(COCO_SAY.flushTimer);
     COCO_SAY.hideTimer=null;COCO_SAY.flushTimer=null;
@@ -4584,7 +4614,7 @@ document.addEventListener('keydown',e=>{
 function cocoSayReset(){   // v66: a retired game's words die with it
     clearTimeout(COCO_SAY.flushTimer);clearTimeout(COCO_SAY.hideTimer);
     COCO_SAY.q=[];COCO_SAY.flushTimer=null;COCO_SAY.hideTimer=null;
-    COCO_SAY.current=null;COCO_SAY.dismissed=null;COCO_SAY.event=null;
+    COCO_SAY.current=null;COCO_SAY.dismissed=null;COCO_SAY.event=null;COCO_SAY.dismissedEvents.clear();
     _cocoHide(false);
 }
 // Personality lines (incl. the net fx `bubble` channel) ride the same pipe —
@@ -5291,20 +5321,21 @@ class Game{
         // the score line (it used to be a word-area banner that got clipped).
         // One fx message carries both lines, so the opponent's cocoSay calls
         // land in the same tick and merge into one bubble too.
+        const event=`score:${this.id||'legacy'}:${this.round}:${this.turnIndex}`;   // same play across separately delivered fx messages
         const scoreMsg=`${r.word} → +${r.score} pts`,bonusMsg=r.longBonus>0?`Long word! +${r.longBonus} bonus included`:null;
-        if(NET.mode==='host')NET.send(bonusMsg?{type:'fx',toast:scoreMsg,celebrate:bonusMsg,sfx:'longWord'}:{type:'fx',toast:scoreMsg});
-        this.showScoreFloat(`+${r.score}`);this.showToast(scoreMsg,true);srSay(`${r.word}, plus ${r.score} points`);
-        if(bonusMsg){this.showCelebration(bonusMsg,true);SFX.longWord()}else{SFX.submit()}
+        if(NET.mode==='host')NET.send(bonusMsg?{type:'fx',toast:scoreMsg,celebrate:bonusMsg,sfx:'longWord',event}:{type:'fx',toast:scoreMsg,event});
+        this.showScoreFloat(`+${r.score}`);this.showToast(scoreMsg,true,event);srSay(`${r.word}, plus ${r.score} points`);
+        if(bonusMsg){this.showCelebration(bonusMsg,true,event);SFX.longWord()}else{SFX.submit()}
         // v63: no more hand-tuned 2600/5300ms delays — the FX queue shows
         // these in order, one at a time, after the turn-overlay fade, and
         // drops them itself if the game ends while they wait.
         if(best){
             const found=r.score>=best.score;
-            this.showToast(found?'🏆 That was the best word on the board!':`⭐ Best possible: ${best.score} pts`);
+            this.showToast(found?'🏆 That was the best word on the board!':`⭐ Best possible: ${best.score} pts`,false,event);
         }
         // v48: score only mid-game — unused tiles survive the refill, so
         // naming the word (or the letters) would spoil what's still there.
-        if(swapBest)this.showToast(`🔄 With a swap: ${swapBest.score} pts was possible`);
+        if(swapBest)this.showToast(`🔄 With a swap: ${swapBest.score} pts was possible`,false,event);
         // v62: track how often each player leans on a word (fuels Coco's
         // pet-word teasing). Device-local, 4+ letters only, pruned at 400.
         if(r.word.length>=4&&p&&!p.isCoco){
@@ -5338,7 +5369,7 @@ class Game{
         }
         this.replenishGems();
         this.logStep({k:'word',ids:used,word:r.word,score:r.score,gems:r.gemCount,b:boardCode(this.tiles)});   // v74
-        this.endTurn();
+        this.endTurn(event);
     }
 
     // v45: word isn't in the local list — check it online (v72: lookupWord,
@@ -5371,7 +5402,7 @@ class Game{
             .finally(()=>{if(this.cloudRequest===request){this.cloudRequest=null;this.cloudPending=false;if(game===this&&!this._dead&&!this.over)quietUI()}});
     }
 
-    endTurn(){
+    endTurn(event){
         if(this._dead||this.over)return;   // v66 / v68: never advance a finished game
         if(this.timerInterval)clearInterval(this.timerInterval);
         this.timerInterval=null;
@@ -5388,7 +5419,7 @@ class Game{
         const roundDone=(next===this.startIndex);   // v55: a round = one full cycle from whoever opened it
         if(this.round===1&&!roundDone){
             this.randomizeGems();
-            this.showToast(TICON+' Treats shifted!');   // v63: FX queue orders it after the word toasts
+            this.showToast(TICON+' Treats shifted!',false,event);   // v63: FX queue orders it after the word toasts
         }
         this.turnIndex=next;
         if(roundDone){this.endRound(done)}
@@ -5425,7 +5456,7 @@ class Game{
         recordStatsOnce(ranked,this.id);
         if(NET.async){
             NET.sendMove(this.serialize());   // closing push (over:true) — v64: tracked until acked
-            NET.send({type:'__a',op:'gameover',players:JSON.parse(JSON.stringify(ranked)),gid:this.id});   // v71: which match this recap belongs to
+            NET.send({type:'__a',op:'gameover',players:JSON.parse(JSON.stringify(ranked)),gid:this.id,q:NET.localSeq});   // v71: which match this recap belongs to
         }else if(NET.mode==='host')NET.send({type:'gameover',players:JSON.parse(JSON.stringify(ranked)),lastTurn:this.lastTurn,turns:this.turns});   // v74: no state push follows, so the final turn rides here
         regTurnSync();   // v59: flip this game to "finished" in My Games (endGame skips updateUI)
         renderGameOver(ranked);
@@ -5922,9 +5953,9 @@ class Game{
     // his lounge spot (cocoSay handles the overlay wait, merging, and eyes).
     // The old fixed-position .toast survives ONLY as a fallback for messages
     // fired when he isn't on screen (start screen, board not rendered).
-    showToast(m,fromNet){if(NET.mode==='host'&&!fromNet)NET.send({type:'fx',toast:m});
+    showToast(m,fromNet,event){if(NET.mode==='host'&&!fromNet)NET.send({type:'fx',toast:m,...(event?{event}:{})});
         const lounge=document.getElementById('coco-lounge');
-        if(lounge&&lounge.offsetParent&&document.getElementById('grid').childElementCount){cocoSay(m);return}
+        if(lounge&&lounge.offsetParent&&document.getElementById('grid').childElementCount){cocoSay(m,false,event);return}
         const wasOver=!!(game&&game.over);
         fxToast(()=>{
             if(game&&game.over&&!wasOver)return false;   // game ended while queued — stale, skip
@@ -5950,7 +5981,7 @@ class Game{
     // stuffed into the 56px overflow:hidden word area it was cut off, and the
     // turn overlay buried it. Now it's one more line in Coco's bubble (which
     // waits out overlays). Still relays as `celebrate` so older peers get it.
-    showCelebration(t,fromNet){if(NET.mode==='host'&&!fromNet)NET.send({type:'fx',celebrate:t,sfx:'longWord'});this.showToast(`✨ ${t}`,true)}
+    showCelebration(t,fromNet,event){if(NET.mode==='host'&&!fromNet)NET.send({type:'fx',celebrate:t,sfx:'longWord',...(event?{event}:{})});this.showToast(`✨ ${t}`,true,event)}
     // v63: ✦&nbsp;title&nbsp;✦ — the sparkles can't wrap onto their own line
     // on narrow phones ("✦ Coco's Guest's Turn ✦" used to break badly).
     // Also stamps FX.overlayUntil so queued popups wait out the fade.
@@ -6113,7 +6144,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v88';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v89';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){

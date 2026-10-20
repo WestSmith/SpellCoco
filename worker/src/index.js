@@ -305,13 +305,13 @@ export class Room {
   // recap, so a player who rejoins later sees the ending (not a live board).
   async onGameOver(ws, m) {
     const me = this.info(ws);
-    if (!seated(me)) { this.send(ws, { type: "__a", op: "reject", reason: "no-seat", state: null }); return; }
+    if (!seated(me)) { this.send(ws, { type: "__a", op: "reject", reason: "no-seat", q: m.q, gid: m.gid, state: null }); return; }
     if (!Array.isArray(m.players) || m.players.length !== 2 || !m.players.every(validPlayer)) {
-      this.send(ws, { type: "__a", op: "reject", reason: "bad-state", state: null }); return;
+      this.send(ws, { type: "__a", op: "reject", reason: "bad-state", q: m.q, gid: m.gid, state: null }); return;
     }
     const game = await this.state.storage.get("game");
     const rev = await this.rev();
-    const reject = (reason) => this.send(ws, { type: "__a", op: "reject", reason, state: game || null, rev });
+    const reject = (reason) => this.send(ws, { type: "__a", op: "reject", reason, q: m.q, gid: m.gid, state: game || null, rev });
     if (!game) return reject("no-game");
     // Legacy clients omit gid; the active seat/turn checks still apply to them.
     if (game.id && m.gid && game.id !== m.gid) return reject("wrong-match");
@@ -321,9 +321,11 @@ export class Room {
     if (game && typeof game === "object") {
       game.over = true;
       if (Array.isArray(m.players)) game.finalPlayers = m.players.slice(0, 2);
-      if (!validState(game)) { this.send(ws, { type: "__a", op: "reject", reason: "bad-state", state: null }); return; }
+      if (!validState(game)) { this.send(ws, { type: "__a", op: "reject", reason: "bad-state", q: m.q, gid: m.gid, state: null }); return; }
       await this.state.storage.put("game", game);
     }
+    // Bind legacy endings to the stored match too; cached clients ignore gid/q.
+    m.gid = game.id || m.gid;
     m.rev = await this.bump(me.seat);
     this.toOthers(ws, m);
     await this.touch();
