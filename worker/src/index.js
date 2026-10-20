@@ -362,6 +362,11 @@ export class Room {
     if (game && !game.over) {
       this.send(ws, { type: "__a", op: "reject", reason: "match-active", q: m.q, state: game, rev: await this.rev() }); return;
     }
+    // A completed identity stays retired even on a fresh stream/socket. Cached
+    // clients may omit base/stream, so ordering alone cannot catch this replay.
+    if (m.state.id && await this.state.storage.get("finished." + m.state.id)) {
+      this.send(ws, { type: "__a", op: "reject", reason: "stale", q: m.q, state: game || null, rev: await this.rev() }); return;
+    }
     // A different match also needs an ordered operation: an older start must
     // not return after a subsequent rematch has finished on the same seat.
     if (game && await this.staleMove(ws, m, await this.rev(), true)) { this.send(ws, { type: "__a", op: "reject", reason: "stale", q: m.q, state: game, rev: await this.rev() }); return; }

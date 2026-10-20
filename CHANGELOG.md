@@ -4,6 +4,16 @@ Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
 ```
 ================================================================
+SPELLCOCO v93 — RETIRED MATCH IDS AND RECOVERABLE RESULTS (2026-10-20)
+- Reject starts that reuse an archived finished match ID, including cached-client and fresh-stream retries.
+- Keep compact accepted results durable through quota failures and rematch successors; reconcile independent unsaved statistics contributions exactly once.
+- Validate stored and in-memory receipt lists before online starts and result recovery; retain cached-client compatibility markers.
+- Tests: node --test tests/*.test.mjs passes, including realistic 5xx fallback coverage. No gameplay, balance, AI pacing or speech changes.
+================================================================
+```
+
+```
+================================================================
 SPELLCOCO v92 — QUOTA-SAFE STATISTICS AND COMPLETE SHELL DOWNLOADS (2026-10-20)
 - Persist accepted statistics and their match receipts together; retain ending retries until saving succeeds and preserve cached-client markers.
 - Keep the shell deadline active through body completion; fall back to cached files on stalled or broken streams without caching partial responses.

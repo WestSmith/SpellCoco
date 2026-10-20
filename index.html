@@ -2469,7 +2469,7 @@
     </div>
 </div>
 
-<script src="engine.js?v=v92"></script>
+<script src="engine.js?v=v93"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js" integrity="sha512-XEKeWX+mI3Ov+tg2evDlVQFzVOIp4T8J3cNcCEPaEUGpxJV3eZaN8rHuvnFPvQpGJBHPmrozJDMpm2xcDvtmyQ==" crossorigin="anonymous"></script>
 <script>
 /*
@@ -2501,7 +2501,9 @@ function lsDel(k){try{localStorage.removeItem(k)}catch(e){console.warn('SpellCoc
 
 // ===================== v33: all-time win tracker =====================
 let STATS=lsGet('spellcoco.stats',{games:0,draws:0,wins:{Keith:0,Shawn:0},bestWord:null,longestWord:null});
-function recordGameStats(players){
+const unsavedStats=new Map();   // accepted local contributions, not yet in the atomic stats write
+function recordGameStats(players,persist=true){
+    if(persist&&unsavedStats.size)reconcileStats(lsGet('spellcoco.stats',null));
     // v41: solo games get their own vs-Coco record; guest games are friendly
     // matches (unrecorded). bestWord/longestWord stay Keith–Shawn-only so the
     // duel record stays pure.
@@ -2510,7 +2512,7 @@ function recordGameStats(players){
         STATS.coco.games++;
         if(players.length>1&&players[0].score===players[1].score)STATS.coco.draws++;
         else STATS.coco.wins[players[0].name]=(STATS.coco.wins[players[0].name]||0)+1;
-        const saved=lsSet('spellcoco.stats',STATS);
+        const saved=persist&&lsSet('spellcoco.stats',STATS);
         renderStatsBox();
         return saved;
     }
@@ -2523,7 +2525,7 @@ function recordGameStats(players){
         if(!STATS.bestWord||w.score>STATS.bestWord.score)STATS.bestWord={word:w.word,score:w.score,player:p.name};
         if(!STATS.longestWord||w.word.length>STATS.longestWord.word.length)STATS.longestWord={word:w.word,player:p.name};
     }));
-    const saved=lsSet('spellcoco.stats',STATS);
+    const saved=persist&&lsSet('spellcoco.stats',STATS);
     renderStatsBox();
     return saved;
 }
@@ -2791,17 +2793,51 @@ const NET={
     pendKey(){return 'spellcoco.pending.'+this.code},
     // v71: the tracked move also lives in localStorage — "your move is safe" used
     // to mean "safe until the tab is refreshed or evicted".
-    savePending(){if(this.pendingMove&&this.code)lsSet(this.pendKey(),{m:this.pendingMove.m,q:this.pendingMove.q,at:this.pendingMove.at})},
+    savePending(){if(this.pendingMove&&this.code){
+        if(this.endingMoves.size&&!this.saveEndings())return;
+        lsSet(this.pendKey(),{m:this.pendingMove.m,q:this.pendingMove.q,at:this.pendingMove.at});
+    }},
     // Separate from the live move/start: rematches must not erase unacked results.
-    saveEndings(){if(this.code){const k='spellcoco.endings.'+this.code;if(this.endingMoves.size)return lsSet(k,[...this.endingMoves.values()]);else lsDel(k)}},
+    saveEndings(){
+        if(!this.code)return;
+        const k='spellcoco.endings.'+this.code;
+        if(!this.endingMoves.size){lsDel(k);return}
+        const saved=[...this.endingMoves.values()].map(m=>m.receipt?{q:m.q,receipt:m.receipt}:m);
+        if(lsSet(k,saved))return true;
+        const p=lsGet(this.pendKey(),null),ending=p&&this.endingMoves.get(p.q);
+        // Atomically shrink the sole pending copy before freeing quota for the
+        // ledger/stats, including when a rematch already has a newer local move.
+        if(ending&&ending.receipt&&lsSet(this.pendKey(),{q:ending.q,receipt:ending.receipt}))return lsSet(k,saved);
+        return false;
+    },
     restoreEndings(){
         const saved=lsGet('spellcoco.endings.'+this.code,[]);
         if(!Array.isArray(saved))return;
-        for(const m of saved)if(m&&m.type==='__a'&&m.op==='move'&&Number.isInteger(m.q)&&m.state&&m.state.over&&validPlayableState(sanitizeNetState({...m.state}))){
-            this.endingMoves.set(m.q,m);this.moveSeq=Math.max(this.moveSeq,m.q);
+        for(const m of saved){
+            if(this.restoreReceipt(m))continue;
+            // Cached clients saved full closing moves; keep their replay path.
+            if(m&&m.type==='__a'&&m.op==='move'&&Number.isInteger(m.q)&&m.state&&m.state.over&&validPlayableState(sanitizeNetState({...m.state}))){
+                if(!this.endingMoves.get(m.q)?.receipt)this.endingMoves.set(m.q,m);
+                this.moveSeq=Math.max(this.moveSeq,m.q);
+            }
         }
     },
-    resendEndings(){for(const [q,ending] of this.endingMoves)if(!this.pendingMove||q!==this.pendingMove.q)this.send(ending)},
+    restoreReceipt(m){
+        if(!m||!Number.isInteger(m.q)||!m.receipt||!Array.isArray(m.receipt.players)||m.receipt.players.length!==2)return false;
+        if(m.receipt.id!=null&&!cleanGameId(m.receipt.id))return false;
+        const receipt=statsReceipt(m.receipt);if(receipt.players.length!==2)return false;
+        this.endingMoves.set(m.q,{q:m.q,receipt,state:{...receipt,over:true}});this.moveSeq=Math.max(this.moveSeq,m.q);
+        return true;
+    },
+    retireEnding(q){
+        this.endingMoves.delete(q);this.saveEndings();
+        const p=lsGet(this.pendKey(),null);if(p&&p.q===q&&p.receipt)lsDel(this.pendKey());
+        if(this.pendingMove&&this.pendingMove.q!==q)this.savePending();
+    },
+    resendEndings(){for(const [q,ending] of this.endingMoves){
+        if(ending.receipt){if(recordStatsOnce(ending.receipt.players,ending.receipt.id))this.retireEnding(q)}
+        else if(!this.pendingMove||q!==this.pendingMove.q)this.send(ending);
+    }},
     startKey(){return 'spellcoco.start.'+this.code},
     saveStart(){if(this.pendingStart&&this.code)lsSet(this.startKey(),this.pendingStart)},
     clearStart(){this.pendingStart=null;if(this.code)lsDel(this.startKey())},
@@ -2835,7 +2871,7 @@ const NET={
     },
     clearPending(){
         // Never discard the sole durable copy of an ending still awaiting stats.
-        if(this.pendingMove&&this.endingMoves.has(this.pendingMove.q)&&!this.saveEndings())return;
+        if(this.endingMoves.size&&!this.saveEndings())return;
         this.pendingMove=null;if(this.code)lsDel(this.pendKey());
     },
     // Called on every welcome: pick up a move a previous page load never got acked.
@@ -2844,6 +2880,7 @@ const NET={
     restorePending(){
         if(!this.async||this.pendingMove||!this.code)return;
         const p=lsGet(this.pendKey(),null);
+        if(this.restoreReceipt(p))return;
         if(!p||!p.m||typeof p.m!=='object'||p.m.type!=='__a'||p.m.op!=='move'||!p.m.state||typeof p.m.state!=='object'||!Number.isInteger(p.q)){lsDel(this.pendKey());return}
         if(!validPlayableState(sanitizeNetState({...p.m.state}))){lsDel(this.pendKey());return} // validate before a pending board can replace welcome
         this.pendingMove={m:p.m,q:p.q,at:p.at||Date.now(),restored:true};
@@ -3170,9 +3207,10 @@ function asyncOnMessage(m){
         const accepted=m.op==='moveok'?ending.state:(m.receipt&&m.receipt.id===ending.state.id?m.receipt:(m.state&&m.state.over&&(!ending.state.id||m.state.id===ending.state.id)?m.state:null));
         // Free a redundant pending copy before saving stats, but keep the ending
         // retryable on failure. Storage errors must not block reply reconciliation.
+        if(accepted){ending.receipt=statsReceipt(accepted);NET.saveEndings();if(NET.pendingMove&&NET.pendingMove.q!==m.q)NET.savePending()}
         if(accepted&&NET.pendingMove&&NET.pendingMove.q===m.q)NET.clearPending();
         if(!accepted||recordStatsOnce(cleanPlayers(accepted.players).sort((a,b)=>b.score-a.score),accepted.id)){
-            NET.endingMoves.delete(m.q);NET.saveEndings();
+            NET.retireEnding(m.q);
         }
         if(game&&ending.state.id&&game.id!==ending.state.id){
             if(NET.pendingMove&&NET.pendingMove.q===m.q)NET.clearPending();
@@ -3263,30 +3301,49 @@ function asyncOnMessage(m){
 // flag was still set from the previous game. The flag now holds the id of the
 // match it recorded; a different id is a different game. Legacy states without
 // an id keep the old room-level rule (flag = 1).
+function statsReceipts(v){return Array.isArray(v)?v.filter(r=>typeof r==='string'&&/^spellcoco\.gover\.[A-Za-z0-9]+\.(?:[A-Za-z0-9]{4,24}|1)$/.test(r)):[]}
+function statsReceipt(state){
+    return {id:cleanGameId(state.id),players:cleanPlayers(state.finalPlayers||state.players).sort((a,b)=>b.score-a.score).map(p=>{
+        // Only the outcome and word records contribute to stats; boards/replays
+        // need not consume quota after the worker has accepted the ending.
+        const best=p.wordsPlayed.reduce((a,w)=>!a||w.score>a.score?w:a,null);
+        const longest=p.wordsPlayed.reduce((a,w)=>!a||w.word.length>a.word.length?w:a,null);
+        return {name:p.name,score:p.score,isCoco:p.isCoco,wordsPlayed:p.wordsPlayed.filter(w=>w===best||w===longest).map(w=>({word:w.word,score:w.score}))};
+    })};
+}
+function reconcileStats(stored){
+    // Remove only our unsaved counters before merging another tab's baseline,
+    // then reapply each contribution missing from its persisted receipts.
+    for(const players of unsavedStats.values()){
+        const coco=players.some(p=>p.isCoco),s=coco?STATS.coco:STATS;
+        if(!coco&&!(players.length===2&&players.some(p=>p.name==='Keith')&&players.some(p=>p.name==='Shawn')))continue;
+        s.games--;if(players[0].score===players[1].score)s.draws--;else s.wins[players[0].name]--;
+    }
+    const receipts=statsReceipts(stored&&stored.recordedGames);
+    STATS.recordedGames=[...new Set([...statsReceipts(STATS.recordedGames).filter(k=>!unsavedStats.has(k)),...receipts])];
+    mergeStats(stored,false);
+    for(const [key,players] of unsavedStats){
+        if(receipts.includes(key)){unsavedStats.delete(key);continue}
+        STATS.recordedGames.push(key);recordGameStats(players,false);
+    }
+}
 function recordStatsOnce(ranked,gid){
     if(NET.async&&NET.code){
         const k='spellcoco.gover.'+NET.code;
         const tag=cleanGameId(gid)||1,prev=lsGet(k,null),matchKey=k+'.'+tag;
+        const stored=lsGet('spellcoco.stats',null);
+        reconcileStats(stored);
         // Older cached clients only wrote these separate markers (including 1
         // for id-less matches). Continue honoring them for compatibility.
-        if((prev&&(prev===tag||prev===1||tag===1))||lsGet(matchKey,null))return true;
-        const stored=lsGet('spellcoco.stats',null);
-        const recorded=s=>s&&Array.isArray(s.recordedGames)&&s.recordedGames.includes(matchKey);
-        if(stored&&Array.isArray(stored.recordedGames)){
-            STATS.recordedGames=[...new Set([...(STATS.recordedGames||[]),...stored.recordedGames])];
-            mergeStats(stored);   // another tab may have recorded this result first
+        if((prev&&(prev===tag||prev===1||tag===1))||lsGet(matchKey,null)||statsReceipts(stored&&stored.recordedGames).includes(matchKey))return true;
+        if(!STATS.recordedGames.includes(matchKey)){
+            unsavedStats.set(matchKey,ranked);STATS.recordedGames.push(matchKey);
+            recordGameStats(ranked,false);
         }
-        // Count and receipt share one atomic storage write. Keep the receipt in
-        // memory on failure so persistence retries never increment the count again.
-        let saved;
-        if(recorded(stored))saved=true;
-        else if(recorded(STATS))saved=lsSet('spellcoco.stats',STATS);
-        else{
-            if(!Array.isArray(STATS.recordedGames))STATS.recordedGames=[];
-            STATS.recordedGames.push(matchKey);
-            saved=recordGameStats(ranked);
-        }
-        if(!saved)return false;
+        // Count and receipts share one atomic write. Failed contributions stay
+        // separate in memory so an independent result can be added on retry.
+        if(!lsSet('spellcoco.stats',STATS))return false;
+        unsavedStats.clear();
         if(tag!==1)lsSet(matchKey,1);
         if(!prev||!game||game.id===tag)lsSet(k,tag);
         return true;
@@ -3299,10 +3356,13 @@ function clearEndingMarker(){
     // Id-less cached clients use a room marker, reset by each live game.
     // Their atomic receipt must have that same lifetime, not suppress rematches.
     const stored=lsGet('spellcoco.stats',null),legacy=k+'.1';
-    const receipts=[...new Set([...(STATS.recordedGames||[]),...((stored&&stored.recordedGames)||[])])];
+    reconcileStats(stored);
+    const receipts=STATS.recordedGames;
     if(receipts.includes(legacy)){
         STATS.recordedGames=receipts.filter(r=>r!==legacy);
-        if(stored)mergeStats(stored);
+        // Cached id-less results have only this room lifetime. Keep their
+        // counters in the baseline when retiring its in-memory receipt too.
+        unsavedStats.delete(legacy);
         lsSet('spellcoco.stats',STATS);
     }
 }
@@ -4113,7 +4173,8 @@ function renderSeatPickers(){
 function seatName(n){return SEATS[n].type==='Guest'?SEATS[n].guest:SEATS[n].type}
 
 function mergeRemoteWords(ws){(Array.isArray(ws)?ws:[]).forEach(w=>{if(typeof w==='string'&&/^[A-Z]{2,15}$/.test(w)){remoteWords.add(w);trie.insert(w,WordEngine.EXTRA)}})}
-function mergeStats(r){
+function mergeStats(r,persist=true){
+    if(persist&&unsavedStats.size)reconcileStats(lsGet('spellcoco.stats',null));
     if(!r||typeof r!=='object')return;
     let ch=false;
     // v68: coerce every counter (a peer could ship arrays/booleans that persisted to localStorage)
@@ -4134,7 +4195,7 @@ function mergeStats(r){
     const rb=cleanBestRec(r.bestWord),rl=cleanBestRec(r.longestWord);
     if(rb&&(!STATS.bestWord||rb.score>STATS.bestWord.score)){STATS.bestWord=rb;ch=true}
     if(rl&&(!STATS.longestWord||rl.word.length>STATS.longestWord.word.length)){STATS.longestWord=rl;ch=true}
-    if(ch){lsSet('spellcoco.stats',STATS);renderStatsBox()}
+    if(persist&&(ch||unsavedStats.size)){if(lsSet('spellcoco.stats',STATS))unsavedStats.clear();renderStatsBox()}
 }
 function _hostGameP2P(){
     if(typeof Peer==='undefined'){document.getElementById('host-status').innerText='⚠ Online library failed to load — check internet';return}
@@ -6246,7 +6307,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v92';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v93';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){

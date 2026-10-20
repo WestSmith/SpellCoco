@@ -17,7 +17,7 @@ function worker() {
   const self={location:{origin:'https://x.test',href:'https://x.test/SpellCoco/sw.js'},addEventListener:(k,f)=>listeners[k]=f,
     skipWaiting:async()=>{},clients:{claim:async()=>{}}};
   vm.runInNewContext(source,{self,caches,URL,Response:{error:()=>({error:true})},setTimeout:(f,ms)=>{const id=++next;timers.set(id,{f,ms});return id},clearTimeout:id=>timers.delete(id),
-    fetch:async req=>{if(mode==='offline')throw Error('offline');if(mode==='hang')return new Promise(()=>{});return mode==='5xx'?{status:503,ok:false}:response(req.url)}});
+    fetch:async req=>{if(mode==='offline')throw Error('offline');if(mode==='hang')return new Promise(()=>{});return mode==='5xx'?{...response('SERVICE UNAVAILABLE'),status:503,ok:false}:response(req.url)}});
   async function event(name){const waits=[];listeners[name]({waitUntil:p=>waits.push(p)});await Promise.all(waits)}
   function get(path,nav=false){let reply;const waits=[];listeners.fetch({request:{url:'https://x.test/SpellCoco/'+path,method:'GET',mode:nav?'navigate':'cors',headers:{has:()=>false}},respondWith:p=>reply=p,waitUntil:p=>waits.push(p)});return reply}
   return {cache,stores,event,get,timers,setMode:m=>mode=m};
@@ -37,7 +37,7 @@ test('activation preserves older engine URLs before deleting old caches',async()
 });
 test('shell falls back on HTTP 5xx and a bounded network timeout',async()=>{
   const w=worker();await w.event('install');w.setMode('5xx');
-  assert.equal((await w.get('index.html',true)).ok,true);
+  const fallback=await w.get('index.html',true);assert.equal(fallback.ok,true);assert.match(fallback.body,/index\.html$/);
   w.setMode('hang'); const reply=w.get('index.html',true);
   const timeout=[...w.timers.values()].find(t=>t.ms===3000);assert.ok(timeout);timeout.f();
   assert.equal((await reply).ok,true);
