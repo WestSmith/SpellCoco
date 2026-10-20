@@ -4,6 +4,15 @@ Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
 ```
 ================================================================
+SPELLCOCO v94 — LEGACY RESULT AND DISMISSAL RECONCILIATION (2026-10-20)
+- Record accepted recap-only cached-client results from finalPlayers, matching their recoverable receipts and recap.
+- Preserve dismissed untagged score grouping through same-match replacement for the existing 900ms window; clear it on match changes.
+- Tests: node --test tests/*.test.mjs passes. No gameplay, balance, AI pacing or speech content/frequency changes.
+================================================================
+```
+
+```
+================================================================
 SPELLCOCO v93 — RETIRED MATCH IDS AND RECOVERABLE RESULTS (2026-10-20)
 - Reject starts that reuse an archived finished match ID, including cached-client and fresh-stream retries.
 - Keep compact accepted results durable through quota failures and rematch successors; reconcile independent unsaved statistics contributions exactly once.

@@ -2469,7 +2469,7 @@
     </div>
 </div>
 
-<script src="engine.js?v=v93"></script>
+<script src="engine.js?v=v94"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js" integrity="sha512-XEKeWX+mI3Ov+tg2evDlVQFzVOIp4T8J3cNcCEPaEUGpxJV3eZaN8rHuvnFPvQpGJBHPmrozJDMpm2xcDvtmyQ==" crossorigin="anonymous"></script>
 <script>
 /*
@@ -3209,7 +3209,8 @@ function asyncOnMessage(m){
         // retryable on failure. Storage errors must not block reply reconciliation.
         if(accepted){ending.receipt=statsReceipt(accepted);NET.saveEndings();if(NET.pendingMove&&NET.pendingMove.q!==m.q)NET.savePending()}
         if(accepted&&NET.pendingMove&&NET.pendingMove.q===m.q)NET.clearPending();
-        if(!accepted||recordStatsOnce(cleanPlayers(accepted.players).sort((a,b)=>b.score-a.score),accepted.id)){
+        // Recap-only cached clients leave the preceding live players in state.
+        if(!accepted||recordStatsOnce(cleanPlayers(accepted.finalPlayers||accepted.players).sort((a,b)=>b.score-a.score),accepted.id)){
             NET.retireEnding(m.q);
         }
         if(game&&ending.state.id&&game.id!==ending.state.id){
@@ -4766,7 +4767,10 @@ document.addEventListener('keydown',e=>{
 function cocoSayReset(keepDismissed=false){   // v66: a retired game's words die with it
     clearTimeout(COCO_SAY.flushTimer);clearTimeout(COCO_SAY.hideTimer);
     COCO_SAY.q=[];COCO_SAY.flushTimer=null;COCO_SAY.hideTimer=null;
-    COCO_SAY.current=null;COCO_SAY.dismissed=null;COCO_SAY.event=null;if(!keepDismissed)COCO_SAY.dismissedEvents.clear();
+    COCO_SAY.current=null;
+    // Cached untagged continuations keep their event through same-match reloads;
+    // cocoSay still expires that identity at the existing 900ms grouping limit.
+    if(!keepDismissed){COCO_SAY.dismissed=null;COCO_SAY.event=null;COCO_SAY.dismissedEvents.clear()}
     _cocoHide(false);
 }
 // Personality lines (incl. the net fx `bubble` channel) ride the same pipe —
@@ -6307,7 +6311,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v93';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v94';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){
