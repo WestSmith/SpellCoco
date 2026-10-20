@@ -2469,7 +2469,7 @@
     </div>
 </div>
 
-<script src="engine.js?v=v94"></script>
+<script src="engine.js?v=v95"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js" integrity="sha512-XEKeWX+mI3Ov+tg2evDlVQFzVOIp4T8J3cNcCEPaEUGpxJV3eZaN8rHuvnFPvQpGJBHPmrozJDMpm2xcDvtmyQ==" crossorigin="anonymous"></script>
 <script>
 /*
@@ -2794,12 +2794,16 @@ const NET={
     // v71: the tracked move also lives in localStorage — "your move is safe" used
     // to mean "safe until the tab is refreshed or evicted".
     savePending(){if(this.pendingMove&&this.code){
-        if(this.endingMoves.size&&!this.saveEndings())return;
+        if(this.saveEndings()===false)return;
         lsSet(this.pendKey(),{m:this.pendingMove.m,q:this.pendingMove.q,at:this.pendingMove.at});
     }},
     // Separate from the live move/start: rematches must not erase unacked results.
-    saveEndings(){
+    saveEndings(retiredQ){
         if(!this.code)return;
+        // Shared room records may belong to another tab. Merge before replacing
+        // them, and remove only the operation this caller has resolved.
+        if(this.restoreEndings()===false)return false;
+        if(retiredQ!=null)this.endingMoves.delete(retiredQ);
         const k='spellcoco.endings.'+this.code;
         if(!this.endingMoves.size){lsDel(k);return}
         const saved=[...this.endingMoves.values()].map(m=>m.receipt?{q:m.q,receipt:m.receipt}:m);
@@ -2811,9 +2815,10 @@ const NET={
         return false;
     },
     restoreEndings(){
-        const saved=lsGet('spellcoco.endings.'+this.code,[]);
-        if(!Array.isArray(saved))return;
-        for(const m of saved){
+        let saved,p;
+        try{saved=JSON.parse(localStorage.getItem('spellcoco.endings.'+this.code)||'[]');p=JSON.parse(localStorage.getItem(this.pendKey())||'null')}
+        catch(e){return false} // An unreadable shared record is not an empty one.
+        for(const m of [...(Array.isArray(saved)?saved:[]),p?.receipt?p:p?.m]){
             if(this.restoreReceipt(m))continue;
             // Cached clients saved full closing moves; keep their replay path.
             if(m&&m.type==='__a'&&m.op==='move'&&Number.isInteger(m.q)&&m.state&&m.state.over&&validPlayableState(sanitizeNetState({...m.state}))){
@@ -2830,8 +2835,8 @@ const NET={
         return true;
     },
     retireEnding(q){
-        this.endingMoves.delete(q);this.saveEndings();
-        const p=lsGet(this.pendKey(),null);if(p&&p.q===q&&p.receipt)lsDel(this.pendKey());
+        this.saveEndings(q);this.endingMoves.delete(q);
+        const p=lsGet(this.pendKey(),null);if(p&&p.q===q)lsDel(this.pendKey());
         if(this.pendingMove&&this.pendingMove.q!==q)this.savePending();
     },
     resendEndings(){for(const [q,ending] of this.endingMoves){
@@ -2871,7 +2876,7 @@ const NET={
     },
     clearPending(){
         // Never discard the sole durable copy of an ending still awaiting stats.
-        if(this.endingMoves.size&&!this.saveEndings())return;
+        if(this.saveEndings()===false){if(!this.endingMoves.size)this.pendingMove=null;return}
         this.pendingMove=null;if(this.code)lsDel(this.pendKey());
     },
     // Called on every welcome: pick up a move a previous page load never got acked.
@@ -2935,7 +2940,7 @@ const NET={
         // v42: tell the joiner their FINAL (possibly deduped) identity
         let gn=null;
         if(game&&this.myIndex>=0&&game.players[1-this.myIndex])gn=game.players[1-this.myIndex].name;
-        if(this.async){this.gameCode=this.code;this.clearPending();this.saveEndings();/*keep restored cached-client endings after freeing the old pending slot*/clearEndingMarker();this._regTurn=null;const sm={type:'__a',op:'newgame',state:game.serialize(),config:CONFIG,q:++this.moveSeq,stream:this.streamId()};if(Number.isInteger(this.rev))sm.base=this.rev;this.localSeq=sm.q;this.pendingStart={m:sm,q:sm.q,code:this.code,at:Date.now()};this.saveStart();this.send(sm);showInGameRoom();regTurnSync();return}
+        if(this.async){this.gameCode=this.code;this.clearPending();clearEndingMarker();this._regTurn=null;const sm={type:'__a',op:'newgame',state:game.serialize(),config:CONFIG,q:++this.moveSeq,stream:this.streamId()};if(Number.isInteger(this.rev))sm.base=this.rev;this.localSeq=sm.q;this.pendingStart={m:sm,q:sm.q,code:this.code,at:Date.now()};this.saveStart();this.send(sm);showInGameRoom();regTurnSync();return}
         this.send({type:'start',config:CONFIG,state:game.serialize(),customs:localCustomWords,guestName:gn});
     },
     // v69.1: drop the socket but keep the room identity, so a later netNudge can
@@ -4696,12 +4701,10 @@ function cocoSay(html,standalone,eventId){
     window._lastBubbleAt=Date.now();   // v62: cooldown clock for teases/chatter
     const now=Date.now(),tail=COCO_SAY.q[COCO_SAY.q.length-1];
     // Keep event identity across bubbles; cached senders without ids retain
-    // the arrival-time grouping used by older clients.
-    if(standalone||eventId)COCO_SAY.event=null;
-    else if(tail&&!tail.solo&&tail.event&&typeof tail.event==='object'&&now-tail.t<COCO_MERGE_MS&&tail.lines.length<4)COCO_SAY.event=tail.event;
-    else if(!COCO_SAY.event||now-COCO_SAY.event.t>=COCO_MERGE_MS)COCO_SAY.event={t:now};
+    // the arrival-time grouping used by older clients, independent of other speech.
+    if(!standalone&&!eventId&&(!COCO_SAY.event||now-COCO_SAY.event.t>=COCO_MERGE_MS))COCO_SAY.event={t:now};
     const event=standalone?null:(eventId||COCO_SAY.event);
-    if(event&&(event===COCO_SAY.dismissed||COCO_SAY.dismissedEvents.has(event)))return;
+    if(event&&(event.dismissed||event===COCO_SAY.dismissed||COCO_SAY.dismissedEvents.has(event)))return;
     if(event&&typeof event==='object')event.t=now;
     if(!standalone&&tail&&!tail.solo&&tail.event===event&&now-tail.t<COCO_MERGE_MS&&tail.lines.length<4)tail.lines.push(html);
     else{
@@ -4752,6 +4755,7 @@ function _cocoHide(more){
 function dismissCocoBubble(){
     if(!COCO_SAY.showing)return;
     COCO_SAY.dismissed=COCO_SAY.current&&COCO_SAY.current.event;
+    if(COCO_SAY.dismissed&&typeof COCO_SAY.dismissed==='object')COCO_SAY.dismissed.dismissed=true;
     if(typeof COCO_SAY.dismissed==='string')COCO_SAY.dismissedEvents.add(COCO_SAY.dismissed);
     if(COCO_SAY.dismissed)COCO_SAY.q=COCO_SAY.q.filter(b=>b.event!==COCO_SAY.dismissed);
     clearTimeout(COCO_SAY.hideTimer);clearTimeout(COCO_SAY.flushTimer);
@@ -6311,7 +6315,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v94';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v95';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){

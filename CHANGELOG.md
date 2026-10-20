@@ -4,6 +4,13 @@ Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
 ```
 ================================================================
+SPELLCOCO v95 — CROSS-TAB RECOVERY AND LEGACY SPEECH (2026-10-20)
+- Merge shared ending recovery before replacement or retirement; preserve legacy score dismissal through interleaved speech.
+================================================================
+```
+
+```
+================================================================
 SPELLCOCO v94 — LEGACY RESULT AND DISMISSAL RECONCILIATION (2026-10-20)
 - Record accepted recap-only cached-client results from finalPlayers, matching their recoverable receipts and recap.
 - Preserve dismissed untagged score grouping through same-match replacement for the existing 900ms window; clear it on match changes.

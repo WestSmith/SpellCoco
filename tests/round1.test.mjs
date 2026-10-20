@@ -210,11 +210,11 @@ test('queued merges retain event identity even when their original event window 
   assert.equal(c.run('COCO_SAY.q.length'),0);c.fireDelay(280);assert.equal(c.run('COCO_SAY.showing'),false);
 });
 
-test('v94 build label, page engine and service-worker engine agree',()=>{
+test('v95 build label, page engine and service-worker engine agree',()=>{
   const html=readFileSync(new URL('../index.html',import.meta.url),'utf8'),sw=readFileSync(new URL('../sw.js',import.meta.url),'utf8');
-  assert.match(html,/const APP_VERSION='v94'/);assert.match(html,/<script src="engine.js\?v=v94">/);assert.match(sw,/'engine.js\?v=v94'/);
+  assert.match(html,/const APP_VERSION='v95'/);assert.match(html,/<script src="engine.js\?v=v95">/);assert.match(sw,/'engine.js\?v=v95'/);
   const changelog=readFileSync(new URL('../CHANGELOG.md',import.meta.url),'utf8');
-  assert.equal(changelog.match(/SPELLCOCO v\d+/)[0],'SPELLCOCO v94');
+  assert.equal(changelog.match(/SPELLCOCO v\d+/)[0],'SPELLCOCO v95');
 });
 
 test('a rejected rematch adopts the winning match even when a local action is pending',()=>{
