@@ -4,6 +4,16 @@ Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
 ```
 ================================================================
+SPELLCOCO v87 — REPLAY-SAFE SWAPS AND MATCH RETRIES (2026-10-20)
+- Order durable operations by page stream and room revision; reject obsolete same-seat snapshots, including stale storage records. Preserve legacy match IDs and finished matches on start retries.
+- Use cryptographic rejection sampling for active online room codes.
+- Dismiss queued continuations of the same Coco event; let active dialogs own Escape. Add structural bubble layout coverage.
+- Tests: node --test tests/*.test.mjs passes. No gameplay or balance changes.
+================================================================
+```
+
+```
+================================================================
 SPELLCOCO v86 — DISMISSIBLE COCO MESSAGES BELOW THE SCOREBOARD (2026-10-20)
 - Coco’s bubble is a dismiss button with Escape support. It grows downward below the cards, with a tail toward his mouth; reduced motion stops his transition and purr animation.
 - Tests: node --test tests/*.test.mjs passes.
