@@ -4,6 +4,17 @@ Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
 ```
 ================================================================
+SPELLCOCO v91 — CACHED ENDINGS AND DURABLE ACCEPTANCE (2026-10-20)
+- Require closing-snapshot acceptance for known cached-client attempts, even when their recap omits ordering fields.
+- Keep a pending start's successors live when rejected against the previous finished match.
+- Retain unacknowledged endings across rematch/refresh and verify them against archived authoritative results.
+- Give each score attempt a distinct cryptographic event tag while keeping its continuations grouped.
+- Tests: node --test tests/*.test.mjs passes. No gameplay, balance, AI pacing or speech changes.
+================================================================
+```
+
+```
+================================================================
 SPELLCOCO v90 — TIMEOUT OWNERSHIP AND RECONCILED MATCH RETRIES (2026-10-20)
 - Retire Solo scheduling flags by turn so a resumed timeout cannot strand Coco or cancel his next turn.
 - Bind current ending envelopes to the closing operation; require its accepted snapshot and reconcile rejected endings without recording an unaccepted result. Cached clients retain their recap fallback.

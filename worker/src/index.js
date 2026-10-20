@@ -269,12 +269,22 @@ export class Room {
   async onMove(ws, m) {
     const me = this.info(ws);
     if (!seated(me)) { this.send(ws, { type: "__a", op: "reject", reason: "no-seat", q: m.q, state: null }); return; }
-    // Echo q: a bad state can't be fixed by re-pushing, so let the client retire it.
-    if (!validState(m.state)) { this.send(ws, { type: "__a", op: "reject", reason: "bad-state", q: m.q, state: null }); return; }
     const game = await this.state.storage.get("game");
     const rev = await this.rev();
+    // Remember closing attempts even when rejected. v89 recaps omit the move's
+    // ordering fields; reconnect/hibernation must not turn them into legacy ends.
+    if (game && m.state && m.state.over === true && (!game.id || !m.state.id || game.id === m.state.id)) {
+      const old = await this.state.storage.get("closingAttempts");
+      const attempts = old && old.gid === (game.id || null) ? old : { gid: game.id || null, seats: [] };
+      if (!attempts.seats.includes(me.seat)) { attempts.seats.push(me.seat); await this.state.storage.put("closingAttempts", attempts); }
+    }
+    // Echo q: a bad state can't be fixed by re-pushing, so let the client retire it.
+    if (!validState(m.state)) { this.send(ws, { type: "__a", op: "reject", reason: "bad-state", q: m.q, state: null }); return; }
     // Id-less snapshots are pre-v71 clients: retain their turn checks below.
-    if (game && game.id && m.state.id && game.id !== m.state.id) { this.send(ws, { type: "__a", op: "reject", reason: "wrong-match", q: m.q, state: game, rev }); return; }
+    if (game && game.id && m.state.id && game.id !== m.state.id) {
+      const receipt = m.state.over ? await this.state.storage.get("finished." + m.state.id) : null;
+      this.send(ws, { type: "__a", op: "reject", reason: "wrong-match", q: m.q, state: game, rev, receipt: receipt || null }); return;
+    }
     if (game && game.over) { this.send(ws, { type: "__a", op: "reject", reason: "game-over", q: m.q, state: game, rev }); return; }
     // Id-less legacy moves must not erase the room's authoritative match id.
     if (game && game.id && !m.state.id) m.state.id = game.id;
@@ -320,8 +330,10 @@ export class Room {
     if (await this.stale(me.seat, m.base)) return reject("stale");
     // Ordered/current clients finish only through the full closing snapshot.
     // A recap arriving first (or after a rejected move) cannot install scores.
-    // Cached clients omit closing/stream and retain the recap-only fallback.
-    if (m.closing || m.stream != null) return reject("ending-pending");
+    // Truly recap-only cached clients retain their fallback; a known closing
+    // attempt requires acceptance, including v89's otherwise untagged recap.
+    const attempts = await this.state.storage.get("closingAttempts");
+    if (m.closing || m.stream != null || (attempts && attempts.gid === (game.id || null) && attempts.seats.includes(me.seat))) return reject("ending-pending");
     if (game && typeof game === "object") {
       game.over = true;
       if (Array.isArray(m.players)) game.finalPlayers = m.players.slice(0, 2);
@@ -353,7 +365,11 @@ export class Room {
     // A different match also needs an ordered operation: an older start must
     // not return after a subsequent rematch has finished on the same seat.
     if (game && await this.staleMove(ws, m, await this.rev(), true)) { this.send(ws, { type: "__a", op: "reject", reason: "stale", q: m.q, state: game, rev: await this.rev() }); return; }
+    // Archive only authoritative finished results, BEFORE replacing the room.
+    // A refreshed client can then verify an unacked ending by replaying it.
+    if (game && game.over && game.id) await this.state.storage.put("finished." + game.id, { id: game.id, players: game.finalPlayers || game.players });
     await this.state.storage.put("game", m.state);
+    if (!m.state.id) await this.state.storage.put("closingAttempts", null); // pre-v71 rematches have no distinct match id
     if (m.config && typeof m.config === "object") await this.state.storage.put("config", m.config);
     const nrev = await this.bump(me.seat);
     await this.state.storage.put("moveHead", { seat: me.seat, gid: m.state.id || null, stream: m.stream || null, q: m.q ?? null, rev: nrev });

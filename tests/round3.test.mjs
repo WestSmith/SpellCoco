@@ -148,7 +148,8 @@ test('all score continuations, long bonus and treat shift share one event withou
  const fx=c.sent.filter(m=>m.type==='fx'&&m.toast);
  assert.match(fx[0].toast,/CAT → \+13 pts/);assert.equal(fx[0].celebrate,'Long word! +5 bonus included');
  assert.ok(fx.some(m=>m.toast.includes('Treats shifted')));assert.ok(fx.some(m=>m.toast.includes('best word')));assert.ok(fx.some(m=>m.toast.includes('With a swap')));
- assert.deepEqual([...new Set(fx.map(m=>m.event))],['score:match00002:1:0']);
+ assert.equal(new Set(fx.map(m=>m.event)).size,1);
+ assert.match(fx[0].event,/^score:match00002:[a-z0-9]{24}$/);
 });
 
 test('an authoritative shorter countdown still reconciles after another tab advances it',async()=>{
