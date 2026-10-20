@@ -4,6 +4,13 @@ Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
 ```
 ================================================================
+SPELLCOCO v96 — COCO SPEECH BUBBLE (2026-10-20)
+- Give Coco a compact cream speech bubble with a fused curved outline and mirrored mouth-pointing tail.
+================================================================
+```
+
+```
+================================================================
 SPELLCOCO v95 — CROSS-TAB RECOVERY AND LEGACY SPEECH (2026-10-20)
 - Merge shared ending recovery before replacement or retirement; preserve legacy score dismissal through interleaved speech.
 ================================================================

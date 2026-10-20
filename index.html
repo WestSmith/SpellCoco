@@ -1542,15 +1542,16 @@
         .letter-val-chip b{color:var(--ink)}
         .letter-val-chip span{color:var(--gold-hi)}
 
-        /* v86: grow DOWN in normal flow, below the cards and Coco's mouth.
-           The stage keeps his turn-indicator position independent of the text. */
+        /* Bubble stays in normal flow below the cards; its curved tail meets Coco's
+           mouth. Tail fill overpaints the top border for one continuous outline. */
         .player-bar-stage{position:relative}
         .coco-bubble{
             position:relative;display:block;z-index:3;
-            width:calc(100% - 16px);margin:64px 8px 0;
+            width:fit-content;min-width:176px;max-width:min(34ch,calc(100% - 16px));margin:58px 8px 0;
             background:var(--coco-cream);color:#2f2418;
-            border:2px solid var(--coco-deep);border-radius:12px;
-            padding:7px 12px;text-align:left;letter-spacing:normal;
+            border:2px solid var(--coco-deep);border-radius:18px;
+            padding:12px 16px;text-align:left;letter-spacing:normal;
+            filter:drop-shadow(0 4px 5px rgba(0,0,0,0.3));
             font-size:clamp(0.8rem,1.8vw,0.9rem);font-weight:700;line-height:1.35;
             overflow-wrap:anywhere;transition:none;
         }
@@ -1561,16 +1562,17 @@
             border-top:1px solid rgba(176,95,10,0.25);
             font-weight:400;
         }
+        .coco-bubble.from-right{margin-left:auto}
         .coco-bubble::after{
-            content:'';position:absolute;top:-36px;
-            border:8px solid transparent;border-top:0;
-            border-bottom:36px solid var(--coco-deep);
+            content:'';position:absolute;top:-34px;width:36px;height:36px;
+            background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36' preserveAspectRatio='none'%3E%3Cpath d='M15 36V34Q18 20 8 2Q24 26 34 34V36Z' fill='%23fff3e0'/%3E%3Cpath d='M15 34Q18 20 8 2Q24 26 34 34' fill='none' stroke='%23a5591d' stroke-width='2' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat;
+            pointer-events:none;
         }
-        .coco-bubble.from-right::after{right:108px}
-        .coco-bubble.from-left::after{left:108px}
+        .coco-bubble.from-right::after{right:106px;transform:scaleX(-1)}
+        .coco-bubble.from-left::after{left:106px}
         @media(max-width:839px){
-            .coco-bubble{margin-top:68px}
-            .coco-bubble::after{top:-32px;border-bottom-width:32px}
+            .coco-bubble{margin-top:62px}
+            .coco-bubble::after{top:-30px;height:32px}
             .coco-bubble.from-right::after{right:83px}
             .coco-bubble.from-left::after{left:83px}
         }
@@ -2469,7 +2471,7 @@
     </div>
 </div>
 
-<script src="engine.js?v=v95"></script>
+<script src="engine.js?v=v96"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js" integrity="sha512-XEKeWX+mI3Ov+tg2evDlVQFzVOIp4T8J3cNcCEPaEUGpxJV3eZaN8rHuvnFPvQpGJBHPmrozJDMpm2xcDvtmyQ==" crossorigin="anonymous"></script>
 <script>
 /*
@@ -6315,7 +6317,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v95';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v96';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){

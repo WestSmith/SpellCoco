@@ -112,21 +112,23 @@ for(const modal of ['swap','replay'])test(`Escape belongs to the active ${modal}
 // safe areas, keyboard occlusion, hit targets or screen-reader announcements.
 function assertBubbleLayout(html){
   const css=html.match(/\.coco-bubble\{([^}]+)\}/)[1];
-  assert.match(css,/position:relative/);assert.match(css,/display:block/);assert.match(css,/margin:64px 8px 0/);
+  assert.match(css,/position:relative/);assert.match(css,/display:block/);assert.match(css,/margin:58px 8px 0/);
   assert.match(css,/overflow-wrap:anywhere/);assert.match(css,/transition:none/);
   assert.doesNotMatch(css,/(?:bottom|top):/);
   assert.match(html,/\.player-bar-stage\{position:relative\}/);
   assert.match(html,/id="player-list"[^]*?id="coco-lounge"[^]*?<\/div>\s*<button[^>]*id="coco-bubble"/);
-  assert.match(html,/\.coco-bubble::after\{\s*content:'';position:absolute;top:-36px;[^}]*border-top:0;[^}]*border-bottom:36px/);
-  assert.match(html,/@media\(max-width:839px\)\{\s*\.coco-bubble\{margin-top:68px\}/);
-  assert.match(html,/\.coco-bubble.from-right::after\{right:108px\}/);
-  assert.match(html,/\.coco-bubble.from-left::after\{left:108px\}/);
+  assert.match(html,/\.coco-bubble::after\{\s*content:'';position:absolute;top:-34px;width:36px;height:36px;[^}]*data:image\/svg\+xml/);
+  assert.match(css,/width:fit-content;min-width:176px;max-width:min\(34ch,calc\(100% - 16px\)\)/);
+  assert.match(html,/\.coco-bubble.from-right\{margin-left:auto\}/);
+  assert.match(html,/@media\(max-width:839px\)\{\s*\.coco-bubble\{margin-top:62px\}/);
+  assert.match(html,/\.coco-bubble.from-right::after\{right:106px;transform:scaleX\(-1\)\}/);
+  assert.match(html,/\.coco-bubble.from-left::after\{left:106px\}/);
   assert.match(html,/@media\(prefers-reduced-motion:reduce\)\{\s*\.coco-lounge\{transition:none\}\s*\.coco-lounge.purring svg\{animation:none !important\}/);
 }
 test('bubble stays in normal flow below the scoreboard, with responsive tails and reduced motion rules',()=>{
   const html=readFileSync(new URL('../index.html',import.meta.url),'utf8');assertBubbleLayout(html);
   assert.throws(()=>assertBubbleLayout(html.replace('position:relative;display:block;z-index:3','position:absolute;display:block;z-index:3')));
-  assert.throws(()=>assertBubbleLayout(html.replace('margin:64px 8px 0','margin:0')));
+  assert.throws(()=>assertBubbleLayout(html.replace('margin:58px 8px 0','margin:0')));
 });
 
 test('a Swap made before the start ack can follow the accepted start, without rolling back on start retry',async()=>{
@@ -210,11 +212,11 @@ test('queued merges retain event identity even when their original event window 
   assert.equal(c.run('COCO_SAY.q.length'),0);c.fireDelay(280);assert.equal(c.run('COCO_SAY.showing'),false);
 });
 
-test('v95 build label, page engine and service-worker engine agree',()=>{
+test('v96 build label, page engine and service-worker engine agree',()=>{
   const html=readFileSync(new URL('../index.html',import.meta.url),'utf8'),sw=readFileSync(new URL('../sw.js',import.meta.url),'utf8');
-  assert.match(html,/const APP_VERSION='v95'/);assert.match(html,/<script src="engine.js\?v=v95">/);assert.match(sw,/'engine.js\?v=v95'/);
+  assert.match(html,/const APP_VERSION='v96'/);assert.match(html,/<script src="engine.js\?v=v96">/);assert.match(sw,/'engine.js\?v=v96'/);
   const changelog=readFileSync(new URL('../CHANGELOG.md',import.meta.url),'utf8');
-  assert.equal(changelog.match(/SPELLCOCO v\d+/)[0],'SPELLCOCO v95');
+  assert.equal(changelog.match(/SPELLCOCO v\d+/)[0],'SPELLCOCO v96');
 });
 
 test('a rejected rematch adopts the winning match even when a local action is pending',()=>{
