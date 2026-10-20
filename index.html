@@ -1542,39 +1542,41 @@
         .letter-val-chip b{color:var(--ink)}
         .letter-val-chip span{color:var(--gold-hi)}
 
-        /* v60→v65: Coco's speech bubble is now THE message channel — every
-           game-event toast comes out of Coco. STATIC (no animation — Keith's
-           sensory load), cream on dark ink ≈13:1 AAA. Anchored absolute in
-           .player-bar-wrap beside wherever he's lounging, so it scrolls with
-           the page and moves when he ambles. BOTH edges are pinned (left AND
-           right) so text wraps inside the border and can never bleed off the
-           board; extra lines grow UP over the cards, never onto tiles. */
+        /* v86: grow DOWN in normal flow, below the cards and Coco's mouth.
+           The stage keeps his turn-indicator position independent of the text. */
+        .player-bar-stage{position:relative}
         .coco-bubble{
-            position:absolute;bottom:-52px;z-index:3;
-            width:max-content;max-width:100%;
+            position:relative;display:block;z-index:3;
+            width:calc(100% - 16px);margin:64px 8px 0;
             background:var(--coco-cream);color:#2f2418;
             border:2px solid var(--coco-deep);border-radius:12px;
-            padding:7px 12px;
+            padding:7px 12px;text-align:left;letter-spacing:normal;
             font-size:clamp(0.8rem,1.8vw,0.9rem);font-weight:700;line-height:1.35;
-            overflow-wrap:break-word;
+            overflow-wrap:anywhere;transition:none;
         }
+        .coco-bubble:focus-visible{outline:3px solid var(--coco-eyes-hi);outline-offset:3px}
+        .coco-bubble .cb-line{display:block}
         .coco-bubble .cb-line+.cb-line{
             margin-top:3px;padding-top:3px;
             border-top:1px solid rgba(176,95,10,0.25);
             font-weight:400;
         }
         .coco-bubble::after{
-            content:'';position:absolute;bottom:14px;
-            border:7px solid transparent;
+            content:'';position:absolute;top:-36px;
+            border:8px solid transparent;border-top:0;
+            border-bottom:36px solid var(--coco-deep);
         }
-        .coco-bubble.from-right{right:162px;left:auto;max-width:calc(100% - 172px)}
-        .coco-bubble.from-right::after{left:100%;border-left-color:var(--coco-deep)}
-        .coco-bubble.from-left{left:162px;right:auto;max-width:calc(100% - 172px)}
-        .coco-bubble.from-left::after{right:100%;border-right-color:var(--coco-deep)}
+        .coco-bubble.from-right::after{right:108px}
+        .coco-bubble.from-left::after{left:108px}
         @media(max-width:839px){
-            .coco-bubble{bottom:-56px}
-            .coco-bubble.from-right{right:130px;max-width:calc(100% - 138px)}
-            .coco-bubble.from-left{left:130px;max-width:calc(100% - 138px)}
+            .coco-bubble{margin-top:68px}
+            .coco-bubble::after{top:-32px;border-bottom-width:32px}
+            .coco-bubble.from-right::after{right:83px}
+            .coco-bubble.from-left::after{left:83px}
+        }
+        @media(prefers-reduced-motion:reduce){
+            .coco-lounge{transition:none}
+            .coco-lounge.purring svg{animation:none !important}
         }
         /* v65: Coco's eyes open while he speaks (COCO_MARK's real eyes),
            closed arcs return when the bubble hides. */
@@ -2029,10 +2031,11 @@
             <div class="round-pips" id="round-pips"></div>
         </div>
         <div class="player-bar-wrap">
-            <div class="player-bar" id="player-list"></div>
-            <span class="coco-lounge" id="coco-lounge" aria-hidden="true"></span>
-            <!-- v60: Coco's speech bubble — 100+ point plays only -->
-            <div id="coco-bubble" class="coco-bubble from-right hidden" role="status" aria-live="polite"></div>
+            <div class="player-bar-stage">
+                <div class="player-bar" id="player-list"></div>
+                <span class="coco-lounge" id="coco-lounge" aria-hidden="true"></span>
+            </div>
+            <button type="button" id="coco-bubble" class="coco-bubble from-right hidden" onclick="dismissCocoBubble()" aria-label="Dismiss Coco’s message" aria-live="polite" aria-atomic="true"></button>
             <div id="sr-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
         </div>
         <div class="action-zone">
@@ -2412,7 +2415,7 @@
 <div id="modal-zoomies-confirm" class="modal hidden">
     <div class="modal-content" style="width:400px;">
         <h3 style="margin-bottom:14px;">🌪 Coco Zoomies?</h3>
-        <p style="font-size:0.95rem;margin-bottom:18px;">Coco tears across the board — <strong>every letter is rerolled</strong>, multipliers and treats land in new spots. Costs <strong style="color:var(--coco);"><span id="zoomies-confirm-cost">4</span><span class="ticon"></span></strong>.</p>
+        <p style="font-size:0.95rem;margin-bottom:18px;">Coco tears across the board — <strong>every letter is rerolled</strong>, multiplier types survive in new spots, and treats are re-scattered. Costs <strong style="color:var(--coco);"><span id="zoomies-confirm-cost">4</span><span class="ticon"></span></strong>.</p>
         <div style="display:flex;gap:10px;justify-content:center;">
             <button class="btn-clear" style="max-width:none;flex:1;" onclick="closeZoomiesConfirm()">Cancel</button>
             <button class="btn-submit" style="max-width:none;flex:1;" onclick="confirmZoomies()">🌪 Zoomies!</button>
@@ -2466,7 +2469,7 @@
     </div>
 </div>
 
-<script src="engine.js?v=v78"></script>
+<script src="engine.js?v=v86"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js" integrity="sha512-XEKeWX+mI3Ov+tg2evDlVQFzVOIp4T8J3cNcCEPaEUGpxJV3eZaN8rHuvnFPvQpGJBHPmrozJDMpm2xcDvtmyQ==" crossorigin="anonymous"></script>
 <script>
 /*
@@ -2493,8 +2496,8 @@ const TICON='<span class="ticon" role="img" aria-label="treat"></span>';
 
 // ===================== v33: storage helpers =====================
 function lsGet(k,fb){try{const v=localStorage.getItem(k);return v?JSON.parse(v):fb}catch(e){return fb}}
-function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
-function lsDel(k){try{localStorage.removeItem(k)}catch(e){}}
+function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){console.warn('SpellCoco: could not save '+k,e);return false}}
+function lsDel(k){try{localStorage.removeItem(k)}catch(e){console.warn('SpellCoco: could not remove '+k,e)}}
 
 // ===================== v33: all-time win tracker =====================
 let STATS=lsGet('spellcoco.stats',{games:0,draws:0,wins:{Keith:0,Shawn:0},bestWord:null,longestWord:null});
@@ -2697,7 +2700,10 @@ const COCO_SWAP={
 function cocoMs(r){return Math.round(r[0]+Math.random()*(r[1]-r[0]))}
 function cocoTakeTurn(){
     if(!game||game.over||!game.currentPlayer.isCoco)return;
-    if(!trieBuilt){setTimeout(cocoTakeTurn,800);return}
+    const origin=game,round=game.round,turn=game.turnIndex;
+    const alive=()=>game===origin&&!origin._dead&&!origin.over&&origin.round===round&&origin.turnIndex===turn&&origin.currentPlayer.isCoco;
+    const later=(fn,ms)=>origin.aiLater(fn,ms);
+    if(!trieBuilt){later(cocoTakeTurn,800);return}
     const moodKey=(CONFIG.solo&&CONFIG.solo.mood)||'cozy';
     const cands=findWordCandidates(game.tiles);
     let choice=cocoChooseWord(cands,moodKey);
@@ -2715,7 +2721,7 @@ function cocoTakeTurn(){
     }
     if(!choice){
         game.showToast('😿 Coco found no word — he curls up and passes');
-        setTimeout(()=>{if(game&&!game.over){game.logStep({k:'pass'});game.endTurn()}},1400);
+        later(()=>{if(alive()){game.logStep({k:'pass'});game.endTurn()}},1400);
         return;
     }
     const pace=COCO_PACE[moodKey]||COCO_PACE.cozy;
@@ -2727,13 +2733,12 @@ function cocoTakeTurn(){
         oops.add(1+Math.floor(Math.random()*(choice.ids.length-1)));
     if(choice.ids.length>=5&&Math.random()<pace.oops*0.4)
         oops.add(1+Math.floor(Math.random()*(choice.ids.length-1)));
-    const alive=()=>game&&!game.over&&game.currentPlayer.isCoco;
     game.clearSelection();
     let i=0;
     const step=()=>{
         if(!alive())return;
         if(i>=choice.ids.length){
-            setTimeout(()=>{if(alive())game.submitWord()},cocoMs(pace.submit));
+            later(()=>{if(alive())game.submitWord()},cocoMs(pace.submit));
             return;
         }
         if(i>0&&oops.has(i)){
@@ -2741,17 +2746,17 @@ function cocoTakeTurn(){
             const wrongs=NEIGHBORS[choice.ids[i-1]].filter(n=>n!==choice.ids[i]&&!game.selection.includes(n));
             if(wrongs.length){
                 game.selectTile(game.tiles[wrongs[Math.floor(Math.random()*wrongs.length)]]);
-                setTimeout(()=>{ // …Coco squints at the word. That's not right.
+                later(()=>{ // …Coco squints at the word. That's not right.
                     if(!alive())return;
                     const id=game.selection.pop();
                     if(id!==undefined){game.tiles[id].isSelected=false;SFX.tileDeselect();game.selUI()}
-                    setTimeout(step,cocoMs(pace.tile)); // resume with the right tile
+                    later(step,cocoMs(pace.tile)); // resume with the right tile
                 },cocoMs([800,1400]));
                 return;
             }
         }
         game.selectTile(game.tiles[choice.ids[i]]);i++;
-        setTimeout(step,cocoMs(pace.tile));
+        later(step,cocoMs(pace.tile));
     };
     // v48: if a swap is planned, Coco pays and flips the tile AFTER his
     // think pause (so it reads as a decision), then pads off at mood pace.
@@ -2765,12 +2770,12 @@ function cocoTakeTurn(){
             game.logStep({k:'swap',id:swapPlan.swap.id,from:swapPlan.swap.from,to:swapPlan.swap.to,b:boardCode(game.tiles)});   // v74
             game.showToast(`🐾 Coco swaps ${swapPlan.swap.from}→${swapPlan.swap.to}!`);
             SFX.swap();game.updateUI();
-            setTimeout(step,cocoMs([1100,1700]));
+            later(step,cocoMs([1100,1700]));
             return;
         }
         step();
     };
-    setTimeout(begin,cocoMs(pace.think));
+    later(begin,cocoMs(pace.think));
 }
 
 // ===================== v33: networking (PeerJS) =====================
@@ -2785,6 +2790,16 @@ const NET={
     // v71: the tracked move also lives in localStorage — "your move is safe" used
     // to mean "safe until the tab is refreshed or evicted".
     savePending(){if(this.pendingMove&&this.code)lsSet(this.pendKey(),{m:this.pendingMove.m,q:this.pendingMove.q,at:this.pendingMove.at})},
+    startKey(){return 'spellcoco.start.'+this.code},
+    saveStart(){if(this.pendingStart&&this.code)lsSet(this.startKey(),this.pendingStart)},
+    clearStart(){this.pendingStart=null;if(this.code)lsDel(this.startKey())},
+    restoreStart(){
+        if(this.pendingStart||!this.code)return;
+        const p=lsGet(this.startKey(),null);
+        if(!p||p.code!==this.code||!p.m||p.m.op!=='newgame'||!validPlayableState(sanitizeNetState(p.m.state))||!Number.isInteger(p.q)){lsDel(this.startKey());return}
+        this.pendingStart=p;this.moveSeq=Math.max(this.moveSeq,p.q);
+        asyncLoadGame(p.m.state,p.m.config);
+    },
     clearPending(){this.pendingMove=null;if(this.code)lsDel(this.pendKey())},
     // Called on every welcome: pick up a move a previous page load never got acked.
     // Its `base` is the revision it was made on, so a stale replay is refused by
@@ -2813,16 +2828,19 @@ const NET={
     // costs nothing. The pending move is re-pushed by the heartbeat and on every
     // fresh welcome; turn enforcement makes duplicates harmless (already-accepted
     // re-pushes come back as reject not-your-turn with our q = implicit ack).
-    sendMove(state){
+    sendMove(state,durable){
         const m={type:'__a',op:'move',state:state,q:++this.moveSeq};
         if(this.async&&Number.isInteger(this.rev))m.base=this.rev;   // v71: the revision this board was built on
-        if(this.async&&(state.over||state.turnIndex!==this.myIndex)){this.pendingMove={m:m,q:m.q,at:Date.now()};this.savePending();}
+        if(this.async&&(durable||this.pendingMove||state.over||state.turnIndex!==this.myIndex)){this.pendingMove={m:m,q:m.q,at:Date.now()};this.savePending();}
+        if(this.pendingStart){this.pendingStart.m.state=state;this.saveStart()}
         this.send(m);
     },
     // v73: display-only selection preview for the opponent's screen; never stored
     sendSel(g){this.send({type:'livesel',ids:[...g.selection],r:g.round,t:g.turnIndex})},
     resendPending(){
-        if(!this.async||!this.pendingMove)return;
+        if(!this.async)return;
+        if(this.pendingStart){this.send(this.pendingStart.m);return}
+        if(!this.pendingMove)return;
         if(game&&this.pendingMove.m.state&&!this.pendingMove.m.state.over&&game.over){this.clearPending();return} // game ended meanwhile
         if(this.ws&&this.ws.readyState===1){try{this.ws.send(JSON.stringify(this.pendingMove.m))}catch(e){}}
     },
@@ -2835,7 +2853,7 @@ const NET={
         // v42: tell the joiner their FINAL (possibly deduped) identity
         let gn=null;
         if(game&&this.myIndex>=0&&game.players[1-this.myIndex])gn=game.players[1-this.myIndex].name;
-        if(this.async){this.gameCode=this.code;this.clearPending();/*v64: fresh game, fresh ledger*/lsDel('spellcoco.gover.'+this.code);this._regTurn=null;const sm={type:'__a',op:'newgame',state:game.serialize(),config:CONFIG,q:++this.moveSeq};if(Number.isInteger(this.rev))sm.base=this.rev;this.pendingStart={m:sm,q:sm.q,code:this.code,at:Date.now()};this.send(sm);showInGameRoom();regTurnSync();return}
+        if(this.async){this.gameCode=this.code;this.clearPending();/*v64: fresh game, fresh ledger*/lsDel('spellcoco.gover.'+this.code);this._regTurn=null;const sm={type:'__a',op:'newgame',state:game.serialize(),config:CONFIG,q:++this.moveSeq};if(Number.isInteger(this.rev))sm.base=this.rev;this.pendingStart={m:sm,q:sm.q,code:this.code,at:Date.now()};this.saveStart();this.send(sm);showInGameRoom();regTurnSync();return}
         this.send({type:'start',config:CONFIG,state:game.serialize(),customs:localCustomWords,guestName:gn});
     },
     // v69.1: drop the socket but keep the room identity, so a later netNudge can
@@ -2843,7 +2861,7 @@ const NET={
     disconnect(){if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.connected=false;this.__busyTries=0;this.__rehello=false;this.__reseat=false;/*v70: the next knock gets the full recovery ladder again*/hbStop();updateNetDots();},
     cleanup(){this.pendingMove=null;this.pendingStart=null;/*v64: never re-push into a different room*/if(this.peer){try{this.peer.destroy()}catch(e){}}this.peer=null;this.conn=null;if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.reconnectTries=0;this.transport=this.useRelay?'relay':'p2p';this.everConnected=false;this.connected=false;/*v68: leave the async room for real — a stale async flag/code hijacked later local games (netNudge reconnect, sendMove, saveGameState skip, cocoAttack, stats key)*/this.async=false;this.code='';this.gameCode='';this.seat=null;this.myIndex=-1;this.rev=null;/*v71: revisions are per room*/this.caps=null;hbStop();}
 };
-function genCode(){const a='ABCDEFGHJKMNPQRSTUVWXYZ23456789';let c='';for(let i=0;i<4;i++)c+=a[Math.floor(Math.random()*a.length)];return c}
+function genCode(){const a='ABCDEFGHJKMNPQRSTUVWXYZ23456789',b=new Uint8Array(1);let c='';while(c.length<4){crypto.getRandomValues(b);if(b[0]<256-256%a.length)c+=a[b[0]%a.length]}return c}
 
 // ===================== v49: relay transport (Cloudflare Worker) =====================
 // Online play routes through a tiny WebSocket "room" so each player keeps ONE stable
@@ -3095,17 +3113,17 @@ function asyncOnMessage(m){
                 // on screen is the room's PRE-move state (welcome loaded it), so show ours.
                 if(pm.restored&&game&&pm.m.state&&!game.over){game.applyState(pm.m.state);if(game.over)asyncShowEnding(pm.m.state);else asyncTurnHint();}
             }
-            if(NET.pendingStart&&m.q!=null&&m.q>=NET.pendingStart.q)NET.pendingStart=null;
+            if(NET.pendingStart&&m.q!=null&&m.q>=NET.pendingStart.q)NET.clearStart();
             break}
         case 'state':
-            NET.pendingStart=null;NET.noteRev(m.rev);
+            NET.clearStart();NET.noteRev(m.rev);
             if(game){
                 game.applyState(m.state);
                 if(game.over){asyncShowEnding(m.state);}   // v58: the closing push arrived as a live state
                 else asyncTurnHint();
             }
             break;
-        case 'newgame':NET.pendingStart=null;NET.noteRev(m.rev);asyncLoadGame(m.state,m.config);break;
+        case 'newgame':NET.clearStart();NET.noteRev(m.rev);asyncLoadGame(m.state,m.config);break;
         case 'gameover':{NET.noteRev(m.rev);if(game)game.over=true;const gp=cleanPlayers(m.players);recordStatsOnce(gp,cleanGameId(m.gid)||(game&&game.id));regTurnSync();renderGameOver(gp);break}   // v67.1: scrub before the recap innerHTML
         case 'peer':if(m.present){asyncSyncWords();NET.send({type:'stats',stats:STATS});}asyncPeer(m);break;   // v71: the all-time record now travels the async relay too
         case 'reject':
@@ -3113,10 +3131,10 @@ function asyncOnMessage(m){
             // re-introduce ourselves; the welcome re-pushes any pending move.
             if(m.reason==='no-seat'){sendHello();break;}
             // v70: a newgame the server refuses can't be fixed by re-sending — stop, and let the next welcome load the room
-            if(NET.pendingStart&&m.q!=null&&m.q===NET.pendingStart.q&&m.reason==='bad-state'){NET.pendingStart=null;break;}
+            if(NET.pendingStart&&m.q!=null&&m.q===NET.pendingStart.q&&m.reason==='bad-state'){NET.clearStart();break;}
             NET.noteRev(m.rev);
             // v71: our rematch lost the race — the opponent's rematch is already in the room; play that one
-            if(NET.pendingStart&&m.q!=null&&m.q===NET.pendingStart.q&&m.reason==='stale'){NET.pendingStart=null;if(m.state)asyncLoadGame(m.state);break;}
+            if(NET.pendingStart&&m.q!=null&&m.q===NET.pendingStart.q&&(m.reason==='stale'||m.reason==='match-active')){NET.clearStart();if(m.state)asyncLoadGame(m.state);break;}
             // v64: a re-push of an ALREADY-accepted move bounces off turn
             // enforcement — the echoed q proves it's ours, so it's an ack,
             // not a scolding. Adopt the authoritative state quietly.
@@ -3280,6 +3298,7 @@ function asyncWelcome(m){
     announceSide();   // v55: tell the peer our FINAL identity so they can lock too
     asyncSyncWords();   // v54: share custom words on connect (consent + dictionary sync)
     NET.send({type:'stats',stats:STATS});   // v71: the all-time record never crossed the async relay (only the dormant P2P/legacy paths sent it)
+    NET.restoreStart();
     NET.restorePending();   // v71: a move from a previous page load that never got acked
     registerPushWithRoom();   // v62: refresh this device's turn-alert subscription for this room
     // v68: our newgame never landed (half-open socket) — the room still shows the
@@ -3288,11 +3307,11 @@ function asyncWelcome(m){
     // finished room comes back reject{game-over,q} and would be taken as an ack
     // that resurrects the recap), and it sends the CURRENT board, not the
     // snapshot taken at Start (moves made since must not be wiped).
-    if(NET.pendingStart&&NET.pendingStart.code===NET.code&&game&&!game.over&&(!m.state||m.state.over)){
+    if(NET.pendingStart&&NET.pendingStart.code===NET.code&&game&&(!m.state||m.state.over)){
         const sm=Object.assign({},NET.pendingStart.m,{state:game.serialize()});
-        NET.pendingStart.m=sm;NET.send(sm);showInGameRoom();asyncTurnHint();return;
+        NET.pendingStart.m=sm;NET.saveStart();NET.send(sm);showInGameRoom();asyncTurnHint();return;
     }
-    NET.pendingStart=null;   // the room reflects a live game — nothing to re-push
+    NET.clearStart();   // the room reflects a live game — nothing to re-push
     NET.resendPending();   // v64: an unacked move survives the reconnect — push it again first thing
     // v71: NET.rev is adopted from the welcome only where the ROOM's state is adopted
     // (asyncLoadGame below). The offline-move re-push keeps the older rev its board
@@ -3425,7 +3444,7 @@ function agoText(t){
 function renderMyGames(){
     const box=document.getElementById('my-games');if(!box)return;
     const r=gamesReg();
-    const keys=Object.keys(r).sort((a,b)=>(r[b].t||0)-(r[a].t||0));
+    const keys=Object.keys(r).filter(c=>/^[A-Za-z0-9]{1,64}$/.test(c)).sort((a,b)=>(r[b].t||0)-(r[a].t||0));
     if(!keys.length){box.classList.add('hidden');box.innerHTML='';return}
     box.classList.remove('hidden');
     box.innerHTML='<div class="mg-title">🐾 My Online Games</div>'+keys.map(c=>{
@@ -3433,8 +3452,8 @@ function renderMyGames(){
         const status=e.turn==='over'?'finished — tap for recap':(e.turn==='me'?'YOUR TURN':'waiting for '+(e.opp||'opponent'));
         return '<div class="mg-row'+(e.turn==='me'?' mg-mine':'')+'">'
             +'<button class="mg-join" onclick="openMyGame(\''+c+'\')">'
-            +'<span class="mg-opp">vs '+(e.opp||'?')+'</span>'
-            +'<span class="mg-status">'+status+' · '+agoText(e.t)+'</span>'
+            +'<span class="mg-opp">vs '+escHtml(e.opp||'?')+'</span>'
+            +'<span class="mg-status">'+escHtml(status)+' · '+agoText(e.t)+'</span>'
             +'</button>'
             +'<button class="mg-x" aria-label="Remove this game from the list" title="Remove from list" onclick="unregGame(\''+c+'\')">✕</button>'
             +'</div>';
@@ -3660,7 +3679,7 @@ function asyncFx(m){if(!game)return;if(m.toast)game.showToast(netSafeHtml(m.toas
     // v62 FIX: async games dropped the fx `bubble` field entirely, so the
     // OPPONENT never saw Coco's speech (Keith saw his own 100+ lines; Shawn
     // saw none). Delay is sender-computed so it lands after the toasts.
-    if(m.bubble)setTimeout(()=>{if(game&&!game.over)cocoSpeak(m.bubble)},cleanInt(m.bubbleDelay,20000)||3400);
+    if(m.bubble&&game)game.aiLater(()=>cocoSpeak(m.bubble),cleanInt(m.bubbleDelay,20000)||3400,false);
     if(m.sfx&&Object.prototype.hasOwnProperty.call(SFX,m.sfx)&&typeof SFX[m.sfx]==='function')SFX[m.sfx]();}
 let UI_MODE='local'; // v41: 'local' | 'solo' | 'host' | 'join' — NET.mode stays networking-only
 function setMode(m){
@@ -4067,7 +4086,7 @@ function guestOnData(m){
         case 'start':guestStart(m);break;
         case 'state':if(game)game.applyState(m.state);break;
         case 'timer':if(game){game.cocoTimerActive=m.on;game.timeLeft=m.t;game.updateTimerDisplay()}break;
-        case 'fx':if(game){if(m.toast)game.showToast(netSafeHtml(m.toast),true);if(m.overlay)game.showRoundOverlay(netSafeHtml(m.overlay.t),netSafeHtml(m.overlay.s),true);if(m.celebrate)game.showCelebration(netSafeHtml(m.celebrate),true);if(m.coco)game.showCocoOverlay(true);if(m.bubble)setTimeout(()=>{if(game&&!game.over)cocoSpeak(m.bubble)},cleanInt(m.bubbleDelay,20000)||3400);if(m.sfx&&Object.prototype.hasOwnProperty.call(SFX,m.sfx)&&typeof SFX[m.sfx]==='function')SFX[m.sfx]()}break;
+        case 'fx':if(game){if(m.toast)game.showToast(netSafeHtml(m.toast),true);if(m.overlay)game.showRoundOverlay(netSafeHtml(m.overlay.t),netSafeHtml(m.overlay.s),true);if(m.celebrate)game.showCelebration(netSafeHtml(m.celebrate),true);if(m.coco)game.showCocoOverlay(true);if(m.bubble&&game)game.aiLater(()=>cocoSpeak(m.bubble),cleanInt(m.bubbleDelay,20000)||3400,false);if(m.sfx&&Object.prototype.hasOwnProperty.call(SFX,m.sfx)&&typeof SFX[m.sfx]==='function')SFX[m.sfx]()}break;
         case 'gameover':{if(game){game.over=true;game.lastTurn=cleanTurnLog(m.lastTurn,true);game.turns=mergeTurns(game.turns,cleanTurns(m.turns),game.lastTurn)}const gp=cleanPlayers(m.players);recordGameStats(gp);renderGameOver(gp);break}   // v67.1: scrub before the recap innerHTML; v74: the sealed final turn
     }
 }
@@ -4100,8 +4119,8 @@ function checkSavedGame(){
     const sv=lsGet('spellcoco.save',null);if(!sv||!sv.state||!sv.state.players)return;
     document.getElementById('resume-banner').classList.remove('hidden');
     document.getElementById('resume-desc').innerHTML=
-        `<strong>⏸ Unfinished ${sv.online?'online ':''}game found</strong> — Round ${sv.state.round}/${sv.config.rounds}: `+
-        sv.state.players.map(p=>`${p.name} ${p.score}`).join(' · ')+
+        `<strong>⏸ Unfinished ${sv.online?'online ':''}game found</strong> — Round ${cleanInt(sv.state.round,99)}/${cleanInt(sv.config.rounds,99)}: `+
+        sv.state.players.map(p=>`${escHtml(p.name)} ${cleanInt(p.score,999999)}`).join(' · ')+
         (sv.online?'<br><span style="color:var(--ink-dim);font-size:0.85rem;">Resuming re-opens your room — it continues when your opponent rejoins.</span>':'');
 }
 function resumeSavedGame(){
@@ -4456,13 +4475,16 @@ function cocoReactionFor(p,r,g){
 // Coco's amble (FX.loungeUntil — Shawn: it used to pop up mid-walk, before
 // he'd settled). Eyes stay open across a blink if more bubbles are queued.
 // Bubbles pending when the game ends are dropped (the recap carries them).
-const COCO_SAY={q:[],flushTimer:null,hideTimer:null,showing:false,openAt:0};
+const COCO_SAY={q:[],flushTimer:null,hideTimer:null,showing:false,openAt:0,current:null,dismissed:null};
 const COCO_MERGE_MS=900,COCO_MIN_SHOW=1700,COCO_BLINK=280;
 function cocoSay(html,standalone){
     const b=document.getElementById('coco-bubble'),lounge=document.getElementById('coco-lounge');
     if(!b||!lounge||!html)return;
     window._lastBubbleAt=Date.now();   // v62: cooldown clock for teases/chatter
     const now=Date.now(),tail=COCO_SAY.q[COCO_SAY.q.length-1];
+    // Late lines in the same event burst must not resurrect a dismissed bubble.
+    const dismissed=COCO_SAY.dismissed;
+    if(!standalone&&dismissed&&!dismissed.solo&&now-dismissed.t<COCO_MERGE_MS)return;
     if(!standalone&&tail&&!tail.solo&&now-tail.t<COCO_MERGE_MS&&tail.lines.length<4)tail.lines.push(html);
     else{
         if(COCO_SAY.q.length>=3)COCO_SAY.q.shift();   // backlog cap — keep the freshest
@@ -4489,12 +4511,13 @@ function _cocoPump(){
 function _cocoRender(bub){
     const b=document.getElementById('coco-bubble'),lounge=document.getElementById('coco-lounge');
     if(!b||!lounge||!bub)return;
-    b.innerHTML=bub.lines.map(l=>`<div class="cb-line">${l}</div>`).join('');
+    b.innerHTML=bub.lines.map(l=>`<span class="cb-line">${l}</span>`).join('');
     const onLeft=lounge.classList.contains('side-left');
     b.classList.toggle('from-left',onLeft);
     b.classList.toggle('from-right',!onLeft);
     b.classList.remove('hidden');
     lounge.classList.add('speaking');
+    COCO_SAY.current=bub;
     COCO_SAY.showing=true;COCO_SAY.openAt=Date.now();
     clearTimeout(COCO_SAY.hideTimer);
     COCO_SAY.hideTimer=setTimeout(()=>{
@@ -4508,9 +4531,23 @@ function _cocoHide(more){
     if(lounge&&!more)lounge.classList.remove('speaking');   // eyes stay open mid-blink
     COCO_SAY.showing=false;
 }
+function dismissCocoBubble(){
+    if(!COCO_SAY.showing)return;
+    COCO_SAY.dismissed=COCO_SAY.current;
+    clearTimeout(COCO_SAY.hideTimer);clearTimeout(COCO_SAY.flushTimer);
+    COCO_SAY.hideTimer=null;COCO_SAY.flushTimer=null;
+    const focused=document.activeElement===document.getElementById('coco-bubble');
+    _cocoHide(COCO_SAY.q.length>0);
+    if(focused&&game&&!game._dead)game.focusTile(game._gridFocus||0);
+    if(COCO_SAY.q.length)_cocoSchedule(COCO_BLINK);
+}
+document.addEventListener('keydown',e=>{
+    if(e.key==='Escape'&&COCO_SAY.showing){e.preventDefault();e.stopPropagation();dismissCocoBubble()}
+},true);
 function cocoSayReset(){   // v66: a retired game's words die with it
     clearTimeout(COCO_SAY.flushTimer);clearTimeout(COCO_SAY.hideTimer);
     COCO_SAY.q=[];COCO_SAY.flushTimer=null;COCO_SAY.hideTimer=null;
+    COCO_SAY.current=null;COCO_SAY.dismissed=null;
     _cocoHide(false);
 }
 // Personality lines (incl. the net fx `bubble` channel) ride the same pipe —
@@ -4667,9 +4704,10 @@ function proposeWord(w){
     else{const st=document.getElementById('custom-status');st.innerText=msg;st.style.color='var(--ink-dim)'}
 }
 function showWordRequest(w){
+    if(typeof w!=='string'||! /^[A-Z]{2,15}$/.test(w))return;
     NET.pendingWordReq=w;
     document.getElementById('wordreq-text').innerHTML=
-        `<strong>${oppName()}</strong> wants to add <strong class="definable" onclick="defineWord('${w}')">${w}</strong> to your shared dictionary.<br><span style="font-size:0.82rem;color:var(--ink-dim);">(tap the word to look it up first)</span>`;
+        `<strong>${escHtml(oppName())}</strong> wants to add <strong class="definable" onclick="defineWord('${w}')">${w}</strong> to your shared dictionary.<br><span style="font-size:0.82rem;color:var(--ink-dim);">(tap the word to look it up first)</span>`;
     document.getElementById('modal-wordreq').classList.remove('hidden');
 }
 function answerWordRequest(ok){
@@ -4789,15 +4827,16 @@ function calcBasePoints(word) {
 }
 function checkDictWord(){
     const i=document.getElementById('dict-check-input'),r=document.getElementById('dict-check-result'),w=i.value.trim().toUpperCase();
+    const safe=escHtml(w);
     if(!w){r.innerText='';return}
     if(w.length===1){
         const letter=LETTERS[w];
-        if(!letter){r.innerHTML=`<span class="dict-result-no">✗ "${w}" — not a valid letter</span>`;return}
+        if(!letter){r.innerHTML=`<span class="dict-result-no">✗ "${safe}" — not a valid letter</span>`;return}
         const valid=isValidWord(w);
         if(valid){
-            r.innerHTML=`<span class="dict-result-yes">✓ "${w}" = ${letter.val} pt${letter.val!==1?'s':''} (valid word)</span>`;
+            r.innerHTML=`<span class="dict-result-yes">✓ "${safe}" = ${letter.val} pt${letter.val!==1?'s':''} (valid word)</span>`;
         } else {
-            r.innerHTML=`<span style="color:var(--ink);">ℹ "${w}" = ${letter.val} pt${letter.val!==1?'s':''}</span>`;
+            r.innerHTML=`<span style="color:var(--ink);">ℹ "${safe}" = ${letter.val} pt${letter.val!==1?'s':''}</span>`;
         }
         return;
     }
@@ -4805,11 +4844,11 @@ function checkDictWord(){
         const pts=calcBasePoints(w);
         const lwb=calcLongWordBonus(w.length);
         const bonus=lwb>0?` +${lwb} long`:'';
-        r.innerHTML=`<span class="dict-result-yes">✓ "${w}" is valid — ~${pts} pts (base)${bonus}</span> <span class="definable" style="color:var(--blue-hi);font-size:0.85rem;" onclick="defineWord('${w}')">define</span>`;
+        r.innerHTML=`<span class="dict-result-yes">✓ "${safe}" is valid — ~${pts} pts (base)${bonus}</span> <span class="definable" style="color:var(--blue-hi);font-size:0.85rem;" onclick="defineWord('${w}')">define</span>`;
     } else {
         const pts=calcBasePoints(w);
         const wait=dictFileLoaded?'':' <span style="color:var(--ink-dim);font-size:0.85rem;">(full word list still loading — try again in a moment)</span>';   // v72: the ~700-word built-in list is all we know until then
-        r.innerHTML=`<span class="dict-result-no">✗ "${w}" not found — would be ~${pts} pts (base)</span>${wait}`;
+        r.innerHTML=`<span class="dict-result-no">✗ "${safe}" not found — would be ~${pts} pts (base)</span>${wait}`;
     }
 }
 function clearDictChecker(){document.getElementById('dict-check-input').value='';document.getElementById('dict-check-result').innerText=''}
@@ -4855,11 +4894,17 @@ class Game{
     // v41: in local play it's "my turn" unless Coco has the seat
     get myTurn(){if(NET.mode!=='local')return this.turnIndex===NET.myIndex;return !this.currentPlayer.isCoco}
     // v41: if it's Coco's turn (solo mode), let him play after the overlay clears
+    aiLater(fn,ms,bindTurn=true){
+        const round=this.round,turn=this.turnIndex;
+        if(!this._aiTimers)this._aiTimers=new Set();
+        const id=setTimeout(()=>{this._aiTimers.delete(id);if(game===this&&!this._dead&&!this.over&&(!bindTurn||(this.round===round&&this.turnIndex===turn)))fn()},ms);
+        this._aiTimers.add(id);return id;
+    }
     maybeCoco(){
         if(this.over||!(CONFIG.solo&&CONFIG.solo.active))return;
         if(!this.currentPlayer.isCoco||this.cocoPending)return;
         this.cocoPending=true;
-        setTimeout(()=>{this.cocoPending=false;cocoTakeTurn()},2100);
+        this.aiLater(()=>{this.cocoPending=false;cocoTakeTurn()},2100);
     }
 
     serialize(){
@@ -5115,9 +5160,11 @@ class Game{
     }
     setupTouchDrag(){
         const grid=document.getElementById('grid');
-        grid.addEventListener('keydown',e=>this.handleGridKey(e));
+        this._gridListeners=[];
+        const listen=(type,fn)=>{grid.addEventListener(type,fn);this._gridListeners.push([type,fn])};
+        listen('keydown',e=>this.handleGridKey(e));
         // Keyboard/assistive activation has detail 0; pointer input stays single-fired.
-        grid.addEventListener('click',e=>{if(this._dead||this.over||e.detail!==0||Date.now()-(this._kbAt||0)<400)return;const t=e.target.closest('.tile');if(t)this.handleTileClick(Number(t.dataset.id))});
+        listen('click',e=>{if(this._dead||this.over||e.detail!==0||Date.now()-(this._kbAt||0)<400)return;const t=e.target.closest('.tile');if(t)this.handleTileClick(Number(t.dataset.id))});
         const gt=(x,y)=>{const el=document.elementFromPoint(x,y);if(!el)return null;const t=el.closest('.tile');return t?parseInt(t.dataset.id):null};
         // v62: swap-target taps are handled RIGHT HERE in pointerdown. The old
         // path early-returned and waited for a `click`, which iOS Safari doesn't
@@ -5126,10 +5173,10 @@ class Game{
         // _swapModalAt guard (350ms, in performSwap/closeSwapModal) stops the
         // same touch's ghost click from "choosing" a letter in the picker that
         // opens under the finger.
-        grid.addEventListener('pointerdown',e=>{if(soundEnabled)initAudio();/*v68: first tap unlocks audio on iOS*/if(this._dead||this.over)return;if(e.isPrimary===false||(e.button!==undefined&&e.button!==0))return;if(!this.myTurn)return;const id=gt(e.clientX,e.clientY);if(this.pendingSwap){if(id!==null)this.openSwapModal(id);e.preventDefault();return}if(id!==null){this.isDragging=true;this.handleTileClick(id)}e.preventDefault()});
-        grid.addEventListener('pointermove',e=>{if(this._dead||!this.isDragging||this.pendingSwap)return;const id=gt(e.clientX,e.clientY);if(id!==null&&!this.selection.includes(id)){const l=this.selection[this.selection.length-1];if(l!==undefined&&this.isAdjacent(this.tiles[l],this.tiles[id]))this.selectTile(this.tiles[id])}e.preventDefault()});
+        listen('pointerdown',e=>{if(soundEnabled)initAudio();/*v68: first tap unlocks audio on iOS*/if(this._dead||this.over)return;if(e.isPrimary===false||(e.button!==undefined&&e.button!==0))return;if(!this.myTurn)return;const id=gt(e.clientX,e.clientY);if(this.pendingSwap){if(id!==null)this.openSwapModal(id);e.preventDefault();return}if(id!==null){this.isDragging=true;this.handleTileClick(id)}e.preventDefault()});
+        listen('pointermove',e=>{if(this._dead||!this.isDragging||this.pendingSwap)return;const id=gt(e.clientX,e.clientY);if(id!==null&&!this.selection.includes(id)){const l=this.selection[this.selection.length-1];if(l!==undefined&&this.isAdjacent(this.tiles[l],this.tiles[id]))this.selectTile(this.tiles[id])}e.preventDefault()});
         const end=()=>{this.isDragging=false};
-        grid.addEventListener('pointerup',end);grid.addEventListener('pointercancel',end);grid.addEventListener('pointerleave',end);
+        listen('pointerup',end);listen('pointercancel',end);listen('pointerleave',end);
     }
 
     handleTileClick(id){
@@ -5238,7 +5285,7 @@ class Game{
             const reactDelay=fxEta();   // v63: after the FX queue drains (word / best / swap-ceiling toasts)
             const line=cocoReactionFor(p,r,this);
             if(line){
-                setTimeout(()=>{if(game&&!game.over)cocoSpeak(line)},reactDelay);
+                this.aiLater(()=>cocoSpeak(line),reactDelay,false);
                 NET.send({type:'fx',bubble:line,bubbleDelay:reactDelay});   // v51 fx channel
             }
         }
@@ -5374,7 +5421,7 @@ class Game{
                     Treats earned: <strong>${p.totalGems}</strong> ·
                     Treat bonus: <strong>+${p.gemBonus}</strong>
                     ${best?` · Best: <strong class="definable" onclick="defineWord('${best.word}')">${best.word}</strong> (${best.score})`:''}
-                    ${eff!==null?` · Efficiency: <strong>${eff}%</strong> of best possible`:''}
+                    ${eff!==null?` · Played-word efficiency: <strong>${eff}%</strong> of best possible`:''}
                 </div>`;
 
             for(let rn=1;rn<=CONFIG.rounds;rn++){
@@ -5482,7 +5529,7 @@ class Game{
             const log=p.abilityLog[this.round];
             if(log){log.swaps=Math.max(0,(log.swaps||0)-1);log.gemsSpent=Math.max(0,(log.gemsSpent||0)-paid)}
         }
-        this.lastSwap=null;
+        this.lastSwap=null;this._durableSwap=true;
         this.showToast(msg||`↩ Swap undone — ${s.to} back to ${s.from}, ${paid}${TICON} back`);
         SFX.swap();this.updateUI();
         return true;
@@ -5523,6 +5570,7 @@ class Game{
         if(NET.mode==='join'){document.getElementById('modal-swap').classList.add('hidden');this.pendingSwap=false;NET.send({type:'act',kind:'swap',tileId:this.swapTargetId,ch:ch});return}
         const p=this.currentPlayer;if(p.gems<CONFIG.costs.swap){this.note('Not enough treats!');SFX.invalid();this.pendingSwap=false;document.getElementById('modal-swap').classList.add('hidden');this.updateUI();return}p.gems-=CONFIG.costs.swap;this.logAbility(p,'swap',CONFIG.costs.swap);const t=this.tiles[this.swapTargetId];
         // v62: remember the swap so it can be UNDONE (consent-based) this turn
+        this._durableSwap=true;
         this.lastSwap={tileId:this.swapTargetId,from:t.char,fromVal:t.baseValue,to:ch,by:this.turnIndex,round:this.round,cost:CONFIG.costs.swap};
         t.char=ch;t.baseValue=LETTERS[ch].val;this.logStep({k:'swap',id:this.swapTargetId,from:this.lastSwap.from,to:ch,b:boardCode(this.tiles)});document.getElementById('modal-swap').classList.add('hidden');this.pendingSwap=false;this.showToast(`Swapped to ${ch}!`);SFX.swap();this.updateUI();this.focusTile(this.swapTargetId)}
 
@@ -5825,7 +5873,7 @@ class Game{
             // state the room stores; locally it isn't worth a save.
             if(this._selOnly&&NET.async&&NET.caps&&NET.caps.livesel){if(myTurn)NET.sendSel(this)}
             else if(this._selOnly&&!NET.async&&NET.mode==='local'){}
-            else if(NET.async)NET.sendMove(this.serialize());else if(NET.mode==='host')NET.send({type:'state',state:this.serialize()});
+            else if(NET.async){NET.sendMove(this.serialize(),this._durableSwap);this._durableSwap=false;}else if(NET.mode==='host')NET.send({type:'state',state:this.serialize()});
             else if(NET.mode==='join'&&myTurn)NET.send({type:'sel',ids:[...this.selection]});
             else if(NET.mode==='local')saveGameState();
         }
@@ -5878,7 +5926,7 @@ class Game{
 // SAME tick (submitWord → endTurn) is already stamped before anything shows.
 const FX={overlayUntil:0,loungeUntil:0,queue:[],pump:null};
 // v66: retire the old Game before a new one takes the board. Instances stay
-// wired to #grid forever (setupTouchDrag can't be undone cheaply), so a
+// used to stay wired to #grid forever, so a
 // finished game's handlers used to fire on every tap — playing SFX.invalid
 // ("error sound when I click a word") and repainting the whole UI with its
 // dead state (Shawn's "scores/positions jumping around", "ROUND 6/5"
@@ -5887,6 +5935,10 @@ const FX={overlayUntil:0,loungeUntil:0,queue:[],pump:null};
 function retireGame(){
     if(typeof game==='undefined'||!game)return;
     game._dead=true;
+    if(game._aiTimers){game._aiTimers.forEach(clearTimeout);game._aiTimers.clear()}
+    const grid=document.getElementById('grid');
+    (game._gridListeners||[]).forEach(([type,fn])=>grid.removeEventListener(type,fn));
+    game._gridListeners=[];
     if(game.timerInterval)clearInterval(game.timerInterval);
     clearTimeout(game._expireTimer);
     clearTimeout(game._loungeTimer);
@@ -6024,7 +6076,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v78';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v86';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){

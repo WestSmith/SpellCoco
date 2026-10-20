@@ -194,7 +194,7 @@ function sw(network) {
   };
   const self = { location: { href: 'https://x.test/SpellCoco/sw.js', origin: 'https://x.test' }, addEventListener: (k, f) => { listeners[k] = f; }, skipWaiting() {}, clients: { claim: async () => {} }, registration: {} };
   const Response = { error: () => ({ error: true }) };
-  vm.runInContext(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), vm.createContext({ self, caches, fetch: network, URL, Response, clients: {}, Promise }));
+  vm.runInContext(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), vm.createContext({ self, caches, fetch: network, URL, Response, clients: {}, Promise, setTimeout, clearTimeout }));
   async function get(url, mode = 'cors') {
     let reply, waits = [];
     const e = { request: { url, method: 'GET', mode, headers: { has: () => false } }, respondWith(p) { reply = p; }, waitUntil(p) { waits.push(p); } };
@@ -218,7 +218,7 @@ test('service worker: other files are network-first with an offline fallback; fo
   let online = true; const s = sw(async req => { if (!online) throw new Error('offline'); return { ok: true, type: 'basic', body: req.url, clone() { return this; } }; });
   assert.equal((await s.get('https://x.test/SpellCoco/?join=AB12', 'navigate')).body, 'https://x.test/SpellCoco/?join=AB12');
   await s.get('https://x.test/SpellCoco/engine.js?v=v72'); await s.get('https://x.test/SpellCoco/engine.js?v=v73');
-  assert.deepEqual([...s.store.keys()].sort(), ['https://x.test/SpellCoco/', 'https://x.test/SpellCoco/engine.js?v=v73']);
+  assert.deepEqual([...s.store.keys()].sort(), ['https://x.test/SpellCoco/', 'https://x.test/SpellCoco/engine.js?v=v72', 'https://x.test/SpellCoco/engine.js?v=v73']);
   online = false;
   assert.equal((await s.get('https://x.test/SpellCoco/?join=ZZ99', 'navigate')).body, 'https://x.test/SpellCoco/?join=AB12');
   assert.equal((await s.get('https://x.test/SpellCoco/index.html', 'navigate')).body, 'https://x.test/SpellCoco/?join=AB12');

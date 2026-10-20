@@ -22,7 +22,7 @@ Spell words by dragging through adjacent letters on a 5×5 board. Longer words e
 | Ability | Cost | Effect |
 |---|---|---|
 | 🔀 Shuffle | 1 treat | Re-deal the board (multipliers move too) |
-| 🌪 Zoomies | 4 treats | Brand-new letters everywhere (multipliers stay) |
+| 🌪 Zoomies | 4 treats | Brand-new letters everywhere (multiplier types survive in new positions) |
 | 🔄 Swap | 3 treats | Replace any tile with a letter of your choice |
 | 💡 Hint | 2 treats | First two letters and the length of the best word on the board |
 | ⏱ +15s | 1 treat | Add time when you're on the clock |
@@ -37,7 +37,7 @@ Three ways to play:
 ## Features
 
 - 196k-word dictionary (NWL2023) with a custom word list you can grow in-game
-- Best-word reveal after every turn, plus an efficiency score in the recap
+- Best-possible score feedback after a played word; word reveals and played-word efficiency in the recap
 - ▶ Replay any round from the play history (tap a player's card): watch the swaps, shuffles and word path play back on the board
 - Tap any played word for its definition
 - All-time Keith vs. Shawn win tracker, synced between devices (each counter merges by taking the higher value)

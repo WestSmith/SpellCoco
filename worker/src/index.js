@@ -234,7 +234,7 @@ export class Room {
     this.setInfo(ws, { seat, name, last: Date.now() });
     const game = await this.state.storage.get("game") || null;
     const config = await this.state.storage.get("config") || null;
-    this.send(ws, { type: "__a", op: "welcome", seat, full: seat === -1, names: seats.map((s) => s ? s.name : null), state: game, config, rev: await this.rev(), caps: CAPS });
+    this.send(ws, { type: "__a", op: "welcome", seat, full: seat === -1, names: seats.map((s) => s ? s.name : null), state: seat === -1 ? null : game, config: seat === -1 ? null : config, rev: await this.rev(), caps: CAPS });
     if (seat !== -1) this.toOthers(ws, { type: "__a", op: "peer", seat, name, present: true });
     await this.touch();
   }
@@ -252,7 +252,9 @@ export class Room {
     if (!validState(m.state)) { this.send(ws, { type: "__a", op: "reject", reason: "bad-state", q: m.q, state: null }); return; }
     const game = await this.state.storage.get("game");
     const rev = await this.rev();
-    if (game && game.over && !m.state.over) { this.send(ws, { type: "__a", op: "reject", reason: "game-over", q: m.q, state: game, rev }); return; }
+    // Id-less snapshots are pre-v71 clients: retain their turn checks below.
+    if (game && game.id && m.state.id && game.id !== m.state.id) { this.send(ws, { type: "__a", op: "reject", reason: "wrong-match", q: m.q, state: game, rev }); return; }
+    if (game && game.over) { this.send(ws, { type: "__a", op: "reject", reason: "game-over", q: m.q, state: game, rev }); return; }
     // v71: the snapshot was built before somebody else's write landed — storing it
     // would roll that write back (the READING-style replay after a lost ack, or a
     // selection sync racing a Coco Attack). The client adopts the state we return.
@@ -283,6 +285,14 @@ export class Room {
       this.send(ws, { type: "__a", op: "reject", reason: "bad-state", state: null }); return;
     }
     const game = await this.state.storage.get("game");
+    const rev = await this.rev();
+    const reject = (reason) => this.send(ws, { type: "__a", op: "reject", reason, state: game || null, rev });
+    if (!game) return reject("no-game");
+    // Legacy clients omit gid; the active seat/turn checks still apply to them.
+    if (game.id && m.gid && game.id !== m.gid) return reject("wrong-match");
+    if (game.over) return reject("game-over");
+    if (game.turnIndex !== me.seat) return reject("not-your-turn");
+    if (await this.stale(me.seat, m.base)) return reject("stale");
     if (game && typeof game === "object") {
       game.over = true;
       if (Array.isArray(m.players)) game.finalPlayers = m.players.slice(0, 2);
@@ -303,6 +313,11 @@ export class Room {
     // (both tapped Rematch while apart) would wipe theirs — same stale rule as moves.
     const game = await this.state.storage.get("game");
     if (game && await this.stale(me.seat, m.base)) { this.send(ws, { type: "__a", op: "reject", reason: "stale", q: m.q, state: game, rev: await this.rev() }); return; }
+    if (game && !game.over) {
+      // A lost start ack may retry the SAME match. Acknowledge without replacing it.
+      if (game.id && m.state.id === game.id) { this.send(ws, { type: "__a", op: "moveok", q: m.q, rev: await this.rev() }); return; }
+      this.send(ws, { type: "__a", op: "reject", reason: "match-active", q: m.q, state: game, rev: await this.rev() }); return;
+    }
     await this.state.storage.put("game", m.state);
     if (m.config && typeof m.config === "object") await this.state.storage.put("config", m.config);
     const nrev = await this.bump(me.seat);
@@ -415,7 +430,7 @@ export class Room {
   }
 
   send(ws, obj) { try { if (ws.readyState === OPEN) ws.send(JSON.stringify(obj)); } catch {} }
-  toOthers(ws, obj) { for (const s of this.sockets()) if (s !== ws) this.send(s, obj); }
+  toOthers(ws, obj) { for (const s of this.sockets()) if (s !== ws && seated(this.info(s))) this.send(s, obj); }
 }
 
 // ---- Web Push (RFC 8291 aes128gcm + VAPID) ----

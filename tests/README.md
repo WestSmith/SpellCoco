@@ -19,7 +19,9 @@ turn and the per-round replays in the play history and recap. `v76.test.mjs` cov
 riding in the same online fx message as the score line. `v77.test.mjs` covers the instant,
 free undo swap and the replay showing the end-of-turn board players actually saw. `v78.test.mjs` covers
 sound after an iOS audio interruption (no backlog burst) and one purr at a time. The GitHub checks workflow
-runs this command.
+runs this command. `improvements.test.mjs` covers v79–v86: durable Swap/start retry,
+AI lifecycle, room validation/security, HTML escaping, copy and bubble dismissal.
+`offline.test.mjs` covers shell installation, engine retention, 5xx and timeout fallback.
 
 The doubles do not implement browser layout, native event synthesis, real
 WebSockets, Durable Object transactions, push delivery or iOS suspension.

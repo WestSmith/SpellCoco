@@ -4,6 +4,70 @@ Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
 ```
 ================================================================
+SPELLCOCO v86 — DISMISSIBLE COCO MESSAGES BELOW THE SCOREBOARD (2026-10-20)
+- Coco’s bubble is a dismiss button with Escape support. It grows downward below the cards, with a tail toward his mouth; reduced motion stops his transition and purr animation.
+- Tests: node --test tests/*.test.mjs passes.
+================================================================
+```
+
+```
+================================================================
+SPELLCOCO v85 — RULES COPY MATCHES PLAY (2026-10-20)
+- Clarify Zoomies multiplier relocation, score-only live best-word feedback, and the recap’s played-word efficiency label. No gameplay changes.
+- Tests: node --test tests/*.test.mjs passes.
+================================================================
+```
+
+```
+================================================================
+SPELLCOCO v84 — OFFLINE SHELL FROM THE FIRST INSTALL (2026-10-20)
+- Precache the app and word lists; retain versioned engines across upgrades; use cached shell responses after 3 seconds or HTTP 5xx. Online-room requests remain untouched.
+- Tests: node --test tests/*.test.mjs passes.
+================================================================
+```
+
+```
+================================================================
+SPELLCOCO v83 — LITERAL DICTIONARY INPUT (2026-10-20)
+- Escape dictionary-checker input, opponent names in word requests, and remembered game labels; reject malformed word requests.
+- Tests: node --test tests/*.test.mjs passes.
+================================================================
+```
+
+```
+================================================================
+SPELLCOCO v82 — SMALL ROOM SECURITY FIXES (2026-10-20)
+- Room codes use unbiased cryptographic randomness. Unseated sockets receive neither game snapshots nor broadcasts.
+- Tests: node --test tests/*.test.mjs passes.
+================================================================
+```
+
+```
+================================================================
+SPELLCOCO v81 — NARROW ROOM VALIDATION (2026-10-20)
+- Reject mismatched, unauthorized or repeated endings and unilateral live-match replacement. Legacy id-less clients retain active-seat checks.
+- Tests: node --test tests/*.test.mjs passes.
+================================================================
+```
+
+```
+================================================================
+SPELLCOCO v80 — COCO CALLBACK LIFECYCLE (2026-10-20)
+- AI timers belong to their game, round and turn; retirement cancels them and removes grid listeners.
+- Tests: node --test tests/*.test.mjs passes.
+================================================================
+```
+
+```
+================================================================
+SPELLCOCO v79 — DURABLE SWAP AND NEW-MATCH RETRY (2026-10-20)
+- Swap/undo and unacknowledged starts survive refresh and reconnect using the existing pending ledger. Storage write failures warn in the console.
+- Tests: node --test tests/*.test.mjs passes.
+================================================================
+```
+
+```
+================================================================
 SPELLCOCO v78 — NO SOUND PILE-UP AFTER A CALL; ONE PURR AT A TIME (2026-10-17)
 - FIX: on iPhone (especially during a call), sounds went quiet and then
   all the missed ones played at once. iOS pauses web audio during a call,

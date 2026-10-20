@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { webcrypto } from 'node:crypto';
 import path from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
@@ -43,12 +44,14 @@ function element(tag, doc) {
   const el = { tagName: String(tag || 'div').toUpperCase(), children: [], style: {}, dataset: {},
     checked: false, value: '', innerText: '', textContent: '', listeners: {},
     classList: { add(...x) { x.forEach(s => classes.add(s)); }, remove(...x) { x.forEach(s => classes.delete(s)); },
-      contains(x) { return classes.has(x); }, toggle(x, on) { const add = on ?? !classes.has(x); add ? classes.add(x) : classes.delete(x); return add; } },
+      removeEventListener(k, f) { this.listeners[k]=(this.listeners[k]||[]).filter(x=>x!==f); },
+    contains(x) { return classes.has(x); }, toggle(x, on) { const add = on ?? !classes.has(x); add ? classes.add(x) : classes.delete(x); return add; } },
     appendChild(x) { if (typeof x === 'object') x.parentElement = this; this.children.push(x); return x; },
     append(...xs) { xs.forEach(x => this.appendChild(x)); }, remove() {},
     replaceChild(x, old) { const i = this.children.indexOf(old); if (i < 0) throw new Error('not a child'); if (typeof x === 'object') x.parentElement = this; this.children[i] = x; return old; },
     setAttribute(k, v) { attrs.set(k, String(v)); }, getAttribute(k) { return attrs.get(k) ?? null; }, removeAttribute(k) { attrs.delete(k); },
     addEventListener(k, f) { (this.listeners[k] ||= []).push(f); },
+    removeEventListener(k, f) { this.listeners[k]=(this.listeners[k]||[]).filter(x=>x!==f); },
     contains(x) { return x === this || this.children.some(c => typeof c === 'object' && c.contains(x)); },
     closest(selector) { if (selector === '.tile' && classes.has('tile')) return this; return this.parentElement?.closest(selector) || null; },
     querySelectorAll(selector) {
@@ -79,7 +82,7 @@ export function client(fetchImpl) {
   const storage = m => ({ getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, v), removeItem: k => m.delete(k) });
   const ctx = vm.createContext({ console, document: doc, window, navigator: { onLine: true },
     location: { origin: 'http://localhost', pathname: '/', search: '' },
-    localStorage: storage(saved), sessionStorage: storage(session), URL, URLSearchParams, AbortController, Event, TextEncoder, Uint8Array,
+    crypto: webcrypto, localStorage: storage(saved), sessionStorage: storage(session), URL, URLSearchParams, AbortController, Event, TextEncoder, Uint8Array,
     setTimeout: (f, ms) => timer(f, ms, false), clearTimeout: id => timers.delete(id),
     setInterval: (f, ms) => timer(f, ms, true), clearInterval: id => timers.delete(id), requestAnimationFrame: () => {},
     fetch: fetchImpl || (() => Promise.reject(new Error('Network disabled in tests'))), inputState: state() });
