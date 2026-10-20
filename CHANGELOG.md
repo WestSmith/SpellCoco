@@ -4,6 +4,17 @@ Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
 ```
 ================================================================
+SPELLCOCO v90 — TIMEOUT OWNERSHIP AND RECONCILED MATCH RETRIES (2026-10-20)
+- Retire Solo scheduling flags by turn so a resumed timeout cannot strand Coco or cancel his next turn.
+- Bind current ending envelopes to the closing operation; require its accepted snapshot and reconcile rejected endings without recording an unaccepted result. Cached clients retain their recap fallback.
+- Reconcile durable start/move snapshots before restoring play, including either partial storage-write failure.
+- Preserve explicit Coco message dismissals across replacements of the same match; clear them for another match.
+- Tests: node --test tests/*.test.mjs passes. No scoring, balance, AI pacing or speech changes.
+================================================================
+```
+
+```
+================================================================
 SPELLCOCO v89 — MATCH-BOUND ENDINGS AND DURABLE EVENT RETRIES (2026-10-20)
 - Bind ending replies to their match and operation so delayed finishes cannot close a rematch.
 - Continue restored starts in their saved stream; preserve Undo and elapsed countdowns on duplicate position replies.

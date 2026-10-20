@@ -142,5 +142,7 @@ test('the match id rides serialize(), survives a round trip, and reaches the gam
   c.ctx.st = st; c.run('game=Game.fromState(st)'); assert.equal(c.run('game.id'), id);
   c.run('game.round=99;game.endGame()');
   assert.equal(c.sent.find(m => m.op === 'gameover').gid, id);
+  assert.equal(c.saved.has('spellcoco.gover.ROOM1'), false);
+  c.run('asyncOnMessage({op:"moveok",q:NET.pendingMove.q,rev:1})');
   assert.equal(c.saved.get('spellcoco.gover.ROOM1'), JSON.stringify(id));
 });

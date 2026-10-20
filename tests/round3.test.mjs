@@ -45,8 +45,8 @@ for(const order of [[0,2,1],[1,0,2],[1,2,0],[2,0,1],[2,1,0]])test(`ending replie
  const h=room(st),b=h.sockets[1];for(const m of c.sent.filter(m=>m.type==='__a'))await push(h.r,b,m);
  assert.deepEqual(b.messages.map(m=>m.op),['moveok','reject','moveok']);
  assert.equal(b.messages[1].gid,st.id);assert.equal(b.messages[1].q,b.messages[0].q);
- for(const i of order){deliver(c,b.messages[i]);assert.equal(c.run('game.over'),false);assert.equal(c.run('game.id'),id);assert.equal(c.run('STATS.games'),1)}
- assert.equal(c.run('NET.pendingStart'),null);
+ for(const i of order){deliver(c,b.messages[i]);assert.equal(c.run('game.over'),false);assert.equal(c.run('game.id'),id)}
+ assert.equal(c.run('STATS.games'),1);assert.equal(c.run('NET.pendingStart'),null);
 });
 
 test('cached-worker ending replies and delayed final broadcasts cannot close a pending rematch',()=>{

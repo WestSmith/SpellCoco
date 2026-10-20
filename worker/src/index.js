@@ -318,6 +318,10 @@ export class Room {
     if (game.over) return reject("game-over");
     if (game.turnIndex !== me.seat) return reject("not-your-turn");
     if (await this.stale(me.seat, m.base)) return reject("stale");
+    // Ordered/current clients finish only through the full closing snapshot.
+    // A recap arriving first (or after a rejected move) cannot install scores.
+    // Cached clients omit closing/stream and retain the recap-only fallback.
+    if (m.closing || m.stream != null) return reject("ending-pending");
     if (game && typeof game === "object") {
       game.over = true;
       if (Array.isArray(m.players)) game.finalPlayers = m.players.slice(0, 2);
