@@ -9,7 +9,7 @@
    v84: install precaches the shell and word lists for the first offline launch.
    Cross-origin requests (the relay, PeerJS, Wiktionary) are never touched. */
 const CACHE = 'spellcoco-rt-2';
-const SHELL = ['./', 'index.html', 'engine.js?v=v87', 'manifest.json',
+const SHELL = ['./', 'index.html', 'engine.js?v=v88', 'manifest.json',
   'icon-192.png', 'icon-512.png', 'icon-512-maskable.png',
   'apple-touch-icon-180.png', 'coco-mark.svg', 'custom_words.txt', 'dictionary.txt'];
 const SHELL_TIMEOUT = 3000;

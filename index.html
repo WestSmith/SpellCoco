@@ -2469,7 +2469,7 @@
     </div>
 </div>
 
-<script src="engine.js?v=v87"></script>
+<script src="engine.js?v=v88"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js" integrity="sha512-XEKeWX+mI3Ov+tg2evDlVQFzVOIp4T8J3cNcCEPaEUGpxJV3eZaN8rHuvnFPvQpGJBHPmrozJDMpm2xcDvtmyQ==" crossorigin="anonymous"></script>
 <script>
 /*
@@ -2783,6 +2783,7 @@ const NET={
     mode:'local',peer:null,conn:null,ws:null,transport:'p2p',useRelay:true,useAsync:true,async:false,seat:null,everConnected:false,reconnectTries:0,reconnectTimer:null,myIndex:-1,myName:'Shawn',code:'',connected:false,quiet:false,
     hbTimer:null,hbWaiting:false,hbSupported:false,gameCode:'',_offNote:false, // v58: keepalive + offline-move bookkeeping
     pendingMove:null,moveSeq:0,moveStream:null, // v64: last turn-completing move, held until the server acks it
+    localSeq:0, // latest local operation in this room, including restored records and untracked pushes
     pendingStart:null, // v68: the newgame op, held until the room reflects it (a dropped newgame used to resurrect the old recap + double-count stats)
     rev:null, // v71: the room revision our board was built on — every push carries it as `base`, and the relay refuses a snapshot that predates somebody else's write
     noteRev(r){if(Number.isInteger(r)&&r>=0&&(this.rev==null||r>this.rev))this.rev=r},
@@ -2798,6 +2799,7 @@ const NET={
         const p=lsGet(this.startKey(),null);
         if(!p||p.code!==this.code||!p.m||p.m.op!=='newgame'||!validPlayableState(sanitizeNetState(p.m.state))||!Number.isInteger(p.q)){lsDel(this.startKey());return}
         this.pendingStart=p;this.moveSeq=Math.max(this.moveSeq,p.q);
+        this.localSeq=Math.max(this.localSeq,p.q);
         asyncLoadGame(p.m.state,p.m.config);
     },
     clearPending(){this.pendingMove=null;if(this.code)lsDel(this.pendKey())},
@@ -2808,8 +2810,10 @@ const NET={
         if(!this.async||this.pendingMove||!this.code)return;
         const p=lsGet(this.pendKey(),null);
         if(!p||!p.m||typeof p.m!=='object'||p.m.type!=='__a'||p.m.op!=='move'||!p.m.state||typeof p.m.state!=='object'||!Number.isInteger(p.q)){lsDel(this.pendKey());return}
+        if(!validPlayableState(sanitizeNetState({...p.m.state}))){lsDel(this.pendKey());return} // validate before a pending board can replace welcome
         this.pendingMove={m:p.m,q:p.q,at:p.at||Date.now(),restored:true};
         if(p.q>this.moveSeq)this.moveSeq=p.q;
+        this.localSeq=Math.max(this.localSeq,p.q);
     },
     guestName:null,oppName:null, // v42: joiner's declared name (host side) / opponent's announced name
     open(){return this.transport==='relay' ? !!(this.ws&&this.ws.readyState===1&&this.connected) : !!(this.conn&&this.conn.open)},
@@ -2831,6 +2835,7 @@ const NET={
     streamId(){return this.moveStream||(this.moveStream=randomCode(24,'abcdefghijklmnopqrstuvwxyz0123456789'))},
     sendMove(state,durable){
         const m={type:'__a',op:'move',state:state,q:++this.moveSeq};
+        this.localSeq=m.q;
         if(this.async)m.stream=this.streamId();   // stable across retries; a fresh page gets a fresh stream
         if(this.async&&Number.isInteger(this.rev))m.base=this.rev;   // v71: the revision this board was built on
         if(this.async&&(durable||this.pendingMove||state.over||state.turnIndex!==this.myIndex)){this.pendingMove={m:m,q:m.q,at:Date.now()};this.savePending();}
@@ -2855,13 +2860,13 @@ const NET={
         // v42: tell the joiner their FINAL (possibly deduped) identity
         let gn=null;
         if(game&&this.myIndex>=0&&game.players[1-this.myIndex])gn=game.players[1-this.myIndex].name;
-        if(this.async){this.gameCode=this.code;this.clearPending();/*v64: fresh game, fresh ledger*/lsDel('spellcoco.gover.'+this.code);this._regTurn=null;const sm={type:'__a',op:'newgame',state:game.serialize(),config:CONFIG,q:++this.moveSeq,stream:this.streamId()};if(Number.isInteger(this.rev))sm.base=this.rev;this.pendingStart={m:sm,q:sm.q,code:this.code,at:Date.now()};this.saveStart();this.send(sm);showInGameRoom();regTurnSync();return}
+        if(this.async){this.gameCode=this.code;this.clearPending();/*v64: fresh game, fresh ledger*/lsDel('spellcoco.gover.'+this.code);this._regTurn=null;const sm={type:'__a',op:'newgame',state:game.serialize(),config:CONFIG,q:++this.moveSeq,stream:this.streamId()};if(Number.isInteger(this.rev))sm.base=this.rev;this.localSeq=sm.q;this.pendingStart={m:sm,q:sm.q,code:this.code,at:Date.now()};this.saveStart();this.send(sm);showInGameRoom();regTurnSync();return}
         this.send({type:'start',config:CONFIG,state:game.serialize(),customs:localCustomWords,guestName:gn});
     },
     // v69.1: drop the socket but keep the room identity, so a later netNudge can
     // knock again (used on the busy/full welcome paths, which can happen mid-game).
     disconnect(){if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.connected=false;this.__busyTries=0;this.__rehello=false;this.__reseat=false;/*v70: the next knock gets the full recovery ladder again*/hbStop();updateNetDots();},
-    cleanup(){this.pendingMove=null;this.pendingStart=null;/*v64: never re-push into a different room*/if(this.peer){try{this.peer.destroy()}catch(e){}}this.peer=null;this.conn=null;if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.reconnectTries=0;this.transport=this.useRelay?'relay':'p2p';this.everConnected=false;this.connected=false;/*v68: leave the async room for real — a stale async flag/code hijacked later local games (netNudge reconnect, sendMove, saveGameState skip, cocoAttack, stats key)*/this.async=false;this.code='';this.gameCode='';this.seat=null;this.myIndex=-1;this.rev=null;/*v71: revisions are per room*/this.caps=null;hbStop();}
+    cleanup(){this.pendingMove=null;this.pendingStart=null;this.localSeq=0;/*v64: never re-push into a different room*/if(this.peer){try{this.peer.destroy()}catch(e){}}this.peer=null;this.conn=null;if(this.ws){try{this.ws.onclose=null;this.ws.onmessage=null;this.ws.onerror=null;this.ws.close()}catch(e){}}this.ws=null;clearTimeout(this.reconnectTimer);this.reconnectTimer=null;this.reconnectTries=0;this.transport=this.useRelay?'relay':'p2p';this.everConnected=false;this.connected=false;/*v68: leave the async room for real — a stale async flag/code hijacked later local games (netNudge reconnect, sendMove, saveGameState skip, cocoAttack, stats key)*/this.async=false;this.code='';this.gameCode='';this.seat=null;this.myIndex=-1;this.rev=null;/*v71: revisions are per room*/this.caps=null;hbStop();}
 };
 function randomCode(n,a){const b=new Uint8Array(1);let c='';while(c.length<n){crypto.getRandomValues(b);if(b[0]<256-256%a.length)c+=a[b[0]%a.length]}return c}
 function genCode(){return randomCode(4,'ABCDEFGHJKMNPQRSTUVWXYZ23456789')}
@@ -3108,15 +3113,15 @@ function asyncOnMessage(m){
         case 'welcome':asyncWelcome(m);break;
         case 'pong':NET.hbSupported=true;NET.hbWaiting=false;break;   // v58 keepalive answered
         case 'moveok':{   // v64: the server has our move on disk — stop re-pushing
+            const older=Number.isInteger(m.rev)&&NET.rev!=null&&m.rev<NET.rev;
             NET.noteRev(m.rev);
             const pm=NET.pendingMove;
-            if(pm&&m.q!=null&&m.q>=pm.q){   // v68: only a sequenced ack clears the tracked move
+            if(pm&&m.q!=null&&m.q===pm.q){   // only this operation's ack retires it
                 NET.clearPending();
-                // v71: a move restored from a previous page load just landed — the board
-                // on screen is the room's PRE-move state (welcome loaded it), so show ours.
-                if(pm.restored&&game&&pm.m.state&&!game.over){game.applyState(pm.m.state);if(game.over)asyncShowEnding(pm.m.state);else asyncTurnHint();}
             }
-            if(NET.pendingStart&&m.q!=null&&m.q>=NET.pendingStart.q){NET.clearStart();if(m.state&&(!NET.pendingMove||m.state.over))asyncLoadGame(m.state);}
+            // A start retry can return the original board after ANY newer local
+            // push (including untracked Shuffle), or after a newer room revision.
+            if(NET.pendingStart&&m.q!=null&&m.q>=NET.pendingStart.q){NET.clearStart();if(m.state&&!older&&(m.q===NET.localSeq||m.state.over))asyncLoadGame(m.state);}
             break}
         case 'state':
             NET.clearStart();NET.noteRev(m.rev);
@@ -3129,15 +3134,22 @@ function asyncOnMessage(m){
         case 'newgame':NET.clearStart();NET.noteRev(m.rev);asyncLoadGame(m.state,m.config);break;
         case 'gameover':{NET.noteRev(m.rev);if(game)game.over=true;const gp=cleanPlayers(m.players);recordStatsOnce(gp,cleanGameId(m.gid)||(game&&game.id));regTurnSync();renderGameOver(gp);break}   // v67.1: scrub before the recap innerHTML
         case 'peer':if(m.present){asyncSyncWords();NET.send({type:'stats',stats:STATS});}asyncPeer(m);break;   // v71: the all-time record now travels the async relay too
-        case 'reject':
+        case 'reject':{
             // v64: seatless socket (server restarted / we never re-helloed) —
             // re-introduce ourselves; the welcome re-pushes any pending move.
             if(m.reason==='no-seat'){sendHello();break;}
             // v70: a newgame the server refuses can't be fixed by re-sending — stop, and let the next welcome load the room
             if(NET.pendingStart&&m.q!=null&&m.q===NET.pendingStart.q&&m.reason==='bad-state'){NET.clearStart();break;}
-            NET.noteRev(m.rev);
+            const older=Number.isInteger(m.rev)&&NET.rev!=null&&m.rev<NET.rev;
             // v71: our rematch lost the race — the opponent's rematch is already in the room; play that one
-            if(NET.pendingStart&&m.q!=null&&m.q===NET.pendingStart.q&&(m.reason==='stale'||m.reason==='match-active')){NET.clearStart();if(m.state)asyncLoadGame(m.state);break;}
+            if(NET.pendingStart&&m.q!=null&&m.q===NET.pendingStart.q&&(m.reason==='stale'||m.reason==='match-active')){NET.clearStart();if(m.state&&!older){NET.noteRev(m.rev);asyncLoadGame(m.state);}break;}
+            // Obsolete retry replies must not replace a newer local operation,
+            // even after its ack cleared pendingMove. Older relays may omit rev/q.
+            if(older||(Number.isInteger(m.q)&&m.q<NET.localSeq)){
+                if(NET.pendingMove&&m.q===NET.pendingMove.q)NET.clearPending();
+                break;
+            }
+            NET.noteRev(m.rev);
             // v64: a re-push of an ALREADY-accepted move bounces off turn
             // enforcement — the echoed q proves it's ours, so it's an ack,
             // not a scolding. Adopt the authoritative state quietly.
@@ -3159,7 +3171,7 @@ function asyncOnMessage(m){
             if(m.state&&m.state.over){if(game)game.over=true;asyncShowEnding(m.state);break;}
             if(m.state&&game&&!game.over)game.applyState(m.state);
             if(game&&!game.over){if(m.reason==='error')game.note('📡 The room hiccupped — your move will be re-sent');else if(m.reason!=='bad-state'&&m.reason!=='stale')game.note('⏳ Hang on — not your turn yet');}   // v71: a stale selection sync is adopted silently
-            break;
+            break;}
     }
 }
 // v58: one recap per finished room — a player who missed the live ending still
@@ -3316,6 +3328,23 @@ function asyncWelcome(m){
     }
     NET.clearStart();   // the room reflects a live game — nothing to re-push
     NET.resendPending();   // v64: an unacked move survives the reconnect — push it again first thing
+    const pm=NET.pendingMove,h=m.head;
+    const ownHead=pm&&h&&h.seat===NET.seat&&h.rev===m.rev&&h.gid===(pm.m.state.id||null)
+        &&typeof pm.m.stream==='string'&&h.stream===pm.m.stream&&Number.isInteger(h.q);
+    if(m.state&&!m.state.over&&pm&&pm.q===NET.localSeq&&pm.m.state&&(!m.state.id||!pm.m.state.id||m.state.id===pm.m.state.id)&&!(ownHead&&h.q>pm.q)){
+        // Keep the pending board usable until its own reply reconciles it. Loading
+        // the pre-move welcome here would let the next action spend refunded treats.
+        // The head proves whether our stored stream can safely continue, or has
+        // already been superseded. Older workers omit head: keep the original base.
+        const reflected=ownHead&&h.q===pm.q;
+        if(pm.restored||!game||NET.gameCode!==NET.code){
+            NET.rev=reflected?m.rev:(Number.isInteger(pm.m.base)?pm.m.base:null); // legacy records may omit base
+            if(typeof pm.m.stream==='string'&&/^[a-z0-9]{24}$/.test(pm.m.stream)&&(ownHead||m.rev===pm.m.base))NET.moveStream=pm.m.stream;
+            asyncLoadGame(reflected?m.state:pm.m.state,m.config);
+        }else if(reflected)NET.noteRev(m.rev);
+        pm.restored=false;
+        showInGameRoom();asyncTurnHint();return;
+    }
     // v71: NET.rev is adopted from the welcome only where the ROOM's state is adopted
     // (asyncLoadGame below). The offline-move re-push keeps the older rev its board
     // was built on, so the relay can tell whether the room moved on meanwhile.
@@ -6084,7 +6113,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v87';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v88';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){

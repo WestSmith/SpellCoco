@@ -4,6 +4,16 @@ Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
 ```
 ================================================================
+SPELLCOCO v88 — RECONCILE RETRIES WITHOUT ROLLING BACK LOCAL PLAY (2026-10-20)
+- Ignore obsolete move replies and start snapshots after newer local operations; preserve pending boards and active countdowns across reconnects.
+- Include the accepted operation head in seated welcomes so restored retries can continue safely without reviving superseded disk snapshots. Older clients and workers retain their compatibility paths.
+- Notify the opponent on the first accepted finished snapshot; repeated endings remain read-only.
+- Tests: node --test tests/*.test.mjs passes. No gameplay or balance changes.
+================================================================
+```
+
+```
+================================================================
 SPELLCOCO v87 — REPLAY-SAFE SWAPS AND MATCH RETRIES (2026-10-20)
 - Order durable operations by page stream and room revision; reject obsolete same-seat snapshots, including stale storage records. Preserve legacy match IDs and finished matches on start retries.
 - Use cryptographic rejection sampling for active online room codes.

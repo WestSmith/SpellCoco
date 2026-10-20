@@ -252,7 +252,10 @@ export class Room {
     this.setInfo(ws, { seat, name, last: Date.now() });
     const game = await this.state.storage.get("game") || null;
     const config = await this.state.storage.get("config") || null;
-    this.send(ws, { type: "__a", op: "welcome", seat, full: seat === -1, names: seats.map((s) => s ? s.name : null), state: seat === -1 ? null : game, config: seat === -1 ? null : config, rev: await this.rev(), caps: CAPS });
+    // Seated clients can distinguish a pending retry from a superseded disk record.
+    // Cached clients ignore head and keep their existing revision/turn checks.
+    this.send(ws, { type: "__a", op: "welcome", seat, full: seat === -1, names: seats.map((s) => s ? s.name : null), state: seat === -1 ? null : game, config: seat === -1 ? null : config, rev: await this.rev(), caps: CAPS,
+      head: seat === -1 ? null : (await this.state.storage.get("moveHead")) || null });
     if (seat !== -1) this.toOthers(ws, { type: "__a", op: "peer", seat, name, present: true });
     await this.touch();
   }
@@ -290,7 +293,11 @@ export class Room {
     this.send(ws, { type: "__a", op: "moveok", q: m.q, rev: nrev });
     this.toOthers(ws, { type: "__a", op: "state", state: m.state, rev: nrev });
     await this.touch();
-    if (!m.state.over && typeof m.state.turnIndex === "number")
+    // The closing snapshot normally precedes gameover. Notify on the first
+    // accepted finish; game.over rejects both kinds of ending replay above.
+    if (m.state.over)
+      this.notifySeat(1 - me.seat, "Game over — open SpellCoco for the recap \u{1F3C6}").catch(() => {});
+    else if (typeof m.state.turnIndex === "number")
       this.notifySeat(m.state.turnIndex, `${me.name || "Your opponent"} played — your move!`).catch(() => {});
   }
 
