@@ -123,18 +123,27 @@ function assertBubbleLayout(html){
   assert.match(html,/\.coco-bubble::after\{\s*content:'';position:absolute;top:-34px;width:36px;height:36px;[^}]*data:image\/svg\+xml/);
   assert.match(css,/width:fit-content;min-width:176px;max-width:min\(34ch,calc\(100% - 16px\)\)/);
   assert.match(html,/\.coco-bubble.from-right\{left:auto;right:8px\}/);
-  assert.match(html,/@media\(max-width:839px\)\{\s*\.coco-bubble\{top:calc\(100% \+ 62px\)\}/);
+  const mobile=html.match(/@media\(max-width:839px\)\{\s*\/\* Grow upward[^]*?\n        \}/)?.[0];
+  assert.ok(mobile,'single-column speech override uses the layout breakpoint');
+  assert.match(mobile,/\.coco-bubble\{top:auto;bottom:0;max-width:min\(40ch,calc\(100% - 16px\)\)\}/);
+  assert.match(mobile,/\.coco-bubble::after\{top:calc\(100% - 2px\);height:40px\}/);
+  assert.match(mobile,/\.coco-bubble.from-right::after\{right:83px;transform:scale\(-1\)\}/);
+  assert.match(mobile,/\.coco-bubble.from-left::after\{left:83px;transform:scaleY\(-1\)\}/);
   assert.match(html,/\.coco-bubble.from-right::after\{right:106px;transform:scaleX\(-1\)\}/);
   assert.match(html,/\.coco-bubble.from-left::after\{left:106px\}/);
   assert.match(html,/@media\(prefers-reduced-motion:reduce\)\{\s*\.coco-lounge\{transition:none\}\s*\.coco-lounge.purring svg\{animation:none !important\}/);
 }
-test('bubble overlays its unchanged stage below the scoreboard, with mirrored tails and reduced motion',()=>{
+test('bubble stays out of flow: desktop below cards, mobile above the ledge with downward mirrored tails',()=>{
   const html=readFileSync(new URL('../index.html',import.meta.url),'utf8');assertBubbleLayout(html);
   for(const [before,after] of [
     ['position:absolute;top:calc(100% + 58px)','position:relative;top:calc(100% + 58px)'],
     ['top:calc(100% + 58px)','top:0'],['calc(100% - 16px));margin:0;','calc(100% - 16px));margin:58px 8px 0;'],
     ['z-index:3;','z-index:300;'],['display:none !important;pointer-events:none','opacity:0'],
     ['right:106px;transform:scaleX(-1)','right:106px'],
+    ['top:auto;bottom:0;max-width:min(40ch','top:calc(100% + 62px);max-width:min(40ch'],
+    ['top:auto;bottom:0','top:auto;bottom:-64px'],
+    ['top:calc(100% - 2px);height:40px','top:-30px;height:32px'],
+    ['left:83px;transform:scaleY(-1)','left:83px'],['right:83px;transform:scale(-1)','right:83px;transform:scaleX(-1)'],
     ['id="coco-lounge" aria-hidden="true"></span>','id="coco-lounge" aria-hidden="true"></span></div>']
   ]){assert.notEqual(html.replace(before,after),html);assert.throws(()=>assertBubbleLayout(html.replace(before,after)))}
 });
@@ -220,11 +229,11 @@ test('queued merges retain event identity even when their original event window 
   assert.equal(c.run('COCO_SAY.q.length'),0);c.fireDelay(280);assert.equal(c.run('COCO_SAY.showing'),false);
 });
 
-test('v97 build label, page engine and service-worker engine agree',()=>{
+test('v98 build label, page engine and service-worker engine agree',()=>{
   const html=readFileSync(new URL('../index.html',import.meta.url),'utf8'),sw=readFileSync(new URL('../sw.js',import.meta.url),'utf8');
-  assert.match(html,/const APP_VERSION='v97'/);assert.match(html,/<script src="engine.js\?v=v97">/);assert.match(sw,/'engine.js\?v=v97'/);
+  assert.match(html,/const APP_VERSION='v98'/);assert.match(html,/<script src="engine.js\?v=v98">/);assert.match(sw,/'engine.js\?v=v98'/);
   const changelog=readFileSync(new URL('../CHANGELOG.md',import.meta.url),'utf8');
-  assert.equal(changelog.match(/SPELLCOCO v\d+/)[0],'SPELLCOCO v97');
+  assert.equal(changelog.match(/SPELLCOCO v\d+/)[0],'SPELLCOCO v98');
 });
 
 test('a rejected rematch adopts the winning match even when a local action is pending',()=>{

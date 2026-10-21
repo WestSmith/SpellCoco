@@ -1572,10 +1572,11 @@
         .coco-bubble.from-right::after{right:106px;transform:scaleX(-1)}
         .coco-bubble.from-left::after{left:106px}
         @media(max-width:839px){
-            .coco-bubble{top:calc(100% + 62px)}
-            .coco-bubble::after{top:-30px;height:32px}
-            .coco-bubble.from-right::after{right:83px}
-            .coco-bubble.from-left::after{left:83px}
+            /* Grow upward over the cards; the downward tail alone reaches Coco. */
+            .coco-bubble{top:auto;bottom:0;max-width:min(40ch,calc(100% - 16px))}
+            .coco-bubble::after{top:calc(100% - 2px);height:40px}
+            .coco-bubble.from-right::after{right:83px;transform:scale(-1)}
+            .coco-bubble.from-left::after{left:83px;transform:scaleY(-1)}
         }
         @media(prefers-reduced-motion:reduce){
             .coco-lounge{transition:none}
@@ -2472,7 +2473,7 @@
     </div>
 </div>
 
-<script src="engine.js?v=v97"></script>
+<script src="engine.js?v=v98"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js" integrity="sha512-XEKeWX+mI3Ov+tg2evDlVQFzVOIp4T8J3cNcCEPaEUGpxJV3eZaN8rHuvnFPvQpGJBHPmrozJDMpm2xcDvtmyQ==" crossorigin="anonymous"></script>
 <script>
 /*
@@ -6318,7 +6319,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v97';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v98';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){

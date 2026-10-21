@@ -3,6 +3,11 @@
 Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
 ```
+SPELLCOCO v98 — MOBILE COCO SPEECH (2026-10-20)
+- Float mobile speech over the scoreboard with a downward mouth-pointing tail; preserve desktop placement.
+```
+
+```
 ================================================================
 SPELLCOCO v97 — COCO SPEECH OVERLAY (2026-10-20)
 - Anchor Coco’s dismissible bubble over the ledge without shifting the board or covering the scoreboard.
