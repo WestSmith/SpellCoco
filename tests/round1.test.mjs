@@ -112,23 +112,31 @@ for(const modal of ['swap','replay'])test(`Escape belongs to the active ${modal}
 // safe areas, keyboard occlusion, hit targets or screen-reader announcements.
 function assertBubbleLayout(html){
   const css=html.match(/\.coco-bubble\{([^}]+)\}/)[1];
-  assert.match(css,/position:relative/);assert.match(css,/display:block/);assert.match(css,/margin:58px 8px 0/);
+  assert.match(css,/position:absolute/);assert.match(css,/display:block/);assert.match(css,/margin:0/);
+  assert.match(css,/top:calc\(100% \+ 58px\);left:8px/);assert.match(css,/z-index:3;/);
   assert.match(css,/overflow-wrap:anywhere/);assert.match(css,/transition:none/);
-  assert.doesNotMatch(css,/(?:bottom|top):/);
+  assert.doesNotMatch(css,/(?:^|;)\s*(?:min-)?height:|position:(?:relative|static)|margin-top:/);
+  assert.match(html,/\.modal\{[^}]*z-index:100/);assert.match(html,/#modal-replay\{z-index:150\}/);
+  assert.match(html,/\.coco-bubble.hidden\{display:none !important;pointer-events:none\}/);
   assert.match(html,/\.player-bar-stage\{position:relative\}/);
-  assert.match(html,/id="player-list"[^]*?id="coco-lounge"[^]*?<\/div>\s*<button[^>]*id="coco-bubble"/);
+  assert.match(html,/id="player-list"[^]*?id="coco-lounge"[^>]*><\/span>\s*<button[^>]*id="coco-bubble"[^>]*><\/button>\s*<\/div>/);
   assert.match(html,/\.coco-bubble::after\{\s*content:'';position:absolute;top:-34px;width:36px;height:36px;[^}]*data:image\/svg\+xml/);
   assert.match(css,/width:fit-content;min-width:176px;max-width:min\(34ch,calc\(100% - 16px\)\)/);
-  assert.match(html,/\.coco-bubble.from-right\{margin-left:auto\}/);
-  assert.match(html,/@media\(max-width:839px\)\{\s*\.coco-bubble\{margin-top:62px\}/);
+  assert.match(html,/\.coco-bubble.from-right\{left:auto;right:8px\}/);
+  assert.match(html,/@media\(max-width:839px\)\{\s*\.coco-bubble\{top:calc\(100% \+ 62px\)\}/);
   assert.match(html,/\.coco-bubble.from-right::after\{right:106px;transform:scaleX\(-1\)\}/);
   assert.match(html,/\.coco-bubble.from-left::after\{left:106px\}/);
   assert.match(html,/@media\(prefers-reduced-motion:reduce\)\{\s*\.coco-lounge\{transition:none\}\s*\.coco-lounge.purring svg\{animation:none !important\}/);
 }
-test('bubble stays in normal flow below the scoreboard, with responsive tails and reduced motion rules',()=>{
+test('bubble overlays its unchanged stage below the scoreboard, with mirrored tails and reduced motion',()=>{
   const html=readFileSync(new URL('../index.html',import.meta.url),'utf8');assertBubbleLayout(html);
-  assert.throws(()=>assertBubbleLayout(html.replace('position:relative;display:block;z-index:3','position:absolute;display:block;z-index:3')));
-  assert.throws(()=>assertBubbleLayout(html.replace('margin:58px 8px 0','margin:0')));
+  for(const [before,after] of [
+    ['position:absolute;top:calc(100% + 58px)','position:relative;top:calc(100% + 58px)'],
+    ['top:calc(100% + 58px)','top:0'],['calc(100% - 16px));margin:0;','calc(100% - 16px));margin:58px 8px 0;'],
+    ['z-index:3;','z-index:300;'],['display:none !important;pointer-events:none','opacity:0'],
+    ['right:106px;transform:scaleX(-1)','right:106px'],
+    ['id="coco-lounge" aria-hidden="true"></span>','id="coco-lounge" aria-hidden="true"></span></div>']
+  ]){assert.notEqual(html.replace(before,after),html);assert.throws(()=>assertBubbleLayout(html.replace(before,after)))}
 });
 
 test('a Swap made before the start ack can follow the accepted start, without rolling back on start retry',async()=>{
@@ -212,11 +220,11 @@ test('queued merges retain event identity even when their original event window 
   assert.equal(c.run('COCO_SAY.q.length'),0);c.fireDelay(280);assert.equal(c.run('COCO_SAY.showing'),false);
 });
 
-test('v96 build label, page engine and service-worker engine agree',()=>{
+test('v97 build label, page engine and service-worker engine agree',()=>{
   const html=readFileSync(new URL('../index.html',import.meta.url),'utf8'),sw=readFileSync(new URL('../sw.js',import.meta.url),'utf8');
-  assert.match(html,/const APP_VERSION='v96'/);assert.match(html,/<script src="engine.js\?v=v96">/);assert.match(sw,/'engine.js\?v=v96'/);
+  assert.match(html,/const APP_VERSION='v97'/);assert.match(html,/<script src="engine.js\?v=v97">/);assert.match(sw,/'engine.js\?v=v97'/);
   const changelog=readFileSync(new URL('../CHANGELOG.md',import.meta.url),'utf8');
-  assert.equal(changelog.match(/SPELLCOCO v\d+/)[0],'SPELLCOCO v96');
+  assert.equal(changelog.match(/SPELLCOCO v\d+/)[0],'SPELLCOCO v97');
 });
 
 test('a rejected rematch adopts the winning match even when a local action is pending',()=>{

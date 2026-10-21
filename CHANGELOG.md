@@ -4,6 +4,13 @@ Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
 ```
 ================================================================
+SPELLCOCO v97 — COCO SPEECH OVERLAY (2026-10-20)
+- Anchor Coco’s dismissible bubble over the ledge without shifting the board or covering the scoreboard.
+================================================================
+```
+
+```
+================================================================
 SPELLCOCO v96 — COCO SPEECH BUBBLE (2026-10-20)
 - Give Coco a compact cream speech bubble with a fused curved outline and mirrored mouth-pointing tail.
 ================================================================
