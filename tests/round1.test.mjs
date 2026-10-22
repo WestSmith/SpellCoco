@@ -46,12 +46,13 @@ test('an older same-seat tab cannot overwrite a newer accepted snapshot even wit
   assert.equal(other.messages.at(-1).reason,'stale');assert.equal(db.get('game').tiles[0].char,'A');
 });
 
-test('legacy q replay and stale refreshed snapshots are refused while rapid legacy pushes still work',async()=>{
+test('legacy q replay and foreign-stale snapshots are refused while rapid legacy pushes still work',async()=>{
   const {r,db,sockets:[a]}=room(initial());
   const first={type:'__a',op:'move',state:initial(),q:1,base:0};first.state.tiles[0].char='A';
   const second=structuredClone(first);second.q=2;second.state.tiles[0].char='B';
   await push(r,a,first);await push(r,a,second);assert.equal(a.messages.at(-1).op,'moveok');
   await push(r,a,first);assert.equal(a.messages.at(-1).reason,'stale');
+  await r.bump(-1); // A foreign write, unlike our own pushes, invalidates the old base.
   const fresh=socket(0,'Keith');await push(r,fresh,{...first,q:99});assert.equal(fresh.messages.at(-1).reason,'stale');
   assert.equal(db.get('game').tiles[0].char,'B');
 });
@@ -229,11 +230,11 @@ test('queued merges retain event identity even when their original event window 
   assert.equal(c.run('COCO_SAY.q.length'),0);c.fireDelay(280);assert.equal(c.run('COCO_SAY.showing'),false);
 });
 
-test('v98 build label, page engine and service-worker engine agree',()=>{
+test('v99 build label, page engine and service-worker engine agree',()=>{
   const html=readFileSync(new URL('../index.html',import.meta.url),'utf8'),sw=readFileSync(new URL('../sw.js',import.meta.url),'utf8');
-  assert.match(html,/const APP_VERSION='v98'/);assert.match(html,/<script src="engine.js\?v=v98">/);assert.match(sw,/'engine.js\?v=v98'/);
+  assert.match(html,/const APP_VERSION='v99'/);assert.match(html,/<script src="engine.js\?v=v99">/);assert.match(sw,/'engine.js\?v=v99'/);
   const changelog=readFileSync(new URL('../CHANGELOG.md',import.meta.url),'utf8');
-  assert.equal(changelog.match(/SPELLCOCO v\d+/)[0],'SPELLCOCO v98');
+  assert.equal(changelog.match(/SPELLCOCO v\d+/)[0],'SPELLCOCO v99');
 });
 
 test('a rejected rematch adopts the winning match even when a local action is pending',()=>{

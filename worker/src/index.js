@@ -192,12 +192,11 @@ export class Room {
       if (own && m.q <= head.q) return true;
       return (base == null || base < rev) && !(own && m.q > head.q) && rev !== 0;
     }
-    // Compatibility: cached clients have no stream. Ordered pushes on the same
-    // socket can still outrun acks; refreshed sockets must use the current base.
+    // Compatibility: cached clients have no stream; own writes may outrun acks
+    // across reconnects, but foreign writes still invalidate their base.
     const last = me.move;
     if (last && Number.isInteger(m.q) && m.q <= last.q) return true;
-    if (base == null) return false; // pre-v71 clients omit base entirely
-    return base < rev && !(last && last.rev === rev && Number.isInteger(m.q) && m.q > last.q);
+    return this.stale(me.seat, m.base);
   }
   // Record an accepted write by `by` (a seat, or -1 for a server-side change
   // such as Coco Attack): bump rev, and mark it foreign to every other seat.

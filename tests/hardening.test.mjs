@@ -1,7 +1,17 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {client,state,room,plain} from './helpers.mjs';
+import test from 'node:test';import assert from 'node:assert/strict';import {client,state,room,socket,plain} from './helpers.mjs';
 const online=seat=>`NET.async=true;NET.mode="host";UI_MODE="host";NET.code=NET.gameCode="ROOM1";NET.myName=ONLINE_SIDE.type="${seat?'Shawn':'Keith'}";NET.seat=NET.myIndex=${seat};NET.rev=0;NET.caps={livesel:true};CONFIG.rounds=1;`;
 const deliver=(c,m)=>{c.ctx.reply=plain(m);c.run('asyncOnMessage(reply)')};
 const initial=()=>{const s={...state(),id:'match00002',turnIndex:1};[...'CAT'].forEach((ch,i)=>s.tiles[i].char=ch);return s};
+test('cached stream-less client can end its turn after a Swap ack is lost and its socket reconnects',async()=>{
+ const h=room(),first=state();h.db.set('rev',5);h.db.set('fr',[5,5]);
+ first.tiles[0].char='A';first.players[0].gems=5;
+ await h.r.onMessage(h.sockets[0],JSON.stringify({type:'__a',op:'move',state:first,q:1,base:5}));
+ assert.equal(h.sockets[0].messages.at(-1).op,'moveok');assert.equal(await h.r.rev(),6);
+ h.sockets[0].close();const reconnected=socket(0,'Keith'),ending=structuredClone(first);ending.turnIndex=1;
+ await h.r.onMessage(reconnected,JSON.stringify({type:'__a',op:'move',state:ending,q:2,base:5}));
+ assert.equal(reconnected.messages.at(-1).op,'moveok');assert.equal(await h.r.rev(),7);
+ assert.deepEqual(h.db.get('game'),ending);
+});
 for(const route of ['accepted-ledger','lost-ack-ledger','accepted-pending'])test(`a second tab's rematch must preserve the first tab's recoverable result: ${route}`,async()=>{
  const st=initial(),a=client(),b=client(),h=room(st);
  b.ctx.get=k=>a.saved.get(k)??null;b.ctx.put=(k,v)=>a.saved.set(k,v);b.ctx.del=k=>a.saved.delete(k);b.run('localStorage={getItem:get,setItem:put,removeItem:del}');

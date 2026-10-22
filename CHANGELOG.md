@@ -2,6 +2,8 @@
 
 Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
+SPELLCOCO v99 — Preserve cached v78 moves after a lost ack and reconnect (2026-10-22).
+
 ```
 SPELLCOCO v98 — MOBILE COCO SPEECH (2026-10-20)
 - Float mobile speech over the scoreboard with a downward mouth-pointing tail; preserve desktop placement.
