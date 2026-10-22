@@ -2,6 +2,8 @@
 
 Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
+SPELLCOCO v100 — Validate match ids and bound finished-match receipts (2026-10-22).
+
 SPELLCOCO v99 — Preserve cached v78 moves after a lost ack and reconnect (2026-10-22).
 
 ```

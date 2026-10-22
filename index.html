@@ -2473,7 +2473,7 @@
     </div>
 </div>
 
-<script src="engine.js?v=v99"></script>
+<script src="engine.js?v=v100"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js" integrity="sha512-XEKeWX+mI3Ov+tg2evDlVQFzVOIp4T8J3cNcCEPaEUGpxJV3eZaN8rHuvnFPvQpGJBHPmrozJDMpm2xcDvtmyQ==" crossorigin="anonymous"></script>
 <script>
 /*
@@ -3336,6 +3336,7 @@ function reconcileStats(stored){
         if(receipts.includes(key)){unsavedStats.delete(key);continue}
         STATS.recordedGames.push(key);recordGameStats(players,false);
     }
+    STATS.recordedGames=STATS.recordedGames.slice(-100);
 }
 function recordStatsOnce(ranked,gid){
     if(NET.async&&NET.code){
@@ -3352,9 +3353,9 @@ function recordStatsOnce(ranked,gid){
         }
         // Count and receipts share one atomic write. Failed contributions stay
         // separate in memory so an independent result can be added on retry.
+        STATS.recordedGames=STATS.recordedGames.slice(-100);
         if(!lsSet('spellcoco.stats',STATS))return false;
         unsavedStats.clear();
-        if(tag!==1)lsSet(matchKey,1);
         if(!prev||!game||game.id===tag)lsSet(k,tag);
         return true;
     }
@@ -6319,7 +6320,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v99';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v100';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){

@@ -69,6 +69,7 @@ const record = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 const integer = (v, max) => Number.isInteger(v) && v >= 0 && v <= max;
 const seatIndex = (v) => v === 0 || v === 1;
 const word = (v) => typeof v === "string" && /^[A-Z]{2,15}$/.test(v);
+const validGameId = (v) => v == null || (typeof v === "string" && /^[A-Za-z0-9]{4,24}$/.test(v));
 function validPlayer(p) {
   return record(p) && typeof p.name === "string" && p.name.length > 0 && p.name.length <= 24
     && integer(p.score, Number.MAX_SAFE_INTEGER) && integer(p.gems, 9999)
@@ -76,6 +77,7 @@ function validPlayer(p) {
 }
 function validState(s) {
   if (!record(s)) return false;
+  if (!validGameId(s.id)) return false;
   if (!Array.isArray(s.players) || s.players.length !== 2 || !s.players.every(validPlayer)) return false;
   if (!seatIndex(s.turnIndex) || !seatIndex(s.startIndex) || !integer(s.round, 99) || s.round < 1) return false;
   if (!Array.isArray(s.tiles) || s.tiles.length !== 25 || !s.tiles.every((t) =>
@@ -315,7 +317,7 @@ export class Room {
   async onGameOver(ws, m) {
     const me = this.info(ws);
     if (!seated(me)) { this.send(ws, { type: "__a", op: "reject", reason: "no-seat", q: m.q, gid: m.gid, state: null }); return; }
-    if (!Array.isArray(m.players) || m.players.length !== 2 || !m.players.every(validPlayer)) {
+    if (!validGameId(m.gid) || !Array.isArray(m.players) || m.players.length !== 2 || !m.players.every(validPlayer)) {
       this.send(ws, { type: "__a", op: "reject", reason: "bad-state", q: m.q, gid: m.gid, state: null }); return;
     }
     const game = await this.state.storage.get("game");
@@ -358,6 +360,7 @@ export class Room {
     // A lost start ack may retry even after completion. Return the room's state
     // so a refreshed client cannot reopen its locally restored start either.
     if (game && game.id && m.state.id === game.id) { this.send(ws, { type: "__a", op: "moveok", q: m.q, state: game, rev: await this.rev() }); return; }
+    if (m.state.over) { this.send(ws, { type: "__a", op: "reject", reason: "bad-state", q: m.q, state: null }); return; }
     if (game && !game.over) {
       this.send(ws, { type: "__a", op: "reject", reason: "match-active", q: m.q, state: game, rev: await this.rev() }); return;
     }
@@ -371,7 +374,13 @@ export class Room {
     if (game && await this.staleMove(ws, m, await this.rev(), true)) { this.send(ws, { type: "__a", op: "reject", reason: "stale", q: m.q, state: game, rev: await this.rev() }); return; }
     // Archive only authoritative finished results, BEFORE replacing the room.
     // A refreshed client can then verify an unacked ending by replaying it.
-    if (game && game.over && game.id) await this.state.storage.put("finished." + game.id, { id: game.id, players: game.finalPlayers || game.players });
+    if (game && game.over && game.id) {
+      const finished = await this.state.storage.get("finished") || [];
+      if (!finished.includes(game.id)) finished.push(game.id);
+      if (finished.length > 20) await this.state.storage.delete("finished." + finished.shift());
+      await this.state.storage.put("finished", finished);
+      await this.state.storage.put("finished." + game.id, { id: game.id, players: game.finalPlayers || game.players });
+    }
     await this.state.storage.put("game", m.state);
     if (!m.state.id) await this.state.storage.put("closingAttempts", null); // pre-v71 rematches have no distinct match id
     if (m.config && typeof m.config === "object") await this.state.storage.put("config", m.config);

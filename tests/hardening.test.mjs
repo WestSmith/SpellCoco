@@ -61,3 +61,61 @@ test('legacy dismissal survives dismissing independent and tagged speech, then e
  assert.equal(c.run('COCO_SAY.showing'),false);assert.equal(c.run('COCO_SAY.q.length'),0);
  c.run('clock=10900;cocoSay("Next score");_cocoPump()');assert.equal(c.run('COCO_SAY.showing'),true);
 });
+
+test('invalid match ids cannot poison an empty or id-less room or enter recap handling',async()=>{
+ for(const empty of [false,true])for(const id of [{toString:null,valueOf:null},[],42,'','abc','bad.id','a'.repeat(25)]){
+  const h=room();if(empty)h.db.delete('game');const ws=socket(0,'Keith');
+  await h.r.onMessage(ws,JSON.stringify({type:'__a',op:'move',state:{...state(),over:true,id},q:1}));
+  assert.equal(ws.messages.at(-1).reason,'bad-state');
+  await h.r.onMessage(ws,JSON.stringify({type:'__a',op:'gameover',players:state().players,gid:id}));
+  assert.equal(ws.messages.at(-1).reason,'bad-state');
+  h.db.set('game',{...state(),over:true});
+  await h.r.onNewGame(ws,{state:{...state(),id:'nextmatch1'},q:2});
+  assert.equal(ws.messages.at(-1).op,'moveok');assert.equal(h.db.get('game').id,'nextmatch1');
+ }
+ for(const id of [undefined,null,'abcd','A'.repeat(24)]){
+  const h=room();await h.r.onMove(h.sockets[0],{state:{...state(),id},q:1});
+  assert.equal(h.sockets[0].messages.at(-1).op,'moveok');
+ }
+});
+
+test('finished new starts are rejected but a finished same-id start retry is acknowledged',async()=>{
+ const st={...state(),id:'firstmatch',over:true},h=room(st),ws=h.sockets[0];
+ await h.r.onNewGame(ws,{state:{...st,id:'nextmatch1'},q:1,base:0});
+ assert.equal(ws.messages.at(-1).reason,'bad-state');assert.deepEqual(h.db.get('game'),st);
+ assert.equal([...h.db.keys()].some(k=>k.startsWith('finished.')),false);
+ await h.r.onNewGame(ws,{state:st,q:2,base:0});
+ assert.equal(ws.messages.at(-1).op,'moveok');assert.deepEqual(ws.messages.at(-1).state,st);
+});
+
+test('live start and closing-move spam retains only the latest twenty finished receipts',async()=>{
+ const h=room({...state(),id:'match00000',over:true}),ws=h.sockets[0];
+ h.r.state.storage.delete=async k=>h.db.delete(k);
+ for(let i=1;i<=25;i++){
+  const st={...state(),id:'match'+String(i).padStart(5,'0')};
+  await h.r.onNewGame(ws,{state:st,q:2*i,base:await h.r.rev()});
+  assert.equal(ws.messages.at(-1).op,'moveok');
+  await h.r.onMove(ws,{state:{...st,over:true},q:2*i+1,base:await h.r.rev()});
+  assert.equal(ws.messages.at(-1).op,'moveok');
+ }
+ const keys=[...h.db.keys()].filter(k=>k.startsWith('finished.'));
+ assert.equal(keys.length,20);assert.equal(h.db.has('finished.match00004'),false);
+ assert.deepEqual(h.db.get('finished.match00024'),{id:'match00024',players:state().players});
+ await h.r.onMove(ws,{state:{...state(),id:'match00024',over:true},q:100});
+ assert.equal(ws.messages.at(-1).receipt.id,'match00024');
+ await h.r.onNewGame(ws,{state:{...state(),id:'match00024'},q:101});
+ assert.equal(ws.messages.at(-1).reason,'stale');
+});
+
+test('client keeps one hundred atomic receipts without per-match keys and honors old markers',()=>{
+ const c=client();c.run(online(0));
+ c.run('for(let i=0;i<125;i++)recordStatsOnce(inputState.players,"match"+String(i).padStart(5,"0"))');
+ const saved=JSON.parse(c.saved.get('spellcoco.stats'));
+ assert.equal(saved.games,125);assert.equal(saved.recordedGames.length,100);
+ assert.equal(c.run('STATS.recordedGames.length'),100);
+ assert.equal(saved.recordedGames[0],'spellcoco.gover.ROOM1.match00025');
+ assert.deepEqual([...c.saved.keys()].filter(k=>k.startsWith('spellcoco.gover.')),['spellcoco.gover.ROOM1']);
+ const fresh=client();for(const [k,v]of c.saved)fresh.saved.set(k,v);fresh.run(online(0));
+ fresh.run('recordStatsOnce(inputState.players,"match00123");lsSet("spellcoco.gover.ROOM1.oldmarker",1);recordStatsOnce(inputState.players,"oldmarker")');
+ assert.equal(fresh.run('STATS.games'),125);
+});
