@@ -2,6 +2,12 @@
 
 Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
+```
+SPELLCOCO v101 — COCO'S FACE STAYS CLEAR; HIS WORDS AREN'T YOURS TO ADD (2026-10-23)
+- Coco's speech tail now stops beside his cheek, a few px clear of his face, on phones and desktop; the bubble itself does not move.
+- While Coco (solo) or an online opponent is spelling, their partial word shows as plain letters with one steady line instead of a red "Not in dictionary" verdict, and "+ add word" works only on your own turn.
+```
+
 SPELLCOCO v100 — Validate match ids and bound finished-match receipts (2026-10-22).
 
 SPELLCOCO v99 — Preserve cached v78 moves after a lost ack and reconnect (2026-10-22).
