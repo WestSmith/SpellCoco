@@ -69,6 +69,7 @@ const record = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 const integer = (v, max) => Number.isInteger(v) && v >= 0 && v <= max;
 const seatIndex = (v) => v === 0 || v === 1;
 const word = (v) => typeof v === "string" && /^[A-Z]{2,15}$/.test(v);
+const validGameId = (v) => v == null || (typeof v === "string" && /^[A-Za-z0-9]{4,24}$/.test(v));
 function validPlayer(p) {
   return record(p) && typeof p.name === "string" && p.name.length > 0 && p.name.length <= 24
     && integer(p.score, Number.MAX_SAFE_INTEGER) && integer(p.gems, 9999)
@@ -76,6 +77,7 @@ function validPlayer(p) {
 }
 function validState(s) {
   if (!record(s)) return false;
+  if (!validGameId(s.id)) return false;
   if (!Array.isArray(s.players) || s.players.length !== 2 || !s.players.every(validPlayer)) return false;
   if (!seatIndex(s.turnIndex) || !seatIndex(s.startIndex) || !integer(s.round, 99) || s.round < 1) return false;
   if (!Array.isArray(s.tiles) || s.tiles.length !== 25 || !s.tiles.every((t) =>
@@ -181,6 +183,23 @@ export class Room {
     const fr = (await this.state.storage.get("fr")) || [0, 0];
     return base < (fr[seat] || 0);
   }
+  // v87: only the same ordered stream may run ahead of its own acks. A
+  // replay or another tab/device must not bypass revisions just for sharing a seat.
+  async staleMove(ws, m, rev, newMatch = false) {
+    const me = this.info(ws), base = revOf(m.base);
+    if (m.stream != null) {
+      if (typeof m.stream !== "string" || !/^[a-z0-9]{24}$/.test(m.stream) || !integer(m.q, Number.MAX_SAFE_INTEGER)) return true;
+      const head = await this.state.storage.get("moveHead");
+      const own = head && head.seat === me.seat && head.stream === m.stream && (newMatch || head.gid === (m.state.id || null)) && head.rev === rev;
+      if (own && m.q <= head.q) return true;
+      return (base == null || base < rev) && !(own && m.q > head.q) && rev !== 0;
+    }
+    // Compatibility: cached clients have no stream; own writes may outrun acks
+    // across reconnects, but foreign writes still invalidate their base.
+    const last = me.move;
+    if (last && Number.isInteger(m.q) && m.q <= last.q) return true;
+    return this.stale(me.seat, m.base);
+  }
   // Record an accepted write by `by` (a seat, or -1 for a server-side change
   // such as Coco Attack): bump rev, and mark it foreign to every other seat.
   async bump(by) {
@@ -234,7 +253,10 @@ export class Room {
     this.setInfo(ws, { seat, name, last: Date.now() });
     const game = await this.state.storage.get("game") || null;
     const config = await this.state.storage.get("config") || null;
-    this.send(ws, { type: "__a", op: "welcome", seat, full: seat === -1, names: seats.map((s) => s ? s.name : null), state: game, config, rev: await this.rev(), caps: CAPS });
+    // Seated clients can distinguish a pending retry from a superseded disk record.
+    // Cached clients ignore head and keep their existing revision/turn checks.
+    this.send(ws, { type: "__a", op: "welcome", seat, full: seat === -1, names: seats.map((s) => s ? s.name : null), state: seat === -1 ? null : game, config: seat === -1 ? null : config, rev: await this.rev(), caps: CAPS,
+      head: seat === -1 ? null : (await this.state.storage.get("moveHead")) || null });
     if (seat !== -1) this.toOthers(ws, { type: "__a", op: "peer", seat, name, present: true });
     await this.touch();
   }
@@ -248,29 +270,45 @@ export class Room {
   async onMove(ws, m) {
     const me = this.info(ws);
     if (!seated(me)) { this.send(ws, { type: "__a", op: "reject", reason: "no-seat", q: m.q, state: null }); return; }
-    // Echo q: a bad state can't be fixed by re-pushing, so let the client retire it.
-    if (!validState(m.state)) { this.send(ws, { type: "__a", op: "reject", reason: "bad-state", q: m.q, state: null }); return; }
     const game = await this.state.storage.get("game");
     const rev = await this.rev();
-    if (game && game.over && !m.state.over) { this.send(ws, { type: "__a", op: "reject", reason: "game-over", q: m.q, state: game, rev }); return; }
+    // Remember closing attempts even when rejected. v89 recaps omit the move's
+    // ordering fields; reconnect/hibernation must not turn them into legacy ends.
+    if (game && m.state && m.state.over === true && (!game.id || !m.state.id || game.id === m.state.id)) {
+      const old = await this.state.storage.get("closingAttempts");
+      const attempts = old && old.gid === (game.id || null) ? old : { gid: game.id || null, seats: [] };
+      if (!attempts.seats.includes(me.seat)) { attempts.seats.push(me.seat); await this.state.storage.put("closingAttempts", attempts); }
+    }
+    // Echo q: a bad state can't be fixed by re-pushing, so let the client retire it.
+    if (!validState(m.state)) { this.send(ws, { type: "__a", op: "reject", reason: "bad-state", q: m.q, state: null }); return; }
+    // Id-less snapshots are pre-v71 clients: retain their turn checks below.
+    if (game && game.id && m.state.id && game.id !== m.state.id) {
+      const receipt = m.state.over ? await this.state.storage.get("finished." + m.state.id) : null;
+      this.send(ws, { type: "__a", op: "reject", reason: "wrong-match", q: m.q, state: game, rev, receipt: receipt || null }); return;
+    }
+    if (game && game.over) { this.send(ws, { type: "__a", op: "reject", reason: "game-over", q: m.q, state: game, rev }); return; }
+    // Id-less legacy moves must not erase the room's authoritative match id.
+    if (game && game.id && !m.state.id) m.state.id = game.id;
     // v71: the snapshot was built before somebody else's write landed — storing it
     // would roll that write back (the READING-style replay after a lost ack, or a
     // selection sync racing a Coco Attack). The client adopts the state we return.
-    if (game && await this.stale(me.seat, m.base)) { this.send(ws, { type: "__a", op: "reject", reason: "stale", q: m.q, state: game, rev }); return; }
+    if (game && await this.staleMove(ws, m, rev)) { this.send(ws, { type: "__a", op: "reject", reason: "stale", q: m.q, state: game, rev }); return; }
     if (game && typeof game.turnIndex === "number" && game.turnIndex !== me.seat) {
       this.send(ws, { type: "__a", op: "reject", reason: "not-your-turn", q: m.q, state: game, rev }); return;
-    }
-    if (game && game.over) {
-      m.state.over = true;
-      if (game.finalPlayers && !m.state.finalPlayers) m.state.finalPlayers = game.finalPlayers;
     }
     await this.state.storage.put("game", m.state);
     if (m.config && typeof m.config === "object") await this.state.storage.put("config", m.config);
     const nrev = await this.bump(me.seat);
+    await this.state.storage.put("moveHead", { seat: me.seat, gid: m.state.id || null, stream: m.stream || null, q: m.q ?? null, rev: nrev });
+    me.move = { q: m.q, rev: nrev }; this.setInfo(ws, me);
     this.send(ws, { type: "__a", op: "moveok", q: m.q, rev: nrev });
     this.toOthers(ws, { type: "__a", op: "state", state: m.state, rev: nrev });
     await this.touch();
-    if (!m.state.over && typeof m.state.turnIndex === "number")
+    // The closing snapshot normally precedes gameover. Notify on the first
+    // accepted finish; game.over rejects both kinds of ending replay above.
+    if (m.state.over)
+      this.notifySeat(1 - me.seat, "Game over — open SpellCoco for the recap \u{1F3C6}").catch(() => {});
+    else if (typeof m.state.turnIndex === "number")
       this.notifySeat(m.state.turnIndex, `${me.name || "Your opponent"} played — your move!`).catch(() => {});
   }
 
@@ -278,17 +316,33 @@ export class Room {
   // recap, so a player who rejoins later sees the ending (not a live board).
   async onGameOver(ws, m) {
     const me = this.info(ws);
-    if (!seated(me)) { this.send(ws, { type: "__a", op: "reject", reason: "no-seat", state: null }); return; }
-    if (!Array.isArray(m.players) || m.players.length !== 2 || !m.players.every(validPlayer)) {
-      this.send(ws, { type: "__a", op: "reject", reason: "bad-state", state: null }); return;
+    if (!seated(me)) { this.send(ws, { type: "__a", op: "reject", reason: "no-seat", q: m.q, gid: m.gid, state: null }); return; }
+    if (!validGameId(m.gid) || !Array.isArray(m.players) || m.players.length !== 2 || !m.players.every(validPlayer)) {
+      this.send(ws, { type: "__a", op: "reject", reason: "bad-state", q: m.q, gid: m.gid, state: null }); return;
     }
     const game = await this.state.storage.get("game");
+    const rev = await this.rev();
+    const reject = (reason) => this.send(ws, { type: "__a", op: "reject", reason, q: m.q, gid: m.gid, state: game || null, rev });
+    if (!game) return reject("no-game");
+    // Legacy clients omit gid; the active seat/turn checks still apply to them.
+    if (game.id && m.gid && game.id !== m.gid) return reject("wrong-match");
+    if (game.over) return reject("game-over");
+    if (game.turnIndex !== me.seat) return reject("not-your-turn");
+    if (await this.stale(me.seat, m.base)) return reject("stale");
+    // Ordered/current clients finish only through the full closing snapshot.
+    // A recap arriving first (or after a rejected move) cannot install scores.
+    // Truly recap-only cached clients retain their fallback; a known closing
+    // attempt requires acceptance, including v89's otherwise untagged recap.
+    const attempts = await this.state.storage.get("closingAttempts");
+    if (m.closing || m.stream != null || (attempts && attempts.gid === (game.id || null) && attempts.seats.includes(me.seat))) return reject("ending-pending");
     if (game && typeof game === "object") {
       game.over = true;
       if (Array.isArray(m.players)) game.finalPlayers = m.players.slice(0, 2);
-      if (!validState(game)) { this.send(ws, { type: "__a", op: "reject", reason: "bad-state", state: null }); return; }
+      if (!validState(game)) { this.send(ws, { type: "__a", op: "reject", reason: "bad-state", q: m.q, gid: m.gid, state: null }); return; }
       await this.state.storage.put("game", game);
     }
+    // Bind legacy endings to the stored match too; cached clients ignore gid/q.
+    m.gid = game.id || m.gid;
     m.rev = await this.bump(me.seat);
     this.toOthers(ws, m);
     await this.touch();
@@ -303,9 +357,36 @@ export class Room {
     // (both tapped Rematch while apart) would wipe theirs — same stale rule as moves.
     const game = await this.state.storage.get("game");
     if (game && await this.stale(me.seat, m.base)) { this.send(ws, { type: "__a", op: "reject", reason: "stale", q: m.q, state: game, rev: await this.rev() }); return; }
+    // A lost start ack may retry even after completion. Return the room's state
+    // so a refreshed client cannot reopen its locally restored start either.
+    if (game && game.id && m.state.id === game.id) { this.send(ws, { type: "__a", op: "moveok", q: m.q, state: game, rev: await this.rev() }); return; }
+    if (m.state.over) { this.send(ws, { type: "__a", op: "reject", reason: "bad-state", q: m.q, state: null }); return; }
+    if (game && !game.over) {
+      this.send(ws, { type: "__a", op: "reject", reason: "match-active", q: m.q, state: game, rev: await this.rev() }); return;
+    }
+    // A completed identity stays retired even on a fresh stream/socket. Cached
+    // clients may omit base/stream, so ordering alone cannot catch this replay.
+    if (m.state.id && await this.state.storage.get("finished." + m.state.id)) {
+      this.send(ws, { type: "__a", op: "reject", reason: "stale", q: m.q, state: game || null, rev: await this.rev() }); return;
+    }
+    // A different match also needs an ordered operation: an older start must
+    // not return after a subsequent rematch has finished on the same seat.
+    if (game && await this.staleMove(ws, m, await this.rev(), true)) { this.send(ws, { type: "__a", op: "reject", reason: "stale", q: m.q, state: game, rev: await this.rev() }); return; }
+    // Archive only authoritative finished results, BEFORE replacing the room.
+    // A refreshed client can then verify an unacked ending by replaying it.
+    if (game && game.over && game.id) {
+      const finished = await this.state.storage.get("finished") || [];
+      if (!finished.includes(game.id)) finished.push(game.id);
+      if (finished.length > 20) await this.state.storage.delete("finished." + finished.shift());
+      await this.state.storage.put("finished", finished);
+      await this.state.storage.put("finished." + game.id, { id: game.id, players: game.finalPlayers || game.players });
+    }
     await this.state.storage.put("game", m.state);
+    if (!m.state.id) await this.state.storage.put("closingAttempts", null); // pre-v71 rematches have no distinct match id
     if (m.config && typeof m.config === "object") await this.state.storage.put("config", m.config);
     const nrev = await this.bump(me.seat);
+    await this.state.storage.put("moveHead", { seat: me.seat, gid: m.state.id || null, stream: m.stream || null, q: m.q ?? null, rev: nrev });
+    me.move = { q: m.q, rev: nrev }; this.setInfo(ws, me);
     if (m.q != null) this.send(ws, { type: "__a", op: "moveok", q: m.q, rev: nrev });
     this.toOthers(ws, { type: "__a", op: "newgame", state: m.state, config: m.config || null, rev: nrev });
     await this.touch();
@@ -415,7 +496,7 @@ export class Room {
   }
 
   send(ws, obj) { try { if (ws.readyState === OPEN) ws.send(JSON.stringify(obj)); } catch {} }
-  toOthers(ws, obj) { for (const s of this.sockets()) if (s !== ws) this.send(s, obj); }
+  toOthers(ws, obj) { for (const s of this.sockets()) if (s !== ws && seated(this.info(s))) this.send(s, obj); }
 }
 
 // ---- Web Push (RFC 8291 aes128gcm + VAPID) ----

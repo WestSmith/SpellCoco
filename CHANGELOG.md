@@ -2,6 +2,180 @@
 
 Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
+SPELLCOCO v100 — Validate match ids and bound finished-match receipts (2026-10-22).
+
+SPELLCOCO v99 — Preserve cached v78 moves after a lost ack and reconnect (2026-10-22).
+
+```
+SPELLCOCO v98 — MOBILE COCO SPEECH (2026-10-20)
+- Float mobile speech over the scoreboard with a downward mouth-pointing tail; preserve desktop placement.
+```
+
+```
+================================================================
+SPELLCOCO v97 — COCO SPEECH OVERLAY (2026-10-20)
+- Anchor Coco’s dismissible bubble over the ledge without shifting the board or covering the scoreboard.
+================================================================
+```
+
+```
+================================================================
+SPELLCOCO v96 — COCO SPEECH BUBBLE (2026-10-20)
+- Give Coco a compact cream speech bubble with a fused curved outline and mirrored mouth-pointing tail.
+================================================================
+```
+
+```
+================================================================
+SPELLCOCO v95 — CROSS-TAB RECOVERY AND LEGACY SPEECH (2026-10-20)
+- Merge shared ending recovery before replacement or retirement; preserve legacy score dismissal through interleaved speech.
+================================================================
+```
+
+```
+================================================================
+SPELLCOCO v94 — LEGACY RESULT AND DISMISSAL RECONCILIATION (2026-10-20)
+- Record accepted recap-only cached-client results from finalPlayers, matching their recoverable receipts and recap.
+- Preserve dismissed untagged score grouping through same-match replacement for the existing 900ms window; clear it on match changes.
+- Tests: node --test tests/*.test.mjs passes. No gameplay, balance, AI pacing or speech content/frequency changes.
+================================================================
+```
+
+```
+================================================================
+SPELLCOCO v93 — RETIRED MATCH IDS AND RECOVERABLE RESULTS (2026-10-20)
+- Reject starts that reuse an archived finished match ID, including cached-client and fresh-stream retries.
+- Keep compact accepted results durable through quota failures and rematch successors; reconcile independent unsaved statistics contributions exactly once.
+- Validate stored and in-memory receipt lists before online starts and result recovery; retain cached-client compatibility markers.
+- Tests: node --test tests/*.test.mjs passes, including realistic 5xx fallback coverage. No gameplay, balance, AI pacing or speech changes.
+================================================================
+```
+
+```
+================================================================
+SPELLCOCO v92 — QUOTA-SAFE STATISTICS AND COMPLETE SHELL DOWNLOADS (2026-10-20)
+- Persist accepted statistics and their match receipts together; retain ending retries until saving succeeds and preserve cached-client markers.
+- Keep the shell deadline active through body completion; fall back to cached files on stalled or broken streams without caching partial responses.
+- Tests: node --test tests/*.test.mjs passes. No gameplay, balance, AI pacing or speech changes.
+================================================================
+```
+
+```
+================================================================
+SPELLCOCO v91 — CACHED ENDINGS AND DURABLE ACCEPTANCE (2026-10-20)
+- Require closing-snapshot acceptance for known cached-client attempts, even when their recap omits ordering fields.
+- Keep a pending start's successors live when rejected against the previous finished match.
+- Retain unacknowledged endings across rematch/refresh and verify them against archived authoritative results.
+- Give each score attempt a distinct cryptographic event tag while keeping its continuations grouped.
+- Tests: node --test tests/*.test.mjs passes. No gameplay, balance, AI pacing or speech changes.
+================================================================
+```
+
+```
+================================================================
+SPELLCOCO v90 — TIMEOUT OWNERSHIP AND RECONCILED MATCH RETRIES (2026-10-20)
+- Retire Solo scheduling flags by turn so a resumed timeout cannot strand Coco or cancel his next turn.
+- Bind current ending envelopes to the closing operation; require its accepted snapshot and reconcile rejected endings without recording an unaccepted result. Cached clients retain their recap fallback.
+- Reconcile durable start/move snapshots before restoring play, including either partial storage-write failure.
+- Preserve explicit Coco message dismissals across replacements of the same match; clear them for another match.
+- Tests: node --test tests/*.test.mjs passes. No scoring, balance, AI pacing or speech changes.
+================================================================
+```
+
+```
+================================================================
+SPELLCOCO v89 — MATCH-BOUND ENDINGS AND DURABLE EVENT RETRIES (2026-10-20)
+- Bind ending replies to their match and operation so delayed finishes cannot close a rematch.
+- Continue restored starts in their saved stream; preserve Undo and elapsed countdowns on duplicate position replies.
+- Tag score continuations with their originating play so delayed lines stay dismissed. Cached clients retain compatibility paths.
+- Tests: node --test tests/*.test.mjs passes. No gameplay or balance changes.
+================================================================
+```
+
+```
+================================================================
+SPELLCOCO v88 — RECONCILE RETRIES WITHOUT ROLLING BACK LOCAL PLAY (2026-10-20)
+- Ignore obsolete move replies and start snapshots after newer local operations; preserve pending boards and active countdowns across reconnects.
+- Include the accepted operation head in seated welcomes so restored retries can continue safely without reviving superseded disk snapshots. Older clients and workers retain their compatibility paths.
+- Notify the opponent on the first accepted finished snapshot; repeated endings remain read-only.
+- Tests: node --test tests/*.test.mjs passes. No gameplay or balance changes.
+================================================================
+```
+
+```
+================================================================
+SPELLCOCO v87 — REPLAY-SAFE SWAPS AND MATCH RETRIES (2026-10-20)
+- Order durable operations by page stream and room revision; reject obsolete same-seat snapshots, including stale storage records. Preserve legacy match IDs and finished matches on start retries.
+- Use cryptographic rejection sampling for active online room codes.
+- Dismiss queued continuations of the same Coco event; let active dialogs own Escape. Add structural bubble layout coverage.
+- Tests: node --test tests/*.test.mjs passes. No gameplay or balance changes.
+================================================================
+```
+
+```
+================================================================
+SPELLCOCO v86 — DISMISSIBLE COCO MESSAGES BELOW THE SCOREBOARD (2026-10-20)
+- Coco’s bubble is a dismiss button with Escape support. It grows downward below the cards, with a tail toward his mouth; reduced motion stops his transition and purr animation.
+- Tests: node --test tests/*.test.mjs passes.
+================================================================
+```
+
+```
+================================================================
+SPELLCOCO v85 — RULES COPY MATCHES PLAY (2026-10-20)
+- Clarify Zoomies multiplier relocation, score-only live best-word feedback, and the recap’s played-word efficiency label. No gameplay changes.
+- Tests: node --test tests/*.test.mjs passes.
+================================================================
+```
+
+```
+================================================================
+SPELLCOCO v84 — OFFLINE SHELL FROM THE FIRST INSTALL (2026-10-20)
+- Precache the app and word lists; retain versioned engines across upgrades; use cached shell responses after 3 seconds or HTTP 5xx. Online-room requests remain untouched.
+- Tests: node --test tests/*.test.mjs passes.
+================================================================
+```
+
+```
+================================================================
+SPELLCOCO v83 — LITERAL DICTIONARY INPUT (2026-10-20)
+- Escape dictionary-checker input, opponent names in word requests, and remembered game labels; reject malformed word requests.
+- Tests: node --test tests/*.test.mjs passes.
+================================================================
+```
+
+```
+================================================================
+SPELLCOCO v82 — SMALL ROOM SECURITY FIXES (2026-10-20)
+- Room codes use unbiased cryptographic randomness. Unseated sockets receive neither game snapshots nor broadcasts.
+- Tests: node --test tests/*.test.mjs passes.
+================================================================
+```
+
+```
+================================================================
+SPELLCOCO v81 — NARROW ROOM VALIDATION (2026-10-20)
+- Reject mismatched, unauthorized or repeated endings and unilateral live-match replacement. Legacy id-less clients retain active-seat checks.
+- Tests: node --test tests/*.test.mjs passes.
+================================================================
+```
+
+```
+================================================================
+SPELLCOCO v80 — COCO CALLBACK LIFECYCLE (2026-10-20)
+- AI timers belong to their game, round and turn; retirement cancels them and removes grid listeners.
+- Tests: node --test tests/*.test.mjs passes.
+================================================================
+```
+
+```
+================================================================
+SPELLCOCO v79 — DURABLE SWAP AND NEW-MATCH RETRY (2026-10-20)
+- Swap/undo and unacknowledged starts survive refresh and reconnect using the existing pending ledger. Storage write failures warn in the console.
+- Tests: node --test tests/*.test.mjs passes.
+================================================================
+```
+
 ```
 ================================================================
 SPELLCOCO v78 — NO SOUND PILE-UP AFTER A CALL; ONE PURR AT A TIME (2026-10-17)

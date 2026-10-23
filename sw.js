@@ -5,20 +5,37 @@
      and a background request (usually a cheap 304) refreshes it for next time.
    - every other same-origin GET (the page, engine.js, custom_words.txt, icons):
      network first, so an online player always gets the current build; the
-     cached copy is only used when the network fails (offline local/solo play).
+     cached copy answers on failure, HTTP 5xx or a 3s shell timeout.
+   v84: install precaches the shell and word lists for the first offline launch.
    Cross-origin requests (the relay, PeerJS, Wiktionary) are never touched. */
-const CACHE = 'spellcoco-rt-1';
+const CACHE = 'spellcoco-rt-2';
+const SHELL = ['./', 'index.html', 'engine.js?v=v100', 'manifest.json',
+  'icon-192.png', 'icon-512.png', 'icon-512-maskable.png',
+  'apple-touch-icon-180.png', 'coco-mark.svg', 'custom_words.txt', 'dictionary.txt'];
+const SHELL_TIMEOUT = 3000;
 
-self.addEventListener('install', (e) => self.skipWaiting());
+self.addEventListener('install', (e) => e.waitUntil(
+  caches.open(CACHE).then((c) => c.addAll(SHELL.map((p) => new URL(p, self.location.href).href)))
+    .then(() => self.skipWaiting())
+));
 self.addEventListener('activate', (e) => e.waitUntil(
-  caches.keys()
-    .then((keys) => Promise.all(keys.filter((k) => k.startsWith('spellcoco-') && k !== CACHE).map((k) => caches.delete(k))))
-    .catch(() => {})
-    .then(() => self.clients.claim())
+  caches.keys().then(async (keys) => {
+    const current = await caches.open(CACHE);
+    for (const key of keys.filter((k) => k.startsWith('spellcoco-') && k !== CACHE)) {
+      const old = await caches.open(key);
+      // An open older page can still start its dictionary Worker with its own
+      // versioned engine URL. Keep those small scripts across shell upgrades.
+      for (const req of await old.keys()) if (new URL(req.url).pathname.endsWith('/engine.js')) {
+        const res = await old.match(req);
+        if (res && !await current.match(req)) await current.put(req, res);
+      }
+      await caches.delete(key);
+    }
+  }).then(() => self.clients.claim())
 ));
 
 // One entry per path: a navigation is stored without its query (?join=CODE),
-// and a new engine.js?v=… replaces the previous build's copy.
+// versioned engines stay available for already-open pages.
 function cacheKey(req) {
   const u = new URL(req.url);
   if (req.mode === 'navigate') u.search = '';
@@ -30,11 +47,19 @@ function keep(req, res) {
   const copy = res.clone(), key = cacheKey(req), path = new URL(key).pathname;
   return caches.open(CACHE).then((c) => c.put(key, copy)
     .then(() => c.keys())
-    .then((reqs) => Promise.all(reqs.filter((r) => { const u = new URL(r.url); return u.pathname === path && r.url !== key; }).map((r) => c.delete(r)))))
+    .then((reqs) => Promise.all(reqs.filter((r) => { const u = new URL(r.url); return !path.endsWith('/engine.js') && u.pathname === path && r.url !== key; }).map((r) => c.delete(r)))))
     .catch(() => {});
 }
-function fromNetwork(req, e) {
-  return fetch(req).then((res) => { e.waitUntil(keep(req, res)); return res; });
+function fromNetwork(req, e, shell = false) {
+  return fetch(req).then(async (res) => {
+    if (shell) {
+      if (res.status >= 500) throw new Error('Shell unavailable');
+      // Headers alone cannot serve a usable shell. Finish a clone under the
+      // same deadline before returning or caching the original response.
+      await res.clone().arrayBuffer();
+    }
+    e.waitUntil(keep(req, res)); return res;
+  });
 }
 const cached = (req) => caches.match(cacheKey(req));
 
@@ -53,9 +78,16 @@ self.addEventListener('fetch', (e) => {
     }));
     return;
   }
-  e.respondWith(fromNetwork(req, e).catch(() => cached(req).then((hit) => {
+  const shell = req.mode === 'navigate' || SHELL.some((p) => new URL(p, self.location.href).pathname === url.pathname);
+  const network = fromNetwork(req, e, shell);
+  let timer;
+  const bounded = shell ? Promise.race([network, new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('Shell timed out')), SHELL_TIMEOUT);
+  })]).finally(() => clearTimeout(timer)) : network;
+  // A slow fetch may still finish and refresh the cache after fallback.
+  if (shell) e.waitUntil(network.catch(() => {}));
+  e.respondWith(bounded.catch(() => cached(req).then((hit) => {
     if (hit || req.mode !== 'navigate') return hit;
-    // Offline navigation to a path we never cached (…/index.html vs …/): the app shell.
     return caches.match(new URL('./', self.location.href).href).then((h) => h || caches.match(new URL('index.html', self.location.href).href));
   }).then((r) => r || Response.error())));
 });

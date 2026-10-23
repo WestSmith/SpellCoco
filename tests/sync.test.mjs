@@ -81,7 +81,7 @@ test('a turn-completing move is stored durably and carries the base revision', (
   assert.equal(c.run('NET.rev'), 6);
 });
 
-test('a fresh page load re-pushes the stored move and shows it once the room accepts it', () => {
+test('a fresh page load re-pushes the stored move and keeps its pending board visible', () => {
   const c = client();
   const st = state(1); st.players[0].score = 30;
   c.saved.set('spellcoco.pending.ROOM1', JSON.stringify({ m: { type: '__a', op: 'move', state: st, q: 7, base: 5 }, q: 7, at: 1 }));
@@ -89,7 +89,7 @@ test('a fresh page load re-pushes the stored move and shows it once the room acc
   const replay = c.sent.find(m => m.op === 'move');
   assert.equal(replay.q, 7); assert.equal(replay.base, 5); assert.equal(replay.state.players[0].score, 30);
   assert.equal(c.run('NET.moveSeq'), 7);
-  assert.equal(c.run('game.turnIndex'), 0);                              // the welcome loaded the room's pre-move board
+  assert.equal(c.run('game.turnIndex'), 1);                              // further actions must not use the room's pre-move board
   c.run('asyncOnMessage({op:"moveok",q:7,rev:6})');
   assert.equal(c.run('game.turnIndex'), 1); assert.equal(c.run('game.players[0].score'), 30);
   assert.equal(c.saved.has('spellcoco.pending.ROOM1'), false); assert.equal(c.run('NET.rev'), 6);
@@ -142,5 +142,7 @@ test('the match id rides serialize(), survives a round trip, and reaches the gam
   c.ctx.st = st; c.run('game=Game.fromState(st)'); assert.equal(c.run('game.id'), id);
   c.run('game.round=99;game.endGame()');
   assert.equal(c.sent.find(m => m.op === 'gameover').gid, id);
+  assert.equal(c.saved.has('spellcoco.gover.ROOM1'), false);
+  c.run('asyncOnMessage({op:"moveok",q:NET.pendingMove.q,rev:1})');
   assert.equal(c.saved.get('spellcoco.gover.ROOM1'), JSON.stringify(id));
 });
