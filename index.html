@@ -1542,12 +1542,14 @@
         .letter-val-chip b{color:var(--ink)}
         .letter-val-chip span{color:var(--gold-hi)}
 
-        /* Speech overlays the ledge without resizing the stage. Its tail meets Coco's
-           mouth below the cards; only the visible button receives pointer events. */
+        /* Speech overlays the ledge without resizing the stage; only the visible
+           button receives pointer events. v101: the tail stops beside Coco's cheek
+           on his inward side (a few px clear of his whiskers) and never crosses his
+           face. Its offsets are measured from his lounge box; move them together. */
         .player-bar-stage{position:relative}
         .coco-bubble{
             position:absolute;top:calc(100% + 58px);left:8px;display:block;z-index:3;
-            width:fit-content;min-width:176px;max-width:min(34ch,calc(100% - 16px));margin:0;
+            width:fit-content;min-width:192px;max-width:min(34ch,calc(100% - 16px));margin:0;
             background:var(--coco-cream);color:#2f2418;
             border:2px solid var(--coco-deep);border-radius:18px;
             padding:12px 16px;text-align:left;letter-spacing:normal;
@@ -1565,18 +1567,18 @@
         .coco-bubble.hidden{display:none !important;pointer-events:none}
         .coco-bubble.from-right{left:auto;right:8px}
         .coco-bubble::after{
-            content:'';position:absolute;top:-34px;width:36px;height:36px;
+            content:'';position:absolute;top:-31px;width:26px;height:33px;
             background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36' preserveAspectRatio='none'%3E%3Cpath d='M15 36V34Q18 20 8 2Q24 26 34 34V36Z' fill='%23fff3e0'/%3E%3Cpath d='M15 34Q18 20 8 2Q24 26 34 34' fill='none' stroke='%23a5591d' stroke-width='2' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat;
             pointer-events:none;
         }
-        .coco-bubble.from-right::after{right:106px;transform:scaleX(-1)}
-        .coco-bubble.from-left::after{left:106px}
+        .coco-bubble.from-right::after{right:138px;transform:scaleX(-1)}
+        .coco-bubble.from-left::after{left:138px}
         @media(max-width:839px){
-            /* Grow upward over the cards; the downward tail alone reaches Coco. */
+            /* Grow upward over the cards; the downward tail points at Coco's cheek. */
             .coco-bubble{top:auto;bottom:0;max-width:min(40ch,calc(100% - 16px))}
-            .coco-bubble::after{top:calc(100% - 2px);height:40px}
-            .coco-bubble.from-right::after{right:83px;transform:scale(-1)}
-            .coco-bubble.from-left::after{left:83px;transform:scaleY(-1)}
+            .coco-bubble::after{top:calc(100% - 2px);height:27px}
+            .coco-bubble.from-right::after{right:109px;transform:scale(-1)}
+            .coco-bubble.from-left::after{left:109px;transform:scaleY(-1)}
         }
         @media(prefers-reduced-motion:reduce){
             .coco-lounge{transition:none}
@@ -2473,7 +2475,7 @@
     </div>
 </div>
 
-<script src="engine.js?v=v100"></script>
+<script src="engine.js?v=v101"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js" integrity="sha512-XEKeWX+mI3Ov+tg2evDlVQFzVOIp4T8J3cNcCEPaEUGpxJV3eZaN8rHuvnFPvQpGJBHPmrozJDMpm2xcDvtmyQ==" crossorigin="anonymous"></script>
 <script>
 /*
@@ -4915,7 +4917,8 @@ function addCustomWordFromInput(){
     }
 }
 function addWordFromGame(){
-    if(!game)return;
+    // v101: only the speller adds their own word, never Coco's or an online opponent's word in progress
+    if(!game||!game.myTurn)return;
     const r=game.calculateCurrentScore();
     if(!r.word)return;
     if(NET.mode!=='local'&&NET.open()){proposeWord(r.word);return}
@@ -6043,7 +6046,15 @@ class Game{
         if(calc.word){
             wd.innerText=calc.word;wd.className=calc.isValid?'valid':'invalid';
             srAnnounceTurn(this);
-            if(calc.isValid){
+            if(!this.myTurn){
+                // v101: someone else's word in progress (Coco padding across the board
+                // in solo, or an online opponent's live selection). Their partial words
+                // are not a verdict for this player, and must never offer "+ add word".
+                // Plain letters (no green shimmer, no red) and one steady line.
+                wd.className='';
+                sp.innerText=solo?'🐾 Coco is hunting for a word…':`${this.currentPlayer.name} is spelling…`;
+                sp.style.color='var(--ink-dim)';
+            }else if(calc.isValid){
                 sp.innerHTML=`${calc.score} points`+(calc.gemCount>0?` + ${calc.gemCount}${TICON}`:'')+(calc.longBonus>0?` (incl. +${calc.longBonus} long word)`:'');
                 sp.style.color='var(--coco-eyes-hi)';
             } else {
@@ -6320,7 +6331,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v100';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v101';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){
