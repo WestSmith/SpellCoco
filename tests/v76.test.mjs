@@ -24,6 +24,6 @@ test('without a bonus the score goes alone, with no celebrate field', () => {
   c.run(submitCat);
   const fx = c.sent.find(m => m.type === 'fx' && m.toast);
   assert.match(fx.event, /^score:legacy:[a-z0-9]{24}$/);
-  assert.deepEqual(plain(fx), { type: 'fx', toast: 'CAT → +8 pts', event: fx.event });
+  assert.deepEqual(plain(fx), { type: 'fx', toast: 'CAT → +8 pts', sfx: 'submit', event: fx.event });
   assert.ok(!c.sent.some(m => m.celebrate));
 });

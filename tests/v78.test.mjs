@@ -77,3 +77,61 @@ test('tapping Coco quickly gives one purr, not a stack of them', () => {
   coco.listeners.click.forEach(f => f({}));
   assert.equal(a.ac().started.length, voice * 2, 'once it ends, the next pet purrs again');
 });
+
+test('Join unlocks the first opponent tap and scored word before any board input', async () => {
+  const c = client(), a = audio(c);
+  c.doc.getElementById('sound-toggle').checked = true;
+  c.events['document:DOMContentLoaded'].forEach(f => f());
+  assert.equal(a.made.length, 0);
+  c.events['document:click'].forEach(f => f({}));
+  assert.equal(a.ac().pending.length, 1, 'the lobby gesture requested resume');
+  a.ac().land(); await flush();
+  c.run('NET.async=true; NET.mode="host"; NET.seat=1; NET.code="ROOM1"; asyncOnMessage({op:"newgame",state:inputState})');
+  c.run('asyncOnData({type:"livesel",ids:[0],t:0,r:1})');
+  assert.equal(a.ac().started.length, 1);
+  c.run('asyncOnData({type:"livesel",ids:[0],t:0,r:1}); asyncOnData({type:"livesel",ids:[0,1],t:0,r:2})');
+  assert.equal(a.ac().started.length, 1, 'duplicates and stale turns stay quiet');
+  c.run('asyncOnData({type:"livesel",ids:[],t:0,r:1})');
+  assert.equal(a.ac().started.length, 2);
+  c.run('asyncOnData({type:"livesel",ids:[0,1,2],t:0,r:1})'); // a resync mid-word
+  c.run('asyncFx({type:"fx",sfx:"submit"}); asyncOnData({type:"livesel",ids:[],t:0,r:1})');
+  c.fireDelay(80); c.fireDelay(160);
+  assert.equal(a.ac().started.length, 5, 'all three notes of the normal word chime played');
+  c.run('toggleMute(); asyncOnData({type:"livesel",ids:[1],t:0,r:1}); asyncFx({type:"fx",sfx:"submit"})');
+  c.fireDelay(80); c.fireDelay(160);
+  assert.equal(a.ac().started.length, 5);
+});
+
+test('an auto-joined room offers a sound gesture while its context is suspended', () => {
+  const c = client(), a = audio(c);
+  c.doc.getElementById('sound-toggle').checked = true;
+  c.run('NET.async=true; NET.mode="host"; NET.seat=1; NET.code="ROOM1"; asyncLoadGame(inputState)');
+  const prompt = c.doc.getElementById('unlock-audio');
+  assert.equal(prompt.classList.contains('hidden'), false);
+  c.events['document:touchend'].forEach(f => f({}));
+  a.ac().land(); a.ac().onstatechange();
+  assert.equal(prompt.classList.contains('hidden'), true);
+});
+
+test('classic guests hear live host tile changes and skip restored selections', () => {
+  const c = client(), a = audio(c, 'running');
+  c.load(undefined, 'NET.mode="join"; NET.myIndex=1; soundEnabled=true; initAudio()');
+  c.run('inputState.sel=[0]; guestOnData({type:"state",state:inputState}); guestOnData({type:"state",state:inputState})');
+  assert.equal(a.ac().started.length, 1);
+  c.run('inputState.sel=[0,1]; game.applyState(inputState)');
+  assert.equal(a.ac().started.length, 1, 'a state restored outside a live move stays quiet');
+  c.run('inputState.turnIndex=1; inputState.sel=[]; guestOnData({type:"state",state:inputState})');
+  assert.equal(a.ac().started.length, 1, 'changing turns is not a tile tap');
+});
+
+test('a saved sound-off preference keeps joining and the opening move quiet', () => {
+  const c = client(), a = audio(c);
+  c.doc.getElementById('sound-toggle').checked = true;
+  c.saved.set('spellcoco.settings', JSON.stringify({ sound: false }));
+  c.events['document:DOMContentLoaded'].forEach(f => f());
+  c.events['document:click'].forEach(f => f({}));
+  c.run('NET.async=true; NET.mode="host"; NET.seat=1; NET.code="ROOM1"; asyncLoadGame(inputState)');
+  c.run('asyncOnData({type:"livesel",ids:[0],t:0,r:1}); asyncFx({type:"fx",sfx:"submit"})');
+  assert.equal(a.made.length, 0);
+  assert.ok(c.doc.getElementById('unlock-audio').classList.contains('hidden'));
+});

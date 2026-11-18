@@ -2,6 +2,11 @@
 
 Newest first. The on-screen build label is `APP_VERSION` in `index.html`.
 
+SPELLCOCO v102 — Online move sounds (2026-11-18)
+
+- Joining with sound enabled prepares audio for the opponent's opening turn.
+- Live opponent tile taps, backtracks and scored words play their matching sounds.
+
 ```
 SPELLCOCO v101 — COCO'S FACE STAYS CLEAR; HIS WORDS AREN'T YOURS TO ADD (2026-10-23)
 - Coco's speech tail now stops beside his cheek, a few px clear of his face, on phones and desktop; the bubble itself does not move.

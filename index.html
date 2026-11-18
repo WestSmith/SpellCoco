@@ -2020,6 +2020,7 @@
                 <div id="net-pill" class="net-pill hidden">🌐</div>
             </div>
         </header>
+        <button type="button" id="unlock-audio" class="ingame-room hidden" onclick="initAudio()">🔊 Tap to enable game sound</button>
         <!-- v54: room code stays visible during online play so a dropped partner can rejoin -->
         <div id="ingame-room" class="ingame-room hidden" onclick="copyInGameCode()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();copyInGameCode()}" title="Tap to copy the room code" role="button" tabindex="0" aria-label="Room code — tap to copy">
             <span class="ir-label">🔑 Room</span>
@@ -2248,6 +2249,7 @@
             </div>
         </div>
 
+        <button type="button" id="lobby-unlock-audio" class="ingame-room hidden" onclick="initAudio()">🔊 Tap to enable game sound</button>
         <button class="btn-start" onclick="startGame()">⚡ Start Game</button>
 
         <div class="settings-stack">
@@ -2475,7 +2477,7 @@
     </div>
 </div>
 
-<script src="engine.js?v=v101"></script>
+<script src="engine.js?v=v102"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js" integrity="sha512-XEKeWX+mI3Ov+tg2evDlVQFzVOIp4T8J3cNcCEPaEUGpxJV3eZaN8rHuvnFPvQpGJBHPmrozJDMpm2xcDvtmyQ==" crossorigin="anonymous"></script>
 <script>
 /*
@@ -3131,6 +3133,8 @@ function asyncEnter(code){
     NET.async=true;NET.mode='host';NET.transport='relay';NET.seat=null;NET.connected=false;NET.everConnected=false;
     NET.__reseat=false;NET.__rehello=false;   // v55: clear identity-resolution flags for a fresh attempt
     NET.myName=onlineMyName();NET.code=code;
+    // A remembered invite can enter the waiting room without any local gesture.
+    if(soundEnabled)initAudio();
     // v55: DON'T stamp identity here — an unconfirmed default (e.g. "Shawn") would
     // defeat the collision guard. We remember the seat only once the relay confirms it.
     connectAsync(code);
@@ -3253,7 +3257,7 @@ function asyncOnMessage(m){
         case 'state':
             NET.clearStart();NET.noteRev(m.rev);
             if(game){
-                game.applyState(m.state);
+                game.applyState(m.state,!NET.caps?.livesel);
                 if(m.state&&m.state.over){asyncShowEnding(m.state);}   // v58: the closing push arrived as a live state
                 else asyncTurnHint();
             }
@@ -3421,7 +3425,7 @@ function asyncOnData(m){
         case 'undoreq':NET.send({type:'undook'});break;
         // v73: the opponent's in-progress word. Display only, and only for the
         // exact turn it was made on (a late one after their move is dropped).
-        case 'livesel':if(game&&!game.over&&game.turnIndex!==NET.myIndex&&m.r===game.round&&m.t===game.turnIndex){NET.quiet=true;try{game.applySelection(m.ids)}finally{NET.quiet=false}}break;
+        case 'livesel':if(game&&!game.over&&game.turnIndex!==NET.myIndex&&m.r===game.round&&m.t===game.turnIndex){NET.quiet=true;try{game.applySelection(m.ids,true)}finally{NET.quiet=false}}break;
     }
 }
 // v58: repaint WITHOUT pushing a state to the server. Dictionary updates don't
@@ -3564,7 +3568,7 @@ function asyncLoadGame(state,config,pending=false){
     CONFIG.solo=null;   // v69.1/v70: solo is never networked — neither a peer config nor a just-finished solo game may leak into an online board
     soundEnabled=document.getElementById('sound-toggle').checked;
     document.getElementById('btn-mute').innerText=soundEnabled?'🔊':'🔇';
-    if(soundEnabled)initAudio();
+    if(soundEnabled)initAudio();else updateAudioPrompt();
     populateLwRef();
     document.getElementById('modal-start').classList.add('hidden');
     document.getElementById('modal-gameover').classList.add('hidden');
@@ -3907,6 +3911,7 @@ function asyncFx(m){if(!game)return;if(m.toast)game.showToast(netSafeHtml(m.toas
 let UI_MODE='local'; // v41: 'local' | 'solo' | 'host' | 'join' — NET.mode stays networking-only
 function setMode(m){
     NET.cleanup();UI_MODE=m;NET.mode=(m==='host'||m==='join')?m:'local';NET.setPill('');
+    updateAudioPrompt();
     unlockIdentity();ONLINE_TAPPED=false;NET.oppName=null;   // v58: each game locks fresh — don't inherit last game's lock
     renderMyGames();   // v59: keep the start-screen games list fresh
     hideInGameRoom();   // v54: code bar only shows during an active online game
@@ -4282,7 +4287,7 @@ function hostOnData(m){
         case 'wordok':{const w=cleanNetWord(m.w);if(!w)break;addCustomWord(w,true);if(game){game.showToast(`📖 ${oppName()} approved "${w}" — play it!`);game.updateUI()}break}
         case 'wordno':{const w=cleanNetWord(m.w);if(w&&game)game.showToast(`🙀 ${oppName()} vetoed "${w}"`);break}
         case 'addword':{const w=cleanNetWord(m.w);if(!w)break;addCustomWord(w,true);if(game){game.showToast(`📖 ${w} added by opponent`);game.updateUI()}break}
-        case 'sel':if(game&&game.turnIndex!==NET.myIndex){NET.quiet=true;try{game.applySelection(m.ids)}finally{NET.quiet=false}}break;   // v67.4: try/finally so a bad payload can't leave NET.quiet stuck (would stop later sync)
+        case 'sel':if(game&&game.turnIndex!==NET.myIndex){NET.quiet=true;try{game.applySelection(m.ids,true)}finally{NET.quiet=false}}break;   // v67.4: try/finally so a bad payload can't leave NET.quiet stuck (would stop later sync)
         case 'act':if(game)game.handleRemoteAction(m);break;
     }
 }
@@ -4308,7 +4313,7 @@ function guestOnData(m){
         case 'wordno':{const w=cleanNetWord(m.w);if(w&&game)game.showToast(`🙀 ${oppName()} vetoed "${w}"`);break}
         case 'addword':{const w=cleanNetWord(m.w);if(!w)break;addCustomWord(w,true);if(game)game.updateUI();break}
         case 'start':guestStart(m);break;
-        case 'state':if(game)game.applyState(m.state);break;
+        case 'state':if(game)game.applyState(m.state,true);break;
         case 'timer':if(game){game.cocoTimerActive=m.on;game.timeLeft=m.t;game.updateTimerDisplay()}break;
         case 'fx':if(game){if(m.toast)game.showToast(netSafeHtml(m.toast),true,cleanScoreEvent(m.event));if(m.overlay)game.showRoundOverlay(netSafeHtml(m.overlay.t),netSafeHtml(m.overlay.s),true);if(m.celebrate)game.showCelebration(netSafeHtml(m.celebrate),true,cleanScoreEvent(m.event));if(m.coco)game.showCocoOverlay(true);if(m.bubble&&game)game.aiLater(()=>cocoSpeak(m.bubble),cleanInt(m.bubbleDelay,20000)||3400,false);if(m.sfx&&Object.prototype.hasOwnProperty.call(SFX,m.sfx)&&typeof SFX[m.sfx]==='function')SFX[m.sfx]()}break;
         case 'gameover':{if(game){game.over=true;game.lastTurn=cleanTurnLog(m.lastTurn,true);game.turns=mergeTurns(game.turns,cleanTurns(m.turns),game.lastTurn)}const gp=cleanPlayers(m.players);recordGameStats(gp);renderGameOver(gp);break}   // v67.1: scrub before the recap innerHTML; v74: the sealed final turn
@@ -4321,7 +4326,7 @@ function guestStart(m){
     soundEnabled=document.getElementById('sound-toggle').checked;
     document.getElementById('btn-mute').innerText=soundEnabled?'🔊':'🔇';
     document.getElementById('btn-mute').classList.toggle('active',soundEnabled);
-    if(soundEnabled)initAudio();
+    if(soundEnabled)initAudio();else updateAudioPrompt();
     populateLwRef();
     document.getElementById('modal-start').classList.add('hidden');
     document.getElementById('modal-gameover').classList.add('hidden');
@@ -4815,7 +4820,20 @@ let audioCtx=null,soundEnabled=false,soundVolume=0.5;
 // first tap that unlocks audio). A late sound is dropped, never queued.
 const AUDIO_LATE_MS=250;
 function audioResume(){try{const p=audioCtx&&audioCtx.resume();if(p&&p.catch)p.catch(()=>{});return p}catch(e){}}
-function initAudio(){if(!audioCtx||audioCtx.state==='closed'){const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;audioCtx=new AC()}if(audioCtx.state!=='running')audioResume()}
+function updateAudioPrompt(){
+    const locked=NET.mode!=='local'&&soundEnabled&&audioCtx&&audioCtx.state!=='running';
+    for(const id of ['unlock-audio','lobby-unlock-audio'])document.getElementById(id).classList.toggle('hidden',!locked);
+}
+function initAudio(){
+    if(!audioCtx||audioCtx.state==='closed'){
+        const AC=window.AudioContext||window.webkitAudioContext;
+        if(!AC)return;
+        audioCtx=new AC();
+        audioCtx.onstatechange=updateAudioPrompt;
+    }
+    if(audioCtx.state!=='running')audioResume();
+    updateAudioPrompt();
+}
 function withAudio(play){
     const ctx=audioCtx;if(!ctx)return;
     if(ctx.state==='running'){play(ctx);return}
@@ -5195,7 +5213,7 @@ class Game{
             if(!this.cocoTimerActive)this.maybeCocoTimer();
         }
     }
-    applyState(st){
+    applyState(st,liveTiles=false){
         st=sanitizeNetState(st);   // v67: same rule as fromState — never trust the wire
         if(!validPlayableState(st)){console.warn('SpellCoco: ignored a malformed state push');return;}   // v67.2: keep the current board rather than crash
         if(st.over||st.turnIndex!==this.turnIndex||st.round!==this.round){
@@ -5204,11 +5222,14 @@ class Game{
         }
         if(st.over)this.over=true;   // v58: an ending can arrive by state push too
         this.lastSwap=null;   // v62: an incoming board replaces ours — undo window closes
-        if(cleanGameId(st.id)){if(this.id!==st.id)cocoSayReset();this.id=st.id;}   // v71
         // v73: selections no longer ride full states, so a same-turn push (a Coco
         // Attack landing mid-word) must not wipe the word being spelled here.
         const board=ts=>ts.map(t=>t.char+(t.multiplier||t.mult||'')+((t.hasGem||t.gem)?'*':'')).join(),
             sameTurn=NET.async&&!st.over&&this.turnIndex===NET.myIndex&&st.turnIndex===NET.myIndex&&st.round===this.round&&board(this.tiles)===board(st.tiles);
+        // Classic connections send the live tile path inside a board snapshot.
+        if(liveTiles&&!this.over&&!this.myTurn&&this.id===st.id&&this.turnIndex===st.turnIndex&&
+            this.round===st.round&&board(this.tiles)===board(st.tiles))this.playSelectionChange(st.sel);
+        if(st.id){if(this.id!==st.id)cocoSayReset();this.id=st.id;}
         this.round=st.round;this.turnIndex=st.turnIndex;if(typeof st.startIndex==='number')this.startIndex=st.startIndex;
         this.players=st.players;
         this.cocoTimerActive=st.cocoTimerActive;this.timeLeft=st.timeLeft;this.cocoPendingFor=(st.cocoPendingFor==null?null:st.cocoPendingFor);
@@ -5221,13 +5242,22 @@ class Game{
         NET.quiet=true;this.updateUI();NET.quiet=false;
         this.activate();
     }
-    applySelection(ids){
+    playSelectionChange(next){
+        const prev=this.selection;
+        if(next.length===prev.length+1&&prev.every((id,i)=>id===next[i]))SFX.tileSelect();
+        // A submitted word also clears its whole path. Only a tap on the sole
+        // remaining tile can backtrack to an empty path.
+        else if((next.length||prev.length===1)&&next.length<prev.length&&
+            next.every((id,i)=>id===prev[i]))SFX.tileDeselect();
+    }
+    applySelection(ids,liveTiles=false){
         // v67.4: ids comes off the wire ('sel' sync + async 'submit') — a peer
         // could send a non-array ({}, string) that throws on .forEach, or string
         // keys like "__proto__" that touch inherited props. Rebuild it as a
         // list of valid in-range integer tile indices before touching anything.
         ids=Array.isArray(ids)?ids.filter(id=>Number.isInteger(id)&&id>=0&&id<this.tiles.length):[];
         ids=ids.filter((id,i)=>ids.indexOf(id)===i);   // v68: a tile can only be in the path once
+        if(liveTiles&&!this.over)this.playSelectionChange(ids);
         this.selection.forEach(id=>{if(this.tiles[id])this.tiles[id].isSelected=false});
         this.selection=[];
         ids.forEach(id=>{if(this.tiles[id]){this.tiles[id].isSelected=true;this.selection.push(id)}});
@@ -5502,7 +5532,7 @@ class Game{
         // land in the same tick and merge into one bubble too.
         const event=`score:${this.id||'legacy'}:${randomCode(24,'abcdefghijklmnopqrstuvwxyz0123456789')}`;   // one attempt across its fx messages; never consume gameplay RNG
         const scoreMsg=`${r.word} → +${r.score} pts`,bonusMsg=r.longBonus>0?`Long word! +${r.longBonus} bonus included`:null;
-        if(NET.mode==='host')NET.send(bonusMsg?{type:'fx',toast:scoreMsg,celebrate:bonusMsg,sfx:'longWord',event}:{type:'fx',toast:scoreMsg,event});
+        if(NET.mode==='host')NET.send(bonusMsg?{type:'fx',toast:scoreMsg,celebrate:bonusMsg,sfx:'longWord',event}:{type:'fx',toast:scoreMsg,sfx:'submit',event});
         this.showScoreFloat(`+${r.score}`);this.showToast(scoreMsg,true,event);srSay(`${r.word}, plus ${r.score} points`);
         if(bonusMsg){this.showCelebration(bonusMsg,true,event);SFX.longWord()}else{SFX.submit()}
         // v63: no more hand-tuned 2600/5300ms delays — the FX queue shows
@@ -6331,7 +6361,7 @@ function startRematch(){
 
 let game;
 
-const APP_VERSION='v101';   // single source of truth for the on-screen build label — bump every release
+const APP_VERSION='v102';   // single source of truth for the on-screen build label — bump every release
 
 // v60: 🔤 Letter Values chart — built once from LETTERS (bottom of the panel)
 function populateLetterRef(){
@@ -6382,6 +6412,13 @@ document.addEventListener('DOMContentLoaded',()=>{
     });
     updateLWPreview();
     restoreSettings();
+    // A guest's Start arrives over the network. Unlock audio on their lobby gesture.
+    const soundToggle=document.getElementById('sound-toggle');
+    soundEnabled=soundToggle.checked;
+    soundToggle.addEventListener('change',()=>{
+        soundEnabled=soundToggle.checked;
+        if(soundEnabled)initAudio();else updateAudioPrompt();
+    });
     renderSeatPickers();
     renderOnlineSide();
     renderStatsBox();
